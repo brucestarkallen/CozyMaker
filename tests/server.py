@@ -1,0 +1,273 @@
+#!/usr/bin/env python3
+"""CozyMaker — tests/server.py
+
+Starts the REAL serve.py against a throwaway home, then uses it the way the
+app does: save a world, read it back, change it, check the plain-markdown copy
+on disk, and put a call through the proxy to a provider that is also real (a
+tiny one started here). Nothing is mocked out of the path under test.
+
+    python3 tests/server.py
+"""
+
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+import urllib.request
+import urllib.error
+import http.server
+import socketserver
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+PORT = 8791
+FAKE_PROVIDER_PORT = 8792
+
+passed = 0
+failed = []
+
+
+def ok(name, cond, detail=""):
+    global passed
+    if cond:
+        passed += 1
+    else:
+        failed.append(f"{name}{' — ' + detail if detail else ''}")
+
+
+def call(path, method="GET", body=None, port=PORT, raw=False):
+    url = f"http://127.0.0.1:{port}{path}"
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(url, data=data, method=method)
+    if data:
+        req.add_header("Content-Type", "application/json")
+    with urllib.request.urlopen(req, timeout=20) as r:
+        payload = r.read()
+        if raw:
+            return r.status, payload
+        return r.status, json.loads(payload.decode())
+
+
+# ------------------------------------------------------- a real provider
+
+class FakeProvider(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *a):
+        pass
+
+    def do_POST(self):
+        n = int(self.headers.get("Content-Length") or 0)
+        sent = json.loads(self.rfile.read(n).decode())
+        if self.path.endswith("/boom"):
+            self.send_response(429)
+            self.send_header("Retry-After", "1")
+            self.send_header("Content-Length", "22")
+            self.end_headers()
+            self.wfile.write(b'{"error":"slow down"}\n')
+            return
+        if self.path.endswith("/stream"):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.end_headers()
+            for piece in ["he", "llo"]:
+                chunk = json.dumps({"choices": [{"delta": {"content": piece}}]})
+                self.wfile.write(f"data: {chunk}\n\n".encode())
+                self.wfile.flush()
+            self.wfile.write(b"data: [DONE]\n\n")
+            self.wfile.flush()
+            return
+        out = {
+            "choices": [{
+                "message": {"content": "saw model " + str(sent.get("model"))
+                                       + " auth " + self.headers.get("Authorization", "none")},
+                "finish_reason": "stop",
+            }]
+        }
+        body = json.dumps(out).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+class Threaded(socketserver.ThreadingMixIn, http.server.HTTPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+
+
+def wait_for(port, seconds=15):
+    for _ in range(seconds * 10):
+        try:
+            urllib.request.urlopen(f"http://127.0.0.1:{port}/api/version", timeout=1).read()
+            return True
+        except Exception:
+            time.sleep(0.1)
+    return False
+
+
+def main():
+    home = Path(tempfile.mkdtemp(prefix="cozymaker-test-"))
+    env = dict(os.environ, COZYMAKER_HOME=str(home), COZYMAKER_PORT=str(PORT))
+    server = subprocess.Popen([sys.executable, str(ROOT / "serve.py")], env=env,
+                              stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    provider = Threaded(("127.0.0.1", FAKE_PROVIDER_PORT), FakeProvider)
+    threading.Thread(target=provider.serve_forever, daemon=True).start()
+
+    try:
+        if not wait_for(PORT):
+            print("the server never came up")
+            print(server.stderr.read().decode()[:2000])
+            return 1
+
+        # --- it hands out its own files -------------------------------------
+        code, body = call("/index.html", raw=True)
+        ok("the page is served", code == 200 and b"CozyMaker" in body)
+        code, body = call("/js/agents/run.js", raw=True)
+        ok("the modules are served", code == 200 and b"runTurn" in body)
+        code, body = call("/engine/generalist.md", raw=True)
+        ok("the craft file is served", code == 200 and b"IDENTITY & MANDATES" in body)
+        ok("the craft file is served whole", len(body) > 120000, str(len(body)))
+        try:
+            call("/../serve.py", raw=True)
+            ok("it will not serve outside itself", False)
+        except urllib.error.HTTPError as e:
+            ok("it will not serve outside itself", e.code in (403, 404))
+
+        # --- the house -------------------------------------------------------
+        code, house = call("/api/house")
+        ok("a fresh house is made", code == 200 and house["connections"] == [])
+        house["connections"] = [{"id": "c1", "name": "test", "url": "x", "model": "m", "key": "k"}]
+        house["settings"]["makerName"] = "Eni"
+        call("/api/house", "PUT", house)
+        _, again = call("/api/house")
+        ok("the house is kept", again["settings"]["makerName"] == "Eni" and len(again["connections"]) == 1)
+
+        # --- a world ---------------------------------------------------------
+        world = {
+            "id": "p_test1", "title": "The Ashwood Pact",
+            "docs": [{"id": "d1", "name": "Plot Essential.md", "kind": "pe",
+                      "text": "# PLOT ESSENTIAL — The Ashwood Pact\n\n## SCENE\nWHERE: the hall\n"}],
+            "turns": [{"role": "writer", "text": "hello", "at": 1}],
+        }
+        code, r = call("/api/project/p_test1", "PUT", world)
+        ok("a world saves", code == 200 and r["ok"])
+        code, back = call("/api/project/p_test1")
+        ok("a world reads back exactly", back["title"] == "The Ashwood Pact"
+           and back["docs"][0]["text"] == world["docs"][0]["text"])
+        ok("the save is stamped", isinstance(back.get("updated"), int) and back["updated"] > 0)
+
+        code, listing = call("/api/projects")
+        ok("the world shows in the list", any(p["id"] == "p_test1" for p in listing["projects"]))
+        row = [p for p in listing["projects"] if p["id"] == "p_test1"][0]
+        ok("the list says how big each document is", row["docs"][0]["chars"] == len(world["docs"][0]["text"]))
+
+        mirror = home / "exports" / "p_test1" / "Plot Essential.md"
+        ok("a plain copy lands on disk", mirror.exists() and mirror.read_text() == world["docs"][0]["text"])
+
+        # change it; the copy must follow and the old one must be backed up
+        world["docs"][0]["text"] += "\n## WORLD\n### Rules\n- one rule\n"
+        world["docs"].append({"id": "d2", "name": "Worldbook.json", "kind": "worldbook", "text": "[]"})
+        call("/api/project/p_test1", "PUT", world)
+        ok("the plain copy follows a change", "one rule" in mirror.read_text())
+        ok("a second document lands too", (home / "exports" / "p_test1" / "Worldbook.json.md").exists())
+        ok("the previous version is kept", len(list((home / "backups").glob("p_test1*.gz"))) >= 1)
+
+        # a removed document must disappear from the copy, not linger
+        world["docs"] = world["docs"][:1]
+        call("/api/project/p_test1", "PUT", world)
+        ok("a removed document leaves the copy",
+           not (home / "exports" / "p_test1" / "Worldbook.json.md").exists())
+
+        try:
+            call("/api/project/../../etc/passwd")
+            ok("a bad world name is refused", False)
+        except urllib.error.HTTPError as e:
+            ok("a bad world name is refused", e.code == 400)
+
+        code, r = call("/api/project/p_test1", "DELETE")
+        ok("a world deletes", code == 200)
+        try:
+            call("/api/project/p_test1")
+            ok("a deleted world is gone", False)
+        except urllib.error.HTTPError as e:
+            ok("a deleted world is gone", e.code == 404)
+        ok("a deleted world is still in the backups",
+           len(list((home / "backups").glob("p_test1*.gz"))) >= 1)
+
+        # --- the way out to a provider ---------------------------------------
+        code, r = call("/api/call", "POST", {
+            "url": f"http://127.0.0.1:{FAKE_PROVIDER_PORT}/v1/chat/completions",
+            "headers": {"Authorization": "Bearer secret"},
+            "body": {"model": "deepseek-chat", "messages": []},
+        })
+        text = r["choices"][0]["message"]["content"]
+        ok("a call goes out and comes back", "saw model deepseek-chat" in text, text)
+        ok("the key travels with it", "Bearer secret" in text, text)
+
+        code, r = call("/api/call", "POST", {
+            "url": f"http://127.0.0.1:{FAKE_PROVIDER_PORT}/boom",
+            "headers": {}, "body": {},
+        })
+        ok("an unhappy provider becomes words, not a crash", r.get("error") == "provider" and r.get("status") == 429, json.dumps(r))
+        ok("the wait-a-moment header is passed on", r.get("retryAfter") == "1")
+
+        code, r = call("/api/call", "POST", {"url": "file:///etc/passwd", "body": {}})
+        ok("a nonsense address is refused", False)
+    except urllib.error.HTTPError as e:
+        ok("a nonsense address is refused", e.code == 400)
+    finally:
+        pass
+
+    try:
+        code, raw = call("/api/call", "POST", {
+            "url": f"http://127.0.0.1:{FAKE_PROVIDER_PORT}/stream",
+            "headers": {}, "body": {}, "stream": True,
+        }, raw=True)
+        body = raw.decode()
+        ok("a streamed answer comes through in pieces", "he" in body and "llo" in body and "[DONE]" in body, body[:200])
+
+        code, r = call("/api/call", "POST", {
+            "url": "http://127.0.0.1:9/nothing-listening", "headers": {}, "body": {},
+        })
+        ok("a dead address becomes words, not a crash", r.get("error") == "transport", json.dumps(r)[:200])
+
+        # --- it relights when its own file changes ---------------------------
+        _, v1 = call("/api/version")
+        src = (ROOT / "serve.py")
+        original = src.read_text()
+        src.write_text(original.replace('VERSION = "1.0.0"', 'VERSION = "1.0.0-relit"'))
+        relit = False
+        for _ in range(80):
+            time.sleep(0.25)
+            try:
+                _, v2 = call("/api/version")
+                if v2["version"] != v1["version"]:
+                    relit = True
+                    break
+            except Exception:
+                continue
+        src.write_text(original)
+        ok("it relights when its own file changes", relit,
+           "an update that leaves the old server holding the port is an update you cannot see")
+        time.sleep(3)
+    finally:
+        server.terminate()
+        try:
+            server.wait(timeout=5)
+        except Exception:
+            server.kill()
+        provider.shutdown()
+        shutil.rmtree(home, ignore_errors=True)
+
+    print(f"\n{passed} passed, {len(failed)} failed")
+    for f in failed:
+        print("  ✗ " + f)
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

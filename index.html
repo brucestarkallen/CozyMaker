@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en" data-theme="hearth">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CozyMaker</title>
+<meta name="theme-color" content="#1a1411">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="css/cozy.css">
+</head>
+<body>
+<div id="app">
+
+  <div class="topbar">
+    <button class="world" id="worldBtn">
+      <b id="worldName">…</b>
+      <small id="worldSub"></small>
+    </button>
+    <button class="iconbtn" id="docsBtn" aria-label="The documents" title="The documents">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4.5A1.5 1.5 0 0 1 5.5 3H14l6 6v11.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 20.5z"/><path d="M14 3v6h6"/></svg>
+    </button>
+    <button class="iconbtn" id="settingsBtn" aria-label="The house" title="The house">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 8.9 19.3a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.7 15a1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.7 8.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1.03-1.56V3a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15 4.7a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.3 9v.03A1.7 1.7 0 0 0 21 10.06H21a2 2 0 1 1 0 4h-.09A1.7 1.7 0 0 0 19.4 15z"/></svg>
+    </button>
+  </div>
+
+  <div class="stream" id="stream"></div>
+
+  <div class="composer">
+    <textarea id="say" rows="1" placeholder="What are we making?" autocomplete="off" autocapitalize="sentences" spellcheck="true"></textarea>
+    <button class="send" id="sendBtn" aria-label="Send">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+    </button>
+  </div>
+
+</div>
+
+<div class="sheet" id="docsSheet">
+  <header>
+    <button class="iconbtn" data-close="docsSheet" aria-label="Back">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+    <h2 id="docsTitle">The documents</h2>
+    <button class="btn quiet" id="docsAction">New</button>
+  </header>
+  <div class="body" id="docsBody"></div>
+</div>
+
+<div class="sheet" id="houseSheet">
+  <header>
+    <button class="iconbtn" data-close="houseSheet" aria-label="Back">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+    <h2>The house</h2>
+  </header>
+  <div class="body" id="houseBody"></div>
+</div>
+
+<div class="sheet" id="worldsSheet">
+  <header>
+    <button class="iconbtn" data-close="worldsSheet" aria-label="Back">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+    <h2>Your worlds</h2>
+    <button class="btn quiet" id="newWorldBtn">New</button>
+  </header>
+  <div class="body" id="worldsBody"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module" src="js/ui/app.js"></script>
+</body>
+</html>
