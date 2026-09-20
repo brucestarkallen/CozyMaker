@@ -62,6 +62,14 @@ Changes land in the documents themselves and show as small cards underneath the
 reply, each with **put it back** if you want it gone. Tap the page icon to read
 or hand-edit any document.
 
+## The look
+
+Four coats of paint under the cog. **The tavern at night** puts a drawn scene
+behind the room — purple sky, two moons, an aurora, lanterns strung across a
+yard, a bard mid-song and somebody buying a round. It is one hand-drawn file,
+nothing is fetched from anywhere, and the words stay at 16.8:1 contrast over
+it, measured rather than assumed.
+
 ## The crew
 
 | | |
@@ -85,7 +93,5 @@ of the whole. The cog, under the floor, shows exactly who reads what.
 Read `AGENTS.md` first.
 
 ```
-node tests/units.mjs        202 checks
-python3 tests/server.py      29 checks
-python3 tests/browser.py     51 checks
+bash tests/all.sh    229 + 29 + 64 checks
 ```

@@ -8,7 +8,12 @@ import { WORKERS, FRONT } from '../agents/roster.js';
 import { callModel } from '../agents/call.js';
 import { loadEngine, sliceReport } from '../engine/slices.js';
 
-const THEMES = [['hearth', 'Hearth — warm and low'], ['dusk', 'Dusk — cool and quiet'], ['paper', 'Paper — light']];
+const THEMES = [
+  ['hearth', 'Hearth — warm and low'],
+  ['tavern', 'The tavern at night — purple sky, a bard, somebody buying a round'],
+  ['dusk', 'Dusk — cool and quiet'],
+  ['paper', 'Paper — light'],
+];
 const THINKING = [
   ['', "Whatever the model does on its own"],
   ['off', 'Do not think'],

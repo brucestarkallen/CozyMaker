@@ -17,7 +17,24 @@ const KINDS = [
 
 let openDocIdValue = null;
 
+/* Run the checks when the writer finishes with a document, not while he is
+ * typing in it. Mid-keystroke it would take away the empty heading he is
+ * about to fill; on the way out it is simply tidy. There is no button for
+ * this and there is not meant to be — one door for one act. */
+export function tidyOnLeaving(id) {
+  const p = store.getProject();
+  const doc = (p.docs || []).find((d) => d.id === id);
+  if (!doc) return;
+  const r = lint(doc.text, { kind: doc.kind || 'pe', deliverable: (doc.kind || 'pe') !== 'notes' });
+  if (!r.changed) return;
+  store.writeDoc(id, r.text);
+  const fixed = r.found.filter((f) => f.repaired).map((f) => f.said);
+  if (fixed.length) toast(`In ${doc.name}, ${fixed.join('; ')}.`);
+  redraw();
+}
+
 export function openDocs() {
+  if (openDocIdValue) tidyOnLeaving(openDocIdValue);
   openDocIdValue = null;
   $('docsTitle').textContent = 'The documents';
   const action = $('docsAction');
@@ -159,20 +176,6 @@ function openOne(id) {
 
   const row = el('div', 'btnrow');
 
-  const check = el('button', 'btn quiet', 'Tidy it');
-  check.addEventListener('click', async () => {
-    const r = lint(area.value, { kind: doc.kind, deliverable: doc.kind !== 'notes' });
-    if (r.changed) { area.value = r.text; await store.writeDoc(id, r.text); refreshMeta(); }
-    const fixed = r.found.filter((f) => f.repaired);
-    const rest = r.found.filter((f) => !f.repaired);
-    if (!r.found.length) return toast('Nothing to tidy — it is clean.');
-    toast(
-      (fixed.length ? `Put right: ${fixed.map((f) => f.said).join('; ')}. ` : '') +
-      (rest.length ? `Still to do: ${rest.map((f) => f.check).join(', ')} — say the word in the room and the crew will sort it.` : '')
-    );
-    redraw();
-  });
-
   const rename = el('button', 'btn quiet', 'Rename');
   rename.addEventListener('click', async () => {
     const name = prompt('Call it what?', doc.name);
@@ -207,7 +210,7 @@ function openOne(id) {
     redraw();
   });
 
-  row.append(check, rename, copy, del);
+  row.append(rename, copy, del);
   tools.append(field('What kind of document this is', kind), row);
   body.append(tools);
 

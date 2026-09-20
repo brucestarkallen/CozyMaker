@@ -129,6 +129,61 @@ markdown under `~/.cozymaker/exports/` so it is reachable from the shell.
 
 ---
 
+## What was carried over from Cozy Tavern and Cozy Chat
+
+Both were read for their documented faults before this shipped — Cozy Tavern's
+`AGENTS.md` (8,495 lines of milestone history) and Cozy Chat's `AGENTS.md`.
+Every class below is a fault one of them already paid for. Some were designed
+out; the rest were found here and fixed. Each has a test.
+
+**Designed out, structurally:**
+
+- *All the projects vanished because the list of them was one settings row.*
+  Here a world is one file and the list is the directory. There is no index
+  row to lose.
+- *Browser-cleared site data erased everything.* The browser holds nothing but
+  the open world; the device holds the work.
+- *Exporting the whole store on the main thread froze the app.* Backups are
+  the server's job, rolling and gzipped, on every write.
+- *A sync between browsers corrupted a library.* There is no sync.
+- *An update was invisible because the old server still held the port.* The
+  launcher compares versions and puts the old one out; `serve.py` re-execs when
+  its own file changes.
+
+**Found here and fixed:**
+
+- *A question read as an instruction.* "Does that make her too similar to
+  Aldric?" sent the editor; "do you think the world is too big" sent the
+  compressor. Each worker's shapes are now split into those that survive a
+  question and those that do not, and a politeness opener is stripped first so
+  "can you change her age to fifteen" is still an instruction.
+- *A relative fetch resolving against the wrong base.* The craft file is asked
+  for from the root, like everything else. A craft file that quietly 404s
+  leaves every worker reading nothing while the app looks perfectly well.
+- *Folding the whole store into a string and reading it back.* One
+  serialisation per save, not two.
+- *A worker rewriting a document it had only seen part of.* When anything was
+  shown in shape-only form the brief says so in as many words, and
+  `lostSomething` refuses the rewrite as a backstop.
+- *A cut-off block passing as "no changes".* An unclosed opener whose tail
+  begins like a list is reported as truncated; the same word in ordinary prose
+  is left alone, because treating that as truncation eats a reply that was
+  never cut off.
+- *A machinery tag reaching the voice the writer hears.* `naturalize()` strips
+  them. In Cozy Chat an echoed tag inside a turn was parsed as a cut-off block
+  and ate the rest of the reply.
+- *An undo record holding a whole document, for ever.* Twenty stay undoable;
+  older ones keep their card and lose the payload.
+- *Two doors for one act.* The documents panel had a "Tidy it" button doing by
+  hand what the sweep does by itself. The sweep now runs when the writer
+  finishes with a document — on leaving, never mid-keystroke, so it cannot
+  take away the empty heading he is about to fill. There is no button and
+  there is not meant to be.
+- *A hand edit lost on backgrounding.* One debounce in the house, not two
+  stacked up.
+
+---
+
 ## Bugs already found. Do not reintroduce them.
 
 - **`## WORLD` deleted from every plot essential on every save.**
@@ -159,12 +214,16 @@ markdown under `~/.cozymaker/exports/` so it is reachable from the shell.
 ## Testing
 
 ```
-node tests/units.mjs        202 checks — the real modules on a real document
-python3 tests/server.py      29 checks — the real serve.py, real files on disk
-python3 tests/browser.py     51 checks — real Chromium at 390x844, end to end
+bash tests/all.sh           all three, exit code intact
 ```
 
-All three must be green before a push. Run all three, not one.
+    node tests/units.mjs      229 checks — the real modules on a real document
+    python3 tests/server.py    29 checks — the real serve.py, real files on disk
+    python3 tests/browser.py   64 checks — real Chromium at 390x844, end to end
+
+All three must be green before a push. Never pipe a gate through `tail` or
+`head` — they mask the exit code, and a gate whose failure cannot be seen is
+not a gate. Measure check counts from real output; never predict them.
 
 A test must **run** the feature: write data, read it back, assert on what came
 back. A test that would still pass with the feature deleted is worse than no
@@ -189,3 +248,26 @@ and puts out an older one still holding the port, and `serve.py` re-execs when
 its own file changes. An update that leaves the old server running is an update
 the writer cannot see; that has happened before elsewhere and is not allowed to
 happen here.
+
+
+---
+
+## The tavern at night
+
+`css/tavern-night.svg` is drawn by hand: one file, no photograph, nothing
+fetched from anywhere. It is used as a background layer with a scrim over it.
+
+The framing is the whole problem and the only thing worth remembering. The
+scene is wide; a phone held upright is not. Told to `cover`, it crops to a
+four-hundred-pixel slice of empty sky and the party, the tavern and the bard
+are all off the edges. So it is laid along the bottom at its full width, at its
+own proportions, lifted clear of the composer, with the sky above painted to
+match and its top faded out so there is no seam. The layer must be tall enough
+for the picture **and** the lift; sized to the picture alone, raising it cuts
+the moons and the aurora off the top.
+
+Text contrast over the scene is measured from real pixels in `browser.py` —
+the ink colour against the brightest part of the night actually sitting behind
+a paragraph, sampled from the stream's own margin where there is no text.
+Currently 16.8:1. A picture behind words is only worth having if the words are
+still easy to read on the worst patch of it.

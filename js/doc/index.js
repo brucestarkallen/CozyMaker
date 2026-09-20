@@ -170,13 +170,13 @@ export function inPlay(doc, { message = '', recent = [], asked = [], recentEvent
       const tail = s.events.slice(-recentEvents);
       const cut = s.text.indexOf(tail[0].line);
       bodies.push({
-        id: s.id, title: s.title,
+        id: s.id, title: s.title, trimmed: true,
         text: `## ${s.title}\n(the earlier events are listed in the shape above)\n` +
               (cut >= 0 ? s.text.slice(cut) : tail.map((e) => e.line).join('\n')),
       });
       continue;
     }
-    bodies.push({ id: s.id, title: s.title, text: s.text });
+    bodies.push({ id: s.id, title: s.title, trimmed: false, text: s.text });
   }
   return bodies;
 }
@@ -197,11 +197,18 @@ export function brief(doc, name, opts = {}) {
   if (bodies.length) {
     parts.push(`The parts in front of us right now, in full:\n\n${bodies.map((b) => b.text).join('\n\n')}`);
   }
-  if (bodies.length < doc.sections.length) {
+  /* WHAT YOU HAVE NOT SEEN, YOU MAY NOT REWRITE. Every part of this document
+   * is real and already written; only some of it is in front of the reader
+   * right now. Without this sentence a worker shown eight of forty events can
+   * hand back a "complete" document holding eight, and mean it honestly. */
+  const partial = bodies.length < doc.sections.length || bodies.some((b) => b.trimmed);
+  if (partial) {
     parts.push(
       'Everything else is real and already written — it is listed above by name. ' +
       'If you need to read one of them word for word before you change anything, ' +
-      'say so like this and it will be put in front of you: <need>name, other name</need>'
+      'say so like this and it will be put in front of you: <need>name, other name</need>\n' +
+      `Because you have not been shown all of ${name}, do not rewrite the whole of it. ` +
+      'Change the parts you can see, by name.'
     );
   }
   return parts.join('\n\n');

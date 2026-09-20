@@ -1,0 +1,281 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMax slice" width="1600" height="900">
+<!-- CozyMaker — the night outside the tavern.
+     Hand-drawn, one file, no photograph and no network. It sits behind
+     everything at low opacity with a scrim over it, so it is atmosphere and
+     never something the writer has to read through. -->
+<defs>
+  <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%"   stop-color="#07040f"/>
+    <stop offset="34%"  stop-color="#150a2c"/>
+    <stop offset="62%"  stop-color="#2a1048"/>
+    <stop offset="82%"  stop-color="#43145c"/>
+    <stop offset="100%" stop-color="#2b0d3d"/>
+  </linearGradient>
+
+  <linearGradient id="aurora1" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0%"   stop-color="#7b2ff7" stop-opacity="0"/>
+    <stop offset="28%"  stop-color="#9d4edd" stop-opacity=".85"/>
+    <stop offset="58%"  stop-color="#e05fc4" stop-opacity=".7"/>
+    <stop offset="82%"  stop-color="#4cc9f0" stop-opacity=".45"/>
+    <stop offset="100%" stop-color="#4cc9f0" stop-opacity="0"/>
+  </linearGradient>
+  <linearGradient id="aurora2" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0%"   stop-color="#4cc9f0" stop-opacity="0"/>
+    <stop offset="35%"  stop-color="#c77dff" stop-opacity=".6"/>
+    <stop offset="70%"  stop-color="#ff6ec7" stop-opacity=".5"/>
+    <stop offset="100%" stop-color="#ff6ec7" stop-opacity="0"/>
+  </linearGradient>
+
+  <radialGradient id="moonglow" cx="50%" cy="50%" r="50%">
+    <stop offset="0%"   stop-color="#ffeccf" stop-opacity=".55"/>
+    <stop offset="45%"  stop-color="#d9a8ff" stop-opacity=".18"/>
+    <stop offset="100%" stop-color="#d9a8ff" stop-opacity="0"/>
+  </radialGradient>
+
+  <radialGradient id="hearth" cx="50%" cy="55%" r="50%">
+    <stop offset="0%"   stop-color="#ffc46b" stop-opacity=".95"/>
+    <stop offset="38%"  stop-color="#ff9e4a" stop-opacity=".45"/>
+    <stop offset="100%" stop-color="#ff7a2f" stop-opacity="0"/>
+  </radialGradient>
+
+  <radialGradient id="lantern" cx="50%" cy="50%" r="50%">
+    <stop offset="0%"   stop-color="#ffd79a" stop-opacity=".9"/>
+    <stop offset="100%" stop-color="#ffb457" stop-opacity="0"/>
+  </radialGradient>
+
+  <linearGradient id="farhill" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="#3b1a5e"/><stop offset="100%" stop-color="#220d3a"/>
+  </linearGradient>
+  <linearGradient id="nearhill" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="#1d0b31"/><stop offset="100%" stop-color="#0d0418"/>
+  </linearGradient>
+  <linearGradient id="ground" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="#150726"/><stop offset="100%" stop-color="#080310"/>
+  </linearGradient>
+
+  <filter id="soft" x="-30%" y="-60%" width="160%" height="220%">
+    <feGaussianBlur stdDeviation="26"/>
+  </filter>
+  <filter id="softer" x="-40%" y="-80%" width="180%" height="260%">
+    <feGaussianBlur stdDeviation="46"/>
+  </filter>
+  <filter id="warm" x="-60%" y="-60%" width="220%" height="220%">
+    <feGaussianBlur stdDeviation="13"/>
+  </filter>
+  <filter id="tiny" x="-60%" y="-60%" width="220%" height="220%">
+    <feGaussianBlur stdDeviation="4"/>
+  </filter>
+</defs>
+
+<rect width="1600" height="900" fill="url(#sky)"/>
+
+<!-- stars -->
+<g fill="#fff7e8">
+  <g opacity=".85">
+    <circle cx="120" cy="70" r="1.7"/><circle cx="305" cy="128" r="1.2"/><circle cx="470" cy="56" r="2"/>
+    <circle cx="640" cy="150" r="1.3"/><circle cx="812" cy="72" r="1.6"/><circle cx="980" cy="132" r="1.1"/>
+    <circle cx="1155" cy="60" r="1.9"/><circle cx="1330" cy="140" r="1.3"/><circle cx="1490" cy="88" r="1.5"/>
+    <circle cx="210" cy="220" r="1.1"/><circle cx="560" cy="244" r="1.4"/><circle cx="905" cy="226" r="1.2"/>
+    <circle cx="1255" cy="248" r="1.6"/><circle cx="1420" cy="206" r="1"/><circle cx="75" cy="300" r="1.2"/>
+  </g>
+  <g opacity=".45">
+    <circle cx="180" cy="160" r="1"/><circle cx="392" cy="98" r=".9"/><circle cx="530" cy="180" r="1"/>
+    <circle cx="726" cy="118" r=".9"/><circle cx="880" cy="60" r="1"/><circle cx="1050" cy="196" r=".9"/>
+    <circle cx="1210" cy="112" r="1"/><circle cx="1392" cy="52" r=".9"/><circle cx="1545" cy="176" r="1"/>
+    <circle cx="255" cy="46" r=".9"/><circle cx="668" cy="292" r=".9"/><circle cx="1088" cy="300" r=".9"/>
+    <circle cx="430" cy="320" r=".9"/><circle cx="1478" cy="310" r=".9"/><circle cx="960" cy="330" r=".8"/>
+  </g>
+</g>
+
+<!-- aurora -->
+<g filter="url(#soft)" opacity=".62">
+  <path d="M-60 250 C 260 130, 520 320, 840 200 S 1380 150, 1680 260 L1680 330 C1380 240, 1120 380, 840 280 S 260 230, -60 330 Z" fill="url(#aurora1)"/>
+</g>
+<!-- the bright core of it, barely blurred, so the light reads as neon rather
+     than as weather -->
+<g filter="url(#warm)" opacity=".8">
+  <path d="M-60 286 C 260 176, 520 346, 840 236 S 1380 188, 1680 292 L1680 310 C1380 208, 1120 372, 840 258 S 260 200, -60 306 Z" fill="url(#aurora1)"/>
+</g>
+<g filter="url(#warm)" opacity=".5">
+  <path d="M-60 214 C 300 116, 640 268, 980 168 S 1480 126, 1680 210 L1680 226 C1480 146, 1180 300, 900 206 S 240 168, -60 234 Z" fill="url(#aurora2)"/>
+</g>
+<g filter="url(#softer)" opacity=".42">
+  <path d="M-60 400 C 320 300, 600 450, 900 350 S 1420 330, 1680 410 L1680 470 C1420 400, 1160 520, 900 430 S 320 380, -60 470 Z" fill="url(#aurora2)"/>
+</g>
+<g filter="url(#soft)" opacity=".3">
+  <path d="M-60 140 C 300 60, 700 210, 1100 110 S 1560 60, 1680 130 L1680 180 C1520 120, 1180 230, 800 170 S 200 150, -60 200 Z" fill="url(#aurora1)"/>
+</g>
+
+<!-- moons -->
+<circle cx="1268" cy="188" r="190" fill="url(#moonglow)"/>
+<circle cx="1268" cy="188" r="58" fill="#f6e6c8" opacity=".92"/>
+<g fill="#e3cfae" opacity=".55">
+  <circle cx="1252" cy="174" r="11"/><circle cx="1288" cy="202" r="7"/><circle cx="1262" cy="212" r="5"/>
+</g>
+<circle cx="360" cy="150" r="80" fill="url(#moonglow)" opacity=".6"/>
+<g>
+  <circle cx="360" cy="150" r="26" fill="#ffd9f2" opacity=".85"/>
+  <circle cx="349" cy="144" r="24" fill="#150a2c"/>
+</g>
+
+<!-- far mountains -->
+<path d="M0 560 L120 470 L210 520 L330 415 L430 500 L520 452 L640 545 L720 500 L820 560 L900 520 L1010 585 L1130 505 L1230 560 L1340 490 L1450 552 L1600 500 L1600 900 L0 900 Z" fill="url(#farhill)" opacity=".85"/>
+
+<!-- a keep on the far ridge, a few windows still lit -->
+<g opacity=".9">
+  <path d="M1318 490 L1318 430 L1330 430 L1330 418 L1342 418 L1342 430 L1354 430 L1354 490 Z" fill="#1b0a2e"/>
+  <path d="M1354 490 L1354 452 L1400 452 L1400 490 Z" fill="#1b0a2e"/>
+  <path d="M1400 490 L1400 440 L1410 440 L1410 428 L1422 428 L1422 440 L1432 440 L1432 490 Z" fill="#1b0a2e"/>
+  <g fill="#ffc46b" opacity=".85"><rect x="1332" y="444" width="5" height="7"/><rect x="1370" y="464" width="5" height="7"/><rect x="1410" y="452" width="5" height="7"/></g>
+</g>
+
+<!-- near ridge and pines -->
+<path d="M0 640 L140 585 L280 625 L420 570 L560 630 L700 596 L840 650 L980 600 L1120 648 L1260 604 L1400 646 L1600 598 L1600 900 L0 900 Z" fill="url(#nearhill)"/>
+<g fill="#090314" opacity=".95">
+  <path d="M86 640 l18-64 18 64 z"/><path d="M92 610 l12-42 12 42 z"/>
+  <path d="M188 648 l15-54 15 54 z"/>
+  <path d="M472 620 l20-70 20 70 z"/><path d="M478 590 l14-46 14 46 z"/>
+  <path d="M614 636 l16-58 16 58 z"/>
+  <path d="M1176 646 l19-66 19 66 z"/><path d="M1182 616 l13-44 13 44 z"/>
+  <path d="M1300 626 l15-52 15 52 z"/>
+</g>
+
+<rect y="640" width="1600" height="260" fill="url(#ground)"/>
+
+<!-- ============================ the tavern, right ============================ -->
+<g>
+  <ellipse cx="1245" cy="720" rx="330" ry="180" fill="url(#hearth)" opacity=".3"/>
+  <!-- body -->
+  <path d="M1105 790 L1105 648 L1385 648 L1385 790 Z" fill="#100621"/>
+  <!-- roof -->
+  <path d="M1080 652 L1245 556 L1410 652 Z" fill="#180a2e"/>
+  <!-- chimney + smoke -->
+  <path d="M1330 600 L1330 556 L1356 556 L1356 616 Z" fill="#180a2e"/>
+  <g fill="#c9a6e8" opacity=".14" filter="url(#warm)">
+    <ellipse cx="1344" cy="528" rx="17" ry="12"/><ellipse cx="1356" cy="494" rx="22" ry="14"/><ellipse cx="1338" cy="456" rx="27" ry="17"/>
+  </g>
+  <!-- windows, the warm part -->
+  <g>
+    <rect x="1136" y="678" width="74" height="60" rx="5" fill="#ffbe63"/>
+    <rect x="1136" y="678" width="74" height="60" rx="5" fill="#ffd79a" opacity=".5" filter="url(#warm)"/>
+    <rect x="1280" y="678" width="74" height="60" rx="5" fill="#ffbe63"/>
+    <rect x="1280" y="678" width="74" height="60" rx="5" fill="#ffd79a" opacity=".5" filter="url(#warm)"/>
+    <g fill="#100621">
+      <rect x="1171" y="678" width="4" height="60"/><rect x="1136" y="704" width="74" height="4"/>
+      <rect x="1315" y="678" width="4" height="60"/><rect x="1280" y="704" width="74" height="4"/>
+    </g>
+    <!-- somebody at the near window -->
+    <g fill="#5a2c10" opacity=".65">
+      <circle cx="1156" cy="702" r="10"/><path d="M1142 738 q14 -22 28 0 z"/>
+    </g>
+  </g>
+  <!-- door, light spilling out -->
+  <path d="M1226 790 L1226 706 q19 -20 38 0 L1264 790 Z" fill="#ffb457"/>
+  <path d="M1212 790 L1226 706 L1264 706 L1278 790 Z" fill="#ffd79a" opacity=".3" filter="url(#warm)"/>
+  <!-- hanging sign -->
+  <g>
+    <rect x="1392" y="662" width="6" height="34" fill="#180a2e"/>
+    <rect x="1362" y="694" width="66" height="34" rx="6" fill="#170a2c" stroke="#b07be0" stroke-width="2" opacity=".95"/>
+    <circle cx="1395" cy="711" r="8" fill="#ffc46b" opacity=".85"/>
+  </g>
+</g>
+
+<!-- ===================== lanterns strung across the yard ===================== -->
+<path d="M120 566 Q 520 636 900 578 Q 1180 536 1404 586" fill="none" stroke="#6b4a8c" stroke-width="2" opacity=".55"/>
+<g>
+  <g transform="translate(236,600)"><circle r="26" fill="url(#lantern)"/><circle r="6.5" fill="#ffd79a"/></g>
+  <g transform="translate(400,624)"><circle r="24" fill="url(#lantern)"/><circle r="6" fill="#ffc9f0"/></g>
+  <g transform="translate(568,632)"><circle r="26" fill="url(#lantern)"/><circle r="6.5" fill="#ffd79a"/></g>
+  <g transform="translate(740,618)"><circle r="24" fill="url(#lantern)"/><circle r="6" fill="#cfe9ff"/></g>
+  <g transform="translate(910,586)"><circle r="26" fill="url(#lantern)"/><circle r="6.5" fill="#ffd79a"/></g>
+  <g transform="translate(1078,562)"><circle r="24" fill="url(#lantern)"/><circle r="6" fill="#ffc9f0"/></g>
+  <g transform="translate(1248,556)"><circle r="24" fill="url(#lantern)"/><circle r="6" fill="#ffd79a"/></g>
+</g>
+
+<!-- ======================= the party at the long table ======================= -->
+<g>
+  <ellipse cx="470" cy="800" rx="330" ry="150" fill="url(#hearth)" opacity=".34"/>
+
+  <!-- bard, standing, mid-song -->
+  <g fill="#090314">
+    <circle cx="238" cy="672" r="20"/>
+    <path d="M238 654 q-24 -6 -30 -20 q22 2 30 10 q10 -10 30 -12 q-8 16 -30 22 z"/>
+    <path d="M216 694 q22 -14 44 0 l10 86 q-32 12 -64 0 z"/>
+    <path d="M262 706 q30 12 34 40 l-14 8 q-8 -22 -28 -32 z"/>
+    <path d="M214 706 q-26 14 -26 42 l14 6 q2 -24 20 -34 z"/>
+    <path d="M226 780 l-6 62 12 0 10 -54 8 54 12 0 -6 -62 z"/>
+  </g>
+  <!-- the lute -->
+  <g transform="translate(276,742) rotate(-24)">
+    <ellipse cx="0" cy="0" rx="25" ry="31" fill="#2a1226"/>
+    <circle cx="0" cy="-3" r="8" fill="#090314"/>
+    <rect x="-3.5" y="-72" width="7" height="46" rx="3" fill="#2a1226"/>
+    <path d="M-8 -78 q8 -10 16 0 l0 8 -16 0 z" fill="#2a1226"/>
+    <g stroke="#e6c79a" stroke-width=".8" opacity=".55">
+      <path d="M-3 -66 L-2 18"/><path d="M0 -66 L0 20"/><path d="M3 -66 L2 18"/>
+    </g>
+  </g>
+  <!-- notes drifting up, lit -->
+  <g fill="#e7a8ff" opacity=".6">
+    <g transform="translate(316,668)"><ellipse rx="5" ry="3.6" transform="rotate(-20)"/><rect x="3.4" y="-17" width="1.8" height="17"/></g>
+    <g transform="translate(348,626) scale(.85)"><ellipse rx="5" ry="3.6" transform="rotate(-20)"/><rect x="3.4" y="-17" width="1.8" height="17"/><path d="M5.2 -17 q9 4 7 12" fill="none" stroke="#e7a8ff" stroke-width="1.8"/></g>
+    <g transform="translate(378,592) scale(.7)" opacity=".8"><ellipse rx="5" ry="3.6" transform="rotate(-20)"/><rect x="3.4" y="-17" width="1.8" height="17"/></g>
+  </g>
+
+  <!-- the table -->
+  <path d="M330 782 L724 782 L740 800 L314 800 Z" fill="#150826"/>
+  <rect x="352" y="800" width="13" height="58" fill="#0d0418"/>
+  <rect x="690" y="800" width="13" height="58" fill="#0d0418"/>
+
+  <!-- the candle in the middle of it, which is where the warmth comes from -->
+  <circle cx="530" cy="754" r="62" fill="url(#hearth)" opacity=".85"/>
+  <rect x="524" y="750" width="12" height="32" fill="#e8d3a8"/>
+  <path d="M530 726 q9 12 0 24 q-9 -12 0 -24 z" fill="#ffd79a"/>
+  <circle cx="530" cy="742" r="15" fill="#ffc46b" opacity=".5" filter="url(#warm)"/>
+
+  <!-- four of them round it, mugs up -->
+  <g fill="#090314">
+    <!-- left, leaning in -->
+    <g transform="translate(398,0)">
+      <circle cx="0" cy="700" r="19"/>
+      <path d="M-22 722 q22 -14 44 0 l6 60 -56 0 z"/>
+      <path d="M18 730 q26 -2 30 -26 l-13 -5 q-4 16 -20 18 z"/>
+    </g>
+    <!-- centre-left, mug raised -->
+    <g transform="translate(474,0)">
+      <circle cx="0" cy="690" r="18"/>
+      <path d="M-21 712 q21 -13 42 0 l5 70 -52 0 z"/>
+      <path d="M-16 718 q-24 -8 -24 -34 l13 -3 q1 17 16 22 z"/>
+    </g>
+    <!-- centre-right -->
+    <g transform="translate(596,0)">
+      <circle cx="0" cy="694" r="18"/>
+      <path d="M-21 716 q21 -13 42 0 l5 66 -52 0 z"/>
+      <path d="M17 722 q25 -4 27 -28 l-13 -4 q-3 17 -18 20 z"/>
+    </g>
+    <!-- right, hooded, back to us -->
+    <g transform="translate(676,0)">
+      <path d="M0 668 q26 4 28 34 l4 80 -64 0 l4 -80 q2 -30 28 -34 z"/>
+      <path d="M-26 712 q-26 10 -24 36 l13 3 q0 -18 16 -25 z"/>
+    </g>
+  </g>
+  <!-- the mugs, catching the candle -->
+  <!-- the mugs sit in the hands that are holding them: the two on the left are
+       mid-clink, which is the whole reason this picture exists -->
+  <g fill="#c98f4e">
+    <g transform="translate(452,700) rotate(14)"><rect x="-8" y="-11" width="16" height="21" rx="3"/><path d="M8 -6 q9 5 0 11" fill="none" stroke="#c98f4e" stroke-width="3.4"/><ellipse cy="-11" rx="8" ry="3" fill="#fff0cf" opacity=".9"/></g>
+    <g transform="translate(428,678) rotate(-14)"><rect x="-8" y="-11" width="16" height="21" rx="3"/><path d="M-8 -6 q-9 5 0 11" fill="none" stroke="#c98f4e" stroke-width="3.4"/><ellipse cy="-11" rx="8" ry="3" fill="#fff0cf" opacity=".9"/></g>
+    <g transform="translate(646,690) rotate(12)"><rect x="-8" y="-11" width="16" height="21" rx="3"/><path d="M8 -6 q9 5 0 11" fill="none" stroke="#c98f4e" stroke-width="3.4"/><ellipse cy="-11" rx="8" ry="3" fill="#fff0cf" opacity=".9"/></g>
+  </g>
+  <circle cx="440" cy="688" r="26" fill="url(#lantern)" opacity=".35"/>
+  <!-- a pool of candlelight on the ground beside them -->
+  <ellipse cx="672" cy="842" rx="78" ry="26" fill="url(#hearth)" opacity=".3"/>
+  <g>
+  </g>
+</g>
+
+<!-- a little mist along the ground so nothing sits hard on the edge -->
+<g opacity=".16" filter="url(#soft)" fill="#b98bd8">
+  <ellipse cx="300" cy="870" rx="380" ry="34"/><ellipse cx="960" cy="884" rx="440" ry="30"/><ellipse cx="1420" cy="862" rx="300" ry="26"/>
+</g>
+</svg>

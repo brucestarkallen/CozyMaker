@@ -224,3 +224,73 @@ textarea.plain { resize: vertical; min-height: 90px; font-family: var(--mono); f
   max-width: 88vw; text-align: center;
 }
 .toast.on { opacity: 1; }
+
+
+/* ===================== the tavern at night =====================
+ * A drawn scene, one file, no photograph and nothing fetched from anywhere.
+ *
+ * THE FRAMING IS THE WHOLE PROBLEM. The scene is wide; a phone held upright is
+ * not. Told to cover the screen, it crops to a four-hundred-pixel slice of
+ * empty sky and the party, the tavern and the bard are all off the edges. So
+ * it is laid along the bottom at its full width instead, at its own
+ * proportions, with the sky above it painted to match and the top of it faded
+ * out so there is no seam. Everything in the picture is on screen, and the
+ * words sit on open sky where they are easiest to read. */
+
+:root[data-theme="tavern"] {
+  color-scheme: dark;
+  --ink: #f4e9f7; --ink-soft: #cbb6d9; --ink-faint: #9782ab;
+  --bg: #0a0614; --bg-warm: rgba(14,8,26,.72); --panel: rgba(36,21,60,.72);
+  --panel-high: rgba(50,30,78,.85); --edge: rgba(155,113,201,.3);
+  --glow: #eaab52; --glow-soft: #c77dff;
+  --mine: rgba(60,34,90,.78); --theirs: rgba(20,12,36,.42);
+}
+
+:root[data-theme="tavern"] body {
+  background: linear-gradient(180deg, #07040f 0%, #150a2c 32%, #241040 64%, #33114d 100%);
+  background-attachment: fixed;
+}
+
+:root[data-theme="tavern"] body::before {
+  content: ''; position: fixed; left: 0; right: 0; bottom: 0; z-index: -2;
+  /* Tall enough for the picture AND for the lift under it. Sized to the
+   * picture alone, raising it simply cut the sky, the moons and the aurora
+   * off the top of the layer. */
+  height: min(80vh, calc(100vw * 0.5625 + 74px));
+  /* Lifted clear of the box you type in. Pinned to the very bottom, the part
+   * worth looking at — the table, the candle, the lit windows — sits behind
+   * the composer and is never seen at all. */
+  background: url('/css/tavern-night.svg') no-repeat center calc(100% - 74px) / 100% auto;
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 24%, #000 100%);
+          mask-image: linear-gradient(180deg, transparent 0, #000 24%, #000 100%);
+}
+
+/* Heavy through the middle where the words are, almost nothing at the bottom
+ * where the candle is. */
+:root[data-theme="tavern"] body::after {
+  content: ''; position: fixed; inset: 0; z-index: -1;
+  background: linear-gradient(180deg,
+    rgba(8,5,17,.16) 0%, rgba(8,5,17,.58) 24%, rgba(8,5,17,.70) 56%,
+    rgba(8,5,17,.40) 84%, rgba(8,5,17,.04) 100%);
+}
+
+:root[data-theme="tavern"] .topbar {
+  background: linear-gradient(180deg, rgba(10,6,20,.9), rgba(10,6,20,0));
+}
+:root[data-theme="tavern"] .composer {
+  background: linear-gradient(0deg, rgba(10,6,20,.72) 30%, rgba(10,6,20,.3) 70%, rgba(10,6,20,0));
+}
+:root[data-theme="tavern"] .turn .bubble,
+:root[data-theme="tavern"] .row,
+:root[data-theme="tavern"] .card,
+:root[data-theme="tavern"] .composer textarea {
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+}
+/* The one it says back to you sits straight on the night with no box, so the
+ * weight behind the letters is what carries the contrast. */
+:root[data-theme="tavern"] .turn.maker .bubble {
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+  text-shadow: 0 1px 12px rgba(6,3,14,.98), 0 0 3px rgba(6,3,14,.9);
+}
+:root[data-theme="tavern"] .sheet { background: rgba(10,6,20,.97); }
+:root[data-theme="tavern"] .docedit textarea { background: transparent; }

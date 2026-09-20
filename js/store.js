@@ -123,13 +123,18 @@ export function setProject(next, { now = false } = {}) {
 export function flush() {
   clearTimeout(saveTimer);
   if (!project || !dirty) return saving;
-  const snapshot = JSON.parse(JSON.stringify(project));
+  /* Serialised ONCE. The obvious way — clone the world, then stringify the
+   * clone — walks everything twice on the main thread on every save, which is
+   * exactly what made the other frontend stutter on a long story. The string
+   * is the snapshot: nothing can mutate it while the save is in flight. */
+  const id = project.id;
+  const body = JSON.stringify(project);
   dirty = false;
   saving = saving.then(() =>
-    api('/api/project/' + snapshot.id, {
+    api('/api/project/' + id, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(snapshot),
+      body,
     }).catch((e) => { dirty = true; console.warn('save did not land:', e.message); })
   );
   return saving;

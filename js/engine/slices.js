@@ -89,7 +89,10 @@ export const JOBS = {
 /* Fetch the craft once. */
 export async function loadEngine(fetcher = fetch) {
   if (CACHE) return CACHE;
-  const res = await fetcher('engine/generalist.md', { cache: 'no-store' });
+  /* Rooted, not relative. A relative fetch resolves against whatever base
+   * the caller happens to have, and a craft file that quietly 404s leaves
+   * every worker reading nothing while the app looks perfectly well. */
+  const res = await fetcher('/engine/generalist.md', { cache: 'no-store' });
   if (!res.ok) throw new Error('the craft file could not be read (engine/generalist.md)');
   const text = await res.text();
   CACHE = cutSections(text);

@@ -23,7 +23,7 @@ import { route } from '../js/agents/router.js';
 import { buildRequest, readAnswer, readChunk, houseOf, alwaysThinks } from '../js/providers.js';
 import { personaOf, greeting, openingFor, inPerson } from '../js/agents/persona.js';
 import { pickConnection } from '../js/agents/roster.js';
-import { naturalize, commit, sweep, backstageBrief } from '../js/agents/run.js';
+import { naturalize, commit, sweep, backstageBrief, capUndo, UNDO_KEPT } from '../js/agents/run.js';
 
 let pass = 0, fail = 0;
 const failures = [];
@@ -471,6 +471,67 @@ ok('the front is told what changed', told.includes('Plot Essential.md (1 change)
 ok('the front is told what did not', /Not done/.test(told));
 
 ok('a token count is roughly right', Math.abs(estimateTokens('a'.repeat(400)) - 100) <= 1);
+
+/* ============ the faults the other two frontends already paid for ======== */
+
+/* A question is somebody thinking out loud. Answering it is the front of the
+ * house's work, not a worker's. */
+for (const talk of [
+  'does that make her too similar to Aldric?',
+  'do you think the world is too big',
+  'is she too similar to the other one?',
+  'should we cut some of the subplots?',
+  'what would you call a city like that?',
+  'how many characters do we have now?',
+  'why is the timeline like that',
+  'that makes sense to me',
+  'can you explain why you did it that way',
+]) eq(`asking, not telling: ${talk}`, route(talk).map((r) => r.worker), []);
+
+/* …but manners are not a question. */
+eq('manners do not hide an instruction', route("can you change Claire's age to 15").map((r) => r.worker), ['editor']);
+eq('politeness at the front is stripped', route('could you please fold all that into the plot essential').map((r) => r.worker), ['chronicler']);
+/* …and some jobs ARE questions by nature. */
+eq('a question that is its own job still lands', route('why did the storyteller say Claire already knew').map((r) => r.worker), ['diagnostician']);
+eq('asking for a check still lands', route('are there any contradictions in this').map((r) => r.worker), ['eye']);
+eq('asking whether it holds up still lands', route('does this make sense').map((r) => r.worker), ['eye']);
+
+/* What a worker has not been shown, it may not rewrite. */
+const partial = brief(bigDoc, 'Plot Essential.md', { message: 'TIMELINE' });
+ok('a partly-shown document says so in as many words', /do not rewrite the whole of it/i.test(partial));
+const whole = brief(parseDoc('## ONE\nall of it is here\n', 'pe'), 'Small.md', { message: 'ONE' });
+ok('a fully-shown document carries no such warning', !/do not rewrite/i.test(whole), whole);
+
+/* A block cut off by the reply limit is not "no changes". */
+ok('a truncated list of changes is reported',
+  /cut off/.test(parseEdits('here you go\n<edits>\n[\n  {"file":"a.md","find":"x"').warn));
+ok('the word in ordinary prose is not a truncation',
+  parseEdits('I would put that in an <edits> block if it needed changing.').warn === '',
+  parseEdits('I would put that in an <edits> block if it needed changing.').warn);
+ok('ordinary prose naming the word survives whole',
+  stripEdits('I would use an <edits> block.') === 'I would use an <edits> block.');
+
+/* No machinery tag reaches the voice the writer hears. */
+ok('a stray tag never reaches the front', !/<edits|<need/.test(naturalize('done <edits> [ half a block')));
+
+/* The undo net is a net, not an archive. */
+const netProject = { turns: [] };
+for (let i = 0; i < UNDO_KEPT + 5; i++) {
+  netProject.turns.push({ role: 'maker', batches: [{ id: 'b' + i, items: [{ name: 'Plot Essential.md', before: PE, afterHash: 'x' }], undone: false }] });
+}
+const trimmed = capUndo(netProject);
+const batches = netProject.turns.map((t) => t.batches[0]);
+ok('the net trimmed something', trimmed);
+eq('the newest stay undoable', batches.slice(-UNDO_KEPT).filter((b) => b.tooOld).length, 0);
+eq('the oldest lose only their payload', batches.slice(0, 5).filter((b) => b.tooOld && !b.items[0].before).length, 5);
+ok('an aged-out record still exists as a record', batches[0].items.length === 1);
+ok('putting back an aged-out record refuses honestly',
+  !undoBatch([{ name: 'Plot Essential.md', text: PE }], batches[0]).ok);
+ok('capping twice changes nothing more', capUndo(netProject) === false);
+
+/* The craft file is asked for from the root, never relative to a caller. */
+ok('the craft is fetched from the root',
+  readFileSync(join(ROOT, 'js/engine/slices.js'), 'utf8').includes("fetcher('/engine/generalist.md'"));
 
 /* ================================================================ done */
 

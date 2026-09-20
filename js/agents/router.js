@@ -33,31 +33,45 @@ const COMMANDS = [
 ];
 
 /* Plain words. Each worker has the shapes of sentence that mean its job.
- * Ordered: the first that matches within a clause wins that clause. */
+ *
+ * TWO LISTS, AND THE REASON FOR THEM: "does that make her too similar to
+ * Aldric?" used to send the editor, and "do you think the world is too big"
+ * used to send the compressor, because both hold the words a job is usually
+ * asked in. They are questions. A question is somebody thinking out loud, and
+ * answering it is the front of the house's work, not a worker's.
+ *
+ *   always    — shapes that ARE questions by nature ("why did the storyteller
+ *               …", "are there any contradictions") and mean the job whichever
+ *               way they are put.
+ *   statement — shapes that only mean the job when the writer is telling
+ *               rather than asking. Suppressed inside a question.
+ *
+ * A politeness opener ("can you", "could you", "please") is stripped first, so
+ * "can you change Claire's age to fifteen" is still an instruction. */
 const PLAIN = [
-  ['builder', [
+  ['builder', { always: [], statement: [
     /\b(start|begin|create|build|make)\b.{0,24}\b(new|fresh)\b.{0,24}\b(story|world|plot essential|pe|setting|book)\b/i,
     /\bnew (story|world|plot essential|book|setting)\b/i,
     /\bhere('| i)s my (world|setting|premise|story idea|characters|cast|roster)\b/i,
     /\b(import|bring (in|over)|rebuild)\b.{0,30}\b(old|previous|existing|my) (story|doc|document|pe|plot essential)\b/i,
     /\bfrom scratch\b/i,
     /\bworld ?build/i,
-  ]],
-  ['chronicler', [
+  ] }],
+  ['chronicler', { always: [], statement: [
     /\b(fold|integrate|merge|roll)\b.{0,30}\b(in(to)?|to)\b.{0,20}\b(the )?(pe|plot essential)\b/i,
     /\bupdate the (pe|plot essential)\b/i,
     /\bhere('| i)s what (happened|the storyteller wrote|came back)\b/i,
     /\bthis is the (latest|last) (chapter|scene|output|reply)\b/i,
     /\b(record|log|capture) (this|these|what happened)\b/i,
-  ]],
-  ['scribe', [
+  ] }],
+  ['scribe', { always: [], statement: [
     /\b(continuity|continuation) file\b/i,
     /\b(audit|clean up|fix|check) the (ception|summary|summaryception|bullets|notes)\b/i,
     /\bsummari[sz]e (these|this|the) (bullets|notes|summary|prose|log)\b/i,
     /\bturn (these|this) .{0,20}into a (file|brief|continuation)\b/i,
     /\bsummaryception\b/i,
-  ]],
-  ['editor', [
+  ] }],
+  ['editor', { always: [], statement: [
     /\b(change|set|make|update|fix|correct)\b[^.?!]{0,40}\b(to|into|as)\b/i,
     /\b(add|give|remove|delete|drop)\b[^.?!]{0,40}\b(to|from|for)\b[^.?!]{0,30}\b(profile|dossier|entry|core|id|skills|rels|character|npc)\b/i,
     /\b(add|give)\b[^.?!]{0,30}\bto\s+[A-Z][a-z]+/,
@@ -65,39 +79,44 @@ const PLAIN = [
     /\brename\b/i,
     /\bretcon\b/i,
     /\bdelete\s+[A-Z][a-z]+/,
-  ]],
-  ['showrunner', [
+  ] }],
+  ['showrunner', { always: [], statement: [
     /\b(clean ?up|tidy|untangle|declutter|reshape)\b/i,
     /\b(convoluted|tangled|knotted|messy|all over the place|hard to follow|lost the thread)\b/i,
     /\btoo many (subplots|threads|arcs|characters)\b/i,
-    /\bwhat is (this|the) story even about\b/i,
-  ]],
-  ['compressor', [
+  ] }],
+  ['compressor', { always: [], statement: [
     /\b(optimi[sz]e|compress|shorten|tighten|trim)\b/i,
     /\btoo (long|big|many tokens|heavy)\b/i,
     /\b(cut|reduce) the (size|tokens|length)\b/i,
     /\bfewer tokens\b/i,
-  ]],
-  ['novelist', [
-    /\b#?skip\b/i,
+  ] }],
+  ['novelist', { always: [/\b#?skip\b/i], statement: [
     /\bi want\b[^.?!]{0,60}\bto happen\b/i,
     /\b(get|jump|move|fast ?forward)\b[^.?!]{0,30}\bto (the point|where|when)\b/i,
     /\bbridge\b[^.?!]{0,20}\b(to|between)\b/i,
     /\bwhat('| i)s the best scene\b/i,
-  ]],
-  ['diagnostician', [
+  ] }],
+  ['diagnostician', { always: [
     /\bwhy did the storyteller\b/i,
+    /\bwhere did (that|this) come from\b/i,
+  ], statement: [
     /\b(the )?storyteller\b[^.?!]{0,40}\b(got it wrong|broke|contradicted|made (that|this) up|is confused)\b/i,
     /\bout of character\b/i,
-    /\bwhere did (that|this) come from\b/i,
-  ]],
-  ['eye', [
-    /\b(check|audit|review|go over|read back|look over)\b[^.?!]{0,30}\b(everything|the whole|all of it|the pe|the plot essential|the files?|for (mistakes|errors|problems|contradictions))\b/i,
+  ] }],
+  ['eye', { always: [
     /\bis (it|everything|this) (consistent|right|clean|correct)\b/i,
     /\b(any|are there) (mistakes|errors|contradictions|problems)\b/i,
     /\bdoes (this|it) (make sense|hold up|hold together)\b/i,
-  ]],
+  ], statement: [
+    /\b(check|audit|review|go over|read back|look over)\b[^.?!]{0,30}\b(everything|the whole|all of it|the pe|the plot essential|the files?|for (mistakes|errors|problems|contradictions))\b/i,
+  ] }],
 ];
+
+/* Somebody asking, not telling. */
+const ASKING = /^\s*(do|does|did|is|are|was|were|am|should|shall|would|could|can|may|might|will|have|has|what|why|how|who|whom|whose|when|where|which)\b/i;
+/* …unless the question mark is only manners. */
+const MANNERS = /^\s*(please\s+)?(can|could|would|will)\s+(you\s+)?(please\s+)?/i;
 
 /* Sentences that are conversation and nothing else — no worker, just talk. */
 const JUST_TALKING = [
@@ -117,8 +136,19 @@ function clauses(message) {
 
 function readOne(text) {
   for (const [re, worker] of COMMANDS) if (re.test(text)) return { worker, why: 'written command', strong: true };
+
+  /* Strip the manners first: "can you change her age to fifteen" is an
+   * instruction wearing a question mark. What is left is judged on its own. */
+  const polite = MANNERS.test(text);
+  const bare = polite ? text.replace(MANNERS, '') : text;
+  const asking = !polite && ASKING.test(text);
+
   for (const [worker, shapes] of PLAIN) {
-    for (const re of shapes) if (re.test(text)) return { worker, why: 'plain words', strong: false };
+    for (const re of shapes.always) if (re.test(bare)) return { worker, why: 'plain words', strong: false };
+  }
+  if (asking) return null;
+  for (const [worker, shapes] of PLAIN) {
+    for (const re of shapes.statement) if (re.test(bare)) return { worker, why: 'plain words', strong: false };
   }
   return null;
 }

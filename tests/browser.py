@@ -297,8 +297,13 @@ def main():
                 + "\n## EMPTY BIT\n\n"
                 + "## STILL HERE\ne002 [Tue 15 Apr 247, 10:00] [tension]: something [EPISTEMIC_VIOLATION] happened.\n")
             page.wait_for_timeout(900)
-            page.locator("#docsBody .btn", has_text="Tidy it").click()
+            ok("there is no second way to tidy a document",
+               page.locator("#docsBody .btn", has_text="Tidy").count() == 0)
+            # leaving the document is what runs the checks — no button, no chore
+            page.locator("#docsAction").click()
             page.wait_for_timeout(700)
+            page.locator("#docsBody .row .grow").first.click()
+            page.wait_for_timeout(500)
             after = page.locator("#docsBody textarea").input_value()
             ok("tidying takes the working marker out", "[EPISTEMIC_VIOLATION]" not in after)
             ok("tidying takes a genuinely empty heading out", "## EMPTY BIT" not in after)
@@ -308,9 +313,11 @@ def main():
             ok("tidying keeps those subsections", "### Rules" in after)
             ok("tidying keeps the main character", "## MC \u2014 Jovan (17)" in after)
             ok("tidying keeps the story", "The showcase opened in the east hall" in after)
-            ok("tidying says what it could not do itself",
-               "crew" in page.locator("#toast").inner_text() or "Put right" in page.locator("#toast").inner_text(),
-               page.locator("#toast").inner_text())
+            said = page.locator("#toast").inner_text()
+            ok("leaving a document says what was put right, and names it",
+               "Plot Essential.md" in said and "marker" in said, said)
+            ok("it reports, it does not hand over a task",
+               not any(w in said.lower() for w in ("you should", "please ", "needs your", "tap ")), said)
 
             page.click("#docsSheet [data-close]")
             page.wait_for_timeout(300)
@@ -326,6 +333,64 @@ def main():
             page.wait_for_timeout(1200)
             ok("a connection can be tried for real", "Working" in page.locator("#toast").inner_text(),
                page.locator("#toast").inner_text())
+
+            # -- the coats of paint --------------------------------------------
+            coat = page.locator("label.field", has_text="Coat of paint").locator("select")
+            ok("the coats of paint are offered by name", coat.count() == 1)
+            coat.select_option(label="The tavern at night — purple sky, a bard, somebody buying a round")
+            page.wait_for_timeout(600)
+            ok("a coat of paint goes on straight away",
+               page.evaluate("document.documentElement.getAttribute('data-theme')") == "tavern")
+            drew = page.evaluate("""() => {
+              const s = getComputedStyle(document.body, '::before');
+              return { img: s.backgroundImage, h: s.height };
+            }""")
+            ok("the night scene is actually painted", "tavern-night.svg" in drew["img"], json.dumps(drew))
+            ok("the scene is given room for the whole picture", int(float(drew["h"].replace("px", ""))) > 200, drew["h"])
+            scene = urllib.request.urlopen(f"http://127.0.0.1:{PORT}/css/tavern-night.svg")
+            body = scene.read().decode()
+            ok("the scene is served", scene.status == 200 and body.startswith("<svg"))
+            ok("the scene is served as a drawing", "image/svg" in scene.headers.get("Content-Type", ""))
+            # a namespace is not a fetch; these are the things that would be
+            ok("the scene fetches nothing from anywhere",
+               "<image" not in body and "xlink:href" not in body
+               and "@import" not in body and "url(http" not in body)
+            ok("the scene has the party in it", 'the party at the long table' in body)
+            ok("the scene has the bard in it", 'bard, standing, mid-song' in body)
+
+            page.reload(wait_until="networkidle")
+            page.wait_for_timeout(700)
+            ok("the coat of paint is still on after a reload",
+               page.evaluate("document.documentElement.getAttribute('data-theme')") == "tavern")
+            # Measured off the painted pixels, not guessed: the text colour
+            # against the BRIGHTEST part of the night actually sitting behind
+            # that paragraph. A picture behind words is only worth having if
+            # the words are still easy to read on the worst patch of it.
+            bubble = page.locator(".turn.maker .bubble").first
+            box = bubble.bounding_box()
+            ink = page.evaluate("getComputedStyle(document.querySelector('.turn.maker .bubble')).color")
+            page.screenshot(path="/tmp/cm-contrast.png")
+            from PIL import Image
+            im = Image.open("/tmp/cm-contrast.png").convert("RGB")
+            scale = im.width / 390
+            y0 = int(box["y"] * scale); y1 = int((box["y"] + box["height"]) * scale)
+            # the stream's own 16px margin, which holds no text at all
+            strip = im.crop((0, y0, int(13 * scale), y1))
+            def lum(rgb):
+                out = []
+                for v in rgb:
+                    v /= 255.0
+                    out.append(v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4)
+                return 0.2126 * out[0] + 0.7152 * out[1] + 0.0722 * out[2]
+            raw = strip.tobytes()
+            worst = max(lum(raw[i:i + 3]) for i in range(0, len(raw), 3))
+            text = lum(tuple(int(v) for v in re.findall(r"\d+", ink)[:3]))
+            ratio = (max(text, worst) + 0.05) / (min(text, worst) + 0.05)
+            ok("the words stay readable on the brightest part of the night",
+               ratio >= 7, f"measured {ratio:.1f}:1 against the real backdrop")
+            print(f"(measured text contrast over the scene: {ratio:.1f}:1)")
+            page.click("#settingsBtn")
+            page.wait_for_timeout(400)
 
             page.locator("#houseBody details summary", has_text="what each of them reads").click()
             page.wait_for_timeout(800)

@@ -3,12 +3,12 @@
  */
 
 import * as store from '../store.js';
-import { runTurn } from '../agents/run.js';
+import { runTurn, capUndo } from '../agents/run.js';
 import { onWork, setActiveProject, stopWork } from '../agents/call.js';
 import { undoBatch } from '../doc/edits.js';
 import { personaOf, names } from '../agents/persona.js';
 import { $, el, escape, openSheet, closeSheet, toast, applyTheme, onRedraw } from './kit.js';
-import { openDocs } from './docs.js';
+import { openDocs, tidyOnLeaving, currentDocId } from './docs.js';
 import { openHouse } from './settings.js';
 const stream = $('stream');
 const say = $('say');
@@ -53,7 +53,11 @@ function wire() {
     draw();
   });
   for (const b of document.querySelectorAll('[data-close]')) {
-    b.addEventListener('click', () => closeSheet(b.getAttribute('data-close')));
+    b.addEventListener('click', () => {
+      const id = b.getAttribute('data-close');
+      if (id === 'docsSheet' && currentDocId()) tidyOnLeaving(currentDocId());
+      closeSheet(id);
+    });
   }
   onWork((state) => { if (state.busy) setStatus(state.label); });
   store.watch(() => drawHeader());
@@ -169,8 +173,9 @@ function cardsNode(t) {
   for (const b of t.batches || []) {
     const row = el('div', 'card');
     row.append(el('span', 'dot'));
-    row.append(el('span', 'grow', b.undone ? 'put back' : `${b.items.length} document${b.items.length === 1 ? '' : 's'} changed`));
-    if (!b.undone) {
+    const what = `${b.items.length} document${b.items.length === 1 ? '' : 's'} changed`;
+    row.append(el('span', 'grow', b.undone ? 'put back' : b.tooOld ? what : what));
+    if (!b.undone && !b.tooOld) {
       const u = el('button', 'undo', 'put it back');
       u.addEventListener('click', () => putBack(t, b));
       row.append(u);
@@ -255,6 +260,7 @@ async function send() {
     batches: result.batches || [],
     at: Date.now(),
   }];
+  capUndo(next);
   await store.setProject(next, { now: true });
 
   sending = false;

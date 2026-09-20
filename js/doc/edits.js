@@ -76,7 +76,22 @@ export function tolerantJson(body) {
 
 export function parseEdits(text) {
   const blocks = findBlocks(text, 'edits');
-  if (!blocks.length) return { edits: [], warn: '' };
+  if (!blocks.length) {
+    /* AN UNCLOSED OPENER IS A TRUNCATION ONLY WHEN THE TAIL OPENS LIKE ONE.
+     * The word turns up in ordinary prose, and treating that as a cut-off
+     * block would throw away a reply that was never cut off. But a block that
+     * really was cut short by the reply limit must not pass as "no changes" —
+     * that is silence standing in for lost work. */
+    const src = String(text || '');
+    const at = src.toLowerCase().lastIndexOf('<edits>');
+    if (at !== -1) {
+      const tail = src.slice(at + 7).trim();
+      if (tail.startsWith('[') || tail.startsWith('{') || tail.startsWith('```')) {
+        return { edits: [], warn: 'the list of changes was cut off before it finished, so none of it was used' };
+      }
+    }
+    return { edits: [], warn: '' };
+  }
   const edits = [];
   let warn = '';
   for (const b of blocks) {
@@ -298,6 +313,7 @@ export function applyRun(docs, edits, { label = 'a change' } = {}) {
  * nothing. Silently overwriting a later change is worse than refusing. */
 export function undoBatch(docs, batch) {
   if (!batch || batch.undone) return { ok: false, why: 'that has already been put back' };
+  if (batch.tooOld) return { ok: false, why: 'that one is too far back to put back now' };
   const byName = new Map(docs.map((d) => [d.name, d]));
   for (const item of batch.items) {
     const live = byName.get(item.name);

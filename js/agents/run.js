@@ -54,6 +54,7 @@ If he is just talking, just talk. Not every sentence is a job.`;
 /* Strip the crew's working shorthand out of anything the front will read. */
 export function naturalize(text) {
   return String(text || '')
+    .replace(/<\/?(?:edits|need)>?/gi, '')
     .replace(/\[[A-Z][A-Z0-9_]{4,}\]/g, '')
     .replace(/\b(?:section|§)\s*\d+(?:\.\d+)*\b/gi, '')
     .replace(/\bSCAN EVIDENCE\b:?/gi, 'what was read:')
@@ -366,6 +367,30 @@ export function sweep(project) {
     }
   }
   return { project: next, repaired, handOver };
+}
+
+export const UNDO_KEPT = 20;
+
+/* AN UNDO RECORD HOLDS A WHOLE DOCUMENT. Twenty of them is a comfortable
+ * safety net; two hundred is a copy of the plot essential per turn sitting in
+ * the world file for ever, and it is the writer's phone that carries it. The
+ * newest stay undoable. Older ones keep their card — the record of what
+ * happened is never thrown away — and lose only the text behind it. */
+export function capUndo(project, keep = UNDO_KEPT) {
+  const turns = project.turns || [];
+  const all = [];
+  for (let i = turns.length - 1; i >= 0; i--) {
+    for (const b of turns[i].batches || []) all.push(b);
+  }
+  let trimmed = false;
+  for (let n = keep; n < all.length; n++) {
+    const b = all[n];
+    if (b.tooOld) continue;
+    b.tooOld = true;
+    for (const item of b.items || []) delete item.before;
+    trimmed = true;
+  }
+  return trimmed;
 }
 
 /* What the front of the house is told about the backstage work — plain
