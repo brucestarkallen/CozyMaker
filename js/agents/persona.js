@@ -77,9 +77,34 @@ export function inPerson(p, secondPersonText) {
 /* The whole opening the front-of-house intelligence reads. The writer's own
  * instructions first and untouched; then, in the same conversational voice,
  * what this place is and how the two of them work here. */
+/* {{user}} and {{char}} — and <USER> and <BOT> — are SillyTavern's names for
+ * the two of them. His instructions come from there, and sent raw they reach
+ * the model as template syntax (Cozy Tavern M361). They are read as his names,
+ * whole words only, exactly as SillyTavern does. A macro whose name box is
+ * empty is left as written rather than guessed at. */
+/* {{user}} is read in any case, as SillyTavern reads it; <USER> and <BOT> only
+ * in capitals — a preset's own <user> tag is markup, not a name. */
+export const MACROS = /\{\{\s*([Uu][Ss][Ee][Rr]|[Cc][Hh][Aa][Rr])\s*\}\}|<(USER|BOT)>/g;
+export function voiceMacros(text, p) {
+  return String(text || '').replace(MACROS, (whole, curly, angle) => {
+    const which = (curly || (angle && angle.toUpperCase() === 'USER' ? 'user' : 'char')).toLowerCase();
+    const name = which === 'user' ? p.you : p.maker;
+    return name || whole;
+  });
+}
+export function unfilledMacros(p) {
+  const found = new Set();
+  for (const m of String(p.frame || '').matchAll(MACROS)) {
+    const which = (m[1] || (m[2] && m[2].toUpperCase() === 'USER' ? 'user' : 'char')).toLowerCase();
+    if (which === 'user' && !p.you) found.add('{{user}}');
+    if (which === 'char' && !p.maker) found.add('{{char}}');
+  }
+  return [...found];
+}
+
 export function openingFor(p, body) {
   const bits = [];
-  if (p.frame && p.frame.trim()) bits.push(p.frame.trim());
+  if (p.frame && p.frame.trim()) bits.push(voiceMacros(p.frame.trim(), p));
   const hello = greeting(p);
   if (hello) bits.push(hello);
   bits.push(inPerson(p, body));

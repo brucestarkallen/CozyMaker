@@ -13,7 +13,7 @@
  * so work for a world the writer has left never lands in the one he opened.
  */
 
-import { buildRequest, readAnswer, readChunk, WORKER_ROOM } from '../providers.js';
+import { buildRequest, readAnswer, readChunk, WORKER_ROOM, withoutThinking, THINKING_FIELDS, REASONING_REFUSAL } from '../providers.js';
 
 export const MAX_RETRIES = 4;
 export const BACKOFF_MS = [2000, 4000, 8000, 16000];
@@ -48,6 +48,7 @@ export async function callModel(conn, opts = {}) {
   });
 
   let lastError = 'the call did not go through';
+  let steppedDown = false;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     if (opts.stale && opts.stale()) return { ok: false, text: '', thinking: '', error: 'let go' };
     try {
@@ -61,6 +62,22 @@ export async function callModel(conn, opts = {}) {
       const out = readAnswer(req.house, data);
       if (out.finish === 'error') {
         lastError = out.error || 'the provider was not happy with that';
+        const status = Number(data.status) || 0;
+        /* A REFUSED THINKING FIELD STEPS DOWN AND GOES AGAIN, ONCE — the
+         * message is not eaten because the model does not take a level. */
+        if (!steppedDown && status >= 400 && status < 500 && REASONING_REFUSAL.test(lastError) &&
+            THINKING_FIELDS.some((f) => f in req.body)) {
+          req.body = withoutThinking(req.body);
+          steppedDown = true;
+          attempt--;
+          continue;
+        }
+        /* NOTHING ELSE IN THE FOUR-HUNDREDS IS FIXED BY WAITING. A bad key, a
+         * wrong model name, a malformed request comes back identical every
+         * time; retrying it four times only turns an instant error into thirty
+         * seconds of silence. Only "slow down" and "try later" are retried. */
+        const transient = status === 0 || status === 408 || status === 429 || status >= 500;
+        if (!transient) return { ok: false, text: '', thinking: '', error: lastError };
         const retryAfter = Number(data.retryAfter) * 1000;
         const wait = Number.isFinite(retryAfter) && retryAfter > 0
           ? retryAfter : BACKOFF_MS[Math.min(attempt, BACKOFF_MS.length - 1)];
@@ -81,6 +98,15 @@ export async function callModel(conn, opts = {}) {
 
 /* The front of the house streams, so the writer sees words arriving. */
 export async function streamModel(conn, opts = {}) {
+  try {
+    return await streamOnce(conn, opts, false);
+  } catch (e) {
+    if (e && e.refusedThinking && !(opts.signal && opts.signal.aborted)) return streamOnce(conn, opts, true);
+    throw e;
+  }
+}
+
+async function streamOnce(conn, opts, dropThinking) {
   const req = buildRequest(conn, {
     system: opts.system,
     messages: opts.messages || [],
@@ -88,6 +114,7 @@ export async function streamModel(conn, opts = {}) {
     room: 512,
     stream: true,
   });
+  if (dropThinking) req.body = withoutThinking(req.body);
   const res = await fetch('/api/call', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -102,6 +129,34 @@ export async function streamModel(conn, opts = {}) {
   let text = '';
   let thinking = '';
   let failed = null;
+  let failedStatus = 0;
+  let cut = false;
+
+  const handle = (raw) => {
+    const line = raw.trim();
+    if (!line) return;
+    if (!line.startsWith('data:')) {
+      /* A provider that answered with a plain error object rather than a
+       * stream: say what it said instead of showing nothing. */
+      if (line.startsWith('{')) {
+        try {
+          const o = JSON.parse(line);
+          if (o && o.error) { failed = o.detail || o.error; failedStatus = Number(o.status) || 0; }
+        } catch (_) { /* not ours */ }
+      }
+      return;
+    }
+    const payload = line.slice(5).trim();
+    if (payload === '[DONE]') return;
+    let obj;
+    try { obj = JSON.parse(payload); } catch (_) { return; }
+    if (obj && obj.error) { failed = obj.error.message || JSON.stringify(obj.error); return; }
+    const part = readChunk(req.house, obj);
+    if (!part) return;
+    if (part.text) { text += part.text; opts.onText && opts.onText(part.text); }
+    if (part.thinking) { thinking += part.thinking; opts.onThinking && opts.onThinking(part.thinking); }
+    if (part.cut) cut = true;
+  };
 
   while (true) {
     const { done, value } = await reader.read();
@@ -109,33 +164,24 @@ export async function streamModel(conn, opts = {}) {
     buffer += decoder.decode(value, { stream: true });
     let cut;
     while ((cut = buffer.indexOf('\n')) !== -1) {
-      const line = buffer.slice(0, cut).trim();
+      handle(buffer.slice(0, cut));
       buffer = buffer.slice(cut + 1);
-      if (!line) continue;
-      if (!line.startsWith('data:')) {
-        /* A provider that answered with a plain error object rather than a
-         * stream: say what it said instead of showing nothing. */
-        if (line.startsWith('{')) {
-          try {
-            const o = JSON.parse(line);
-            if (o && o.error) failed = o.detail || o.error;
-          } catch (_) { /* not ours */ }
-        }
-        continue;
-      }
-      const payload = line.slice(5).trim();
-      if (payload === '[DONE]') continue;
-      let obj;
-      try { obj = JSON.parse(payload); } catch (_) { continue; }
-      if (obj && obj.error) { failed = obj.error.message || JSON.stringify(obj.error); continue; }
-      const part = readChunk(req.house, obj);
-      if (!part) continue;
-      if (part.text) { text += part.text; opts.onText && opts.onText(part.text); }
-      if (part.thinking) { thinking += part.thinking; opts.onThinking && opts.onThinking(part.thinking); }
     }
   }
-  if (failed && !text) throw new Error(failed);
-  return { text, thinking };
+  /* WHAT IS LEFT WHEN THE STREAM ENDS IS STILL PART OF IT. A refusal comes
+   * back as one line of JSON with no newline after it, and a provider's last
+   * piece can end without one too. The first version only read lines that
+   * ended in a newline, so a refused call — a bad key, a wrong model, a level
+   * the model will not take — came back as an empty reply with no error. */
+  buffer += decoder.decode();
+  handle(buffer);
+  if (failed && !text) {
+    const err = new Error(typeof failed === 'string' ? failed : JSON.stringify(failed));
+    err.refusedThinking = !dropThinking && failedStatus >= 400 && failedStatus < 500 &&
+      REASONING_REFUSAL.test(err.message) && THINKING_FIELDS.some((f) => f in req.body);
+    throw err;
+  }
+  return { text, thinking, cut };
 }
 
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }

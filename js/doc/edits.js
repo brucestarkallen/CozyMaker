@@ -74,6 +74,57 @@ export function tolerantJson(body) {
   return { ok: false, error: 'the changes did not come through as readable data' };
 }
 
+/* ONE STRAY QUOTE MUST NOT VOID EVERY CHANGE (Cozy Chat v5.14.0). When the
+ * block as a whole will not read, every complete change inside it is taken on
+ * its own: walk the text keeping track of strings, cut out each top-level
+ * object, and keep each one that reads. A second pass resynchronises at the
+ * start of every line that opens a new object, so one broken string cannot
+ * blind the scanner to everything after it. */
+export function salvageEdits(body) {
+  const src = String(body || '');
+  const found = new Map();
+  /* Each change is kept with WHERE it was written. The second pass can
+   * recover a middle change after the first pass took the later ones, and
+   * two changes to one passage must still land in the order they were
+   * written. */
+  const keep = (chunk, at) => {
+    for (const c of [chunk, chunk.replace(/,\s*([}\]])/g, '$1')]) {
+      try {
+        const v = JSON.parse(c);
+        if (v && typeof v === 'object' && !Array.isArray(v)) {
+          const key = JSON.stringify(v);
+          const had = found.get(key);
+          if (!had || at < had.at) found.set(key, { v, at });
+          return;
+        }
+      } catch (_) { /* next */ }
+    }
+  };
+  let depth = 0, start = -1, inStr = false, esc = false;
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
+    if (inStr) { if (esc) esc = false; else if (c === '\\') esc = true; else if (c === '"') inStr = false; continue; }
+    if (c === '"') { inStr = true; continue; }
+    if (c === '{') { if (depth === 0) start = i; depth++; continue; }
+    if (c === '}' && depth > 0) { depth--; if (depth === 0 && start !== -1) { keep(src.slice(start, i + 1), start); start = -1; } }
+  }
+  let offset = 0;
+  for (const part of src.split(/\n(?=\s*\{\s*")/)) {
+    const a = part.indexOf('{');
+    const b = part.lastIndexOf('}');
+    if (a !== -1 && b > a) keep(part.slice(a, b + 1), offset + a);
+    offset += part.length + 1;
+  }
+  return [...found.values()].sort((x, y) => x.at - y.at).map((x) => x.v);
+}
+
+/* How many changes the block meant to carry: every form of change carries
+ * exactly one "replace" key ("file" may be left out, so it cannot be the
+ * count). */
+function changesMeant(body) {
+  return (String(body || '').match(/"replace"\s*:/g) || []).length;
+}
+
 export function parseEdits(text) {
   const blocks = findBlocks(text, 'edits');
   if (!blocks.length) {
@@ -87,7 +138,13 @@ export function parseEdits(text) {
     if (at !== -1) {
       const tail = src.slice(at + 7).trim();
       if (tail.startsWith('[') || tail.startsWith('{') || tail.startsWith('```')) {
-        return { edits: [], warn: 'the list of changes was cut off before it finished, so none of it was used' };
+        /* A block cut short by the reply limit keeps every change that
+         * arrived whole, and says the rest did not. */
+        const got = salvageEdits(tail);
+        const cut = 'the list of changes was cut off before it finished';
+        return got.length
+          ? { edits: got, warn: `${cut} — ${got.length === 1 ? 'the one complete change that arrived was' : `the ${got.length} complete changes that arrived were`} used and the rest were not`, cut: true }
+          : { edits: [], warn: `${cut}, and none of it arrived whole`, cut: true };
       }
     }
     return { edits: [], warn: '' };
@@ -96,8 +153,15 @@ export function parseEdits(text) {
   let warn = '';
   for (const b of blocks) {
     const r = tolerantJson(b.body);
-    if (!r.ok) { warn = r.error; continue; }
-    for (const e of r.value) if (e && typeof e === 'object') edits.push(e);
+    if (r.ok) { for (const e of r.value) if (e && typeof e === 'object') edits.push(e); continue; }
+    const got = salvageEdits(b.body);
+    edits.push(...got);
+    const lost = Math.max(changesMeant(b.body) - got.length, 0);
+    if (!got.length) warn = r.error;
+    else if (lost) {
+      warn = `${lost === 1 ? 'one of the changes' : `${lost} of the changes`} could not be read and ${lost === 1 ? 'was' : 'were'} left out; ` +
+        `${got.length === 1 ? 'the one that could be read was' : `the ${got.length} that could were`} used`;
+    }
   }
   return { edits, warn };
 }
@@ -147,6 +211,9 @@ function similarity(a, b) {
 
 export const FUZZY_FLOOR = 0.78;
 export const FUZZY_GAP = 0.05;
+let PRUNE = true;
+/* For the equivalence test only: the same search with the bounds switched off. */
+export function setFuzzyPruneForTests(on) { PRUNE = on; }
 
 /* Where in the text does this belong? Returns {from,to} or a refusal. */
 export function locate(text, find) {
@@ -176,11 +243,32 @@ export function locate(text, find) {
   let offset = 0;
   const starts = [];
   for (const l of lines) { starts.push(offset); offset += l.length + 1; }
+  /* THE CLOSE SEARCH MAY NOT FREEZE THE PAGE (Cozy Tavern M171: 974ms). It
+   * runs on the phone's one thread, once per change that missed. Two cheap
+   * upper bounds throw away windows that cannot possibly reach the floor
+   * BEFORE the expensive comparison. Both are exact — an edit distance is at
+   * least the difference in length, and at most the shared words can line up
+   * — so what this skips could never have been chosen. */
+  const needleWords = words(needle);
+  const needleBag = new Map();
+  for (const w of needleWords) needleBag.set(w, (needleBag.get(w) || 0) + 1);
+  const mightReach = (text) => {
+    const ws = words(text);
+    const n = needleWords.length, m = ws.length;
+    if (!n || !m) return false;
+    const longest = Math.max(n, m);
+    if (Math.min(n, m) / longest < FUZZY_FLOOR - FUZZY_GAP) return false;
+    const bag = new Map(needleBag);
+    let shared = 0;
+    for (const w of ws) { const k = bag.get(w); if (k) { shared++; bag.set(w, k - 1); } }
+    return shared / longest >= FUZZY_FLOOR - FUZZY_GAP;
+  };
   for (let i = 0; i < lines.length; i++) {
     for (const size of new Set([want, Math.max(1, want - 1), want + 1])) {
       if (i + size > lines.length) continue;
       const from = starts[i];
       const to = Math.min(src.length, starts[i] + lines.slice(i, i + size).join('\n').length);
+      if (PRUNE && !mightReach(src.slice(from, to))) continue;
       const score = similarity(src.slice(from, to), needle);
       if (score > best.score) { second = best.score; best = { score, from, to }; }
       else if (score > second) second = score;
@@ -229,6 +317,19 @@ function spanFromNormalized(src, nNeedle) {
 /* ---------------------------------------------------------------- applying */
 
 /* Apply one change to one document's text. Pure: text in, text out. */
+/* NEVER ADD WHAT IS ALREADY THERE (Cozy Tavern M79: code refuses an edit that
+ * adds words a line already holds, and an append the field already states).
+ * A worker that appends a paragraph the document already holds is how a
+ * plot essential starts to carry every fact twice. Spacing and case are
+ * ignored; a short separator — a rule, a blank line — repeats legitimately
+ * and is let through. */
+export const ALREADY_MIN = 24;
+function alreadyHolds(src, add) {
+  const norm = (t) => String(t || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const a = norm(add);
+  return a.length >= ALREADY_MIN && norm(src).includes(a);
+}
+
 export function applyEdit(text, edit) {
   const src = String(text || '');
   if (edit.replace_all === true) {
@@ -237,12 +338,14 @@ export function applyEdit(text, edit) {
   }
   if (edit.append === true) {
     if (typeof edit.replace !== 'string') return { ok: false, why: 'nothing was given to add' };
+    if (alreadyHolds(src, edit.replace)) return { ok: false, why: 'those words are already in the document' };
     const joiner = src && !src.endsWith('\n') ? '\n' : '';
     return { ok: true, text: src + joiner + edit.replace, how: 'added at the end' };
   }
   if (typeof edit.insert_after === 'string' && edit.insert_after) {
     const at = locate(src, edit.insert_after);
     if (!at.ok) return { ok: false, why: at.why };
+    if (typeof edit.replace === 'string' && alreadyHolds(src, edit.replace)) return { ok: false, why: 'those words are already in the document' };
     const add = typeof edit.replace === 'string' ? edit.replace : '';
     const joiner = add.startsWith('\n') ? '' : '\n';
     return { ok: true, text: src.slice(0, at.to) + joiner + add + src.slice(at.to), how: 'put it under ' + short(edit.insert_after) };

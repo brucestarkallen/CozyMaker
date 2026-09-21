@@ -1,0 +1,490 @@
+# Lineage — every version of Cozy Tavern and Cozy Chat, held against CozyMaker
+
+Every version record of both was read: 395 Cozy Tavern commits (M1 → M363) and 70 Cozy Chat commits
+(v1.0.0 → v5.26.1). Each is listed here once with what it means for CozyMaker:
+
+- **ported** — the lesson is now CozyMaker code, and where it lives
+- **held by design** — CozyMaker already did this, and where
+- **not ported** — it applies, and why it is not here yet
+- **no such part** — it belongs to a part CozyMaker does not have (the part is named)
+
+Cozy Tavern and Cozy Chat are read-only from CozyMaker; nothing here was changed in them.
+
+## Count
+
+- ported: 63
+- held by design: 78
+- not ported: 15
+- no such part: 309
+- total: 465
+
+## Cozy Tavern
+
+- **7974c13** Initial commit → **no such part** — tests, docs or housekeeping in Cozy Tavern's repo
+- **M1** scaffold: warm storyteller shell — PWA, IndexedDB store, streaming providers, frame & note, ledger stubs → **no such part** — the story ledger
+- **M2** the ten-slot assembler, the rulebook, and the receipt → **no such part** — the story machinery
+- **M3** the scene-state engine wakes — clock, mutations, and the workers → **no such part** — the storyteller's pages
+- **M4** the ledgers — bodies that remember, feelings with causes, the world off-page → **no such part** — the story ledger
+- **M5** bring your engine — preset migration to the craft, the rulebook, and the retired shelf → **no such part** — Cozy Tavern's own shell
+- **M6** the referee, the canon store, the memory keeper, the continuity check → **no such part** — the referee
+- **M7** SillyTavern imports, hardening, polish — v1 complete → **no such part** — the story machinery
+- **M8+M8.5** the hearth design and the thinking voice — reasoning channel end-to-end, ember design system, composer truth fixes → **held by design** — the thinking arrives on its own channel and is kept folded under the reply
+- **M9** the interaction loop and truth fixes — swipes, edit, real continue, window law, commands, open shelves, shipped harnesses → **no such part** — Cozy Tavern's own tests
+- **M10** the housekeeper + showrunners — locate() anchors, proposal cards, drift-guarded undo, director/editor, panel → **held by design** — js/doc/edits.js locate() anchors and drift-guarded undo
+- **M10** docs + latent workersPanel fix notes → **held by design** — js/doc/edits.js locate() anchors and drift-guarded undo
+- **M11** the autonomous referee — true Arbiter port with gate, committed fate, duel economy, no #roll needed → **no such part** — the referee
+- **M12+M13** the finishing wave — character ledger with live scribe, sequential worker channel, detail auditor, coverage law, welcome tour, how-the-tavern-works, Termux cozytavern command, 1… → **no such part** — the story ledger
+- **M14** the beauty pass — boot-crash root fix, hearth empty state, dead buttons revived, warmth details → **no such part** — the story record and branching
+- **M14** harness: restore beauty.mjs (id-coverage law + beauty checks) → **no such part** — Cozy Tavern's own tests
+- **M14** harness: tour machine check matches real API → **no such part** — Cozy Tavern's own tests
+- **M15** the last polish — motion, depth, branch action, and the great un-inerting (send-path crash + 6 more ghost-call fixes found by full browser audit) → **no such part** — an audit of Cozy Tavern's own code
+- **M16** projects (the shelves), the update nudge, and the version you can see → **ported** — worlds hold conversations — js/store.js, js/ui/drawer.js
+- **M17** hands of their own — per-worker connection assignment with graceful degradation → **held by design** — each worker can ride its own connection, falling back to the general one — pickConnection in js/agents/roster.js
+- **109cf40** harness: version check follows the word-pattern, not a pinned word → **no such part** — tests, docs or housekeeping in Cozy Tavern's repo
+- **M18** findability — two-row pocket header, settings quick-nav, the reload-once bridge → **ported** — the drawer and named jobs — js/ui/drawer.js, js/ui/docs.js
+- **M19** the launch report — version spoken by install.sh, cozytavern, serve.py, and the hearth → **held by design** — the server reports its running commit — serve.py /api/version, cozymaker.sh
+- **M20** the word that never goes stale — launcher lives in the repo, re-arms itself after updates, version spoken every launch → **held by design** — the launcher lives in the repo and is re-armed by install.sh
+- **M21** start: the hearth sheds the version word (user law — it was ugly there) → **no such part** — Cozy Tavern's own shell
+- **M21** shelf previews, the frame's purpose line + echo, TRUE rollback snapshots, the workers' shared fiction frame → **no such part** — Cozy Tavern's own shell
+- **M22** the parity wave — full reasoning ladder with rejection memory, address normalization, web search, storyteller prefill, prompt library, archive, jump, exports, prose rendering → **ported** — the per-house thinking ladder — js/providers.js
+- **M23** labels that explain themselves — plain words under every workers control → **held by design** — every control says in words what it does
+- **M24** the tavern keeps its own books — on-device file truth, boot reconcile, live mirror (the wipe lesson) → **held by design** — the device is the store of record — serve.py, js/store.js
+- **M25** the findable retry + the quiet starter-add → **ported** — Try again on a failed turn that changed nothing — js/ui/app.js
+- **M26** the masthead, honest workers, and the hardened extractor → **held by design** — install.sh proves the launcher is in place
+- **M26** hotfix: the word that heals — launcher self-heals an unbaked home, installer proves the bake → **held by design** — install.sh proves the launcher is in place
+- **M27** pictures for pages, the founding read, the scroll law, and try-again for the reader → **no such part** — the storyteller's pages
+- **M27-002** fix the dead Try again, the scroll throw, and the starving ledger → **no such part** — the story ledger
+- **M28** the workers speak through the wire, the ledger is founded, the main character is named → **no such part** — the story ledger
+- **M29** the world beyond the page — the world agent, its ledgers, its brief → **no such part** — the story ledger
+- **M30** the regex shelf; the import stops asking the storyteller to run the simulation → **no such part** — the storyteller's pages
+- **M30-002** the window beyond the page wakes the cut-away's craft; the agent remembers what it opened → **no such part** — the storyteller's pages
+- **M30-003** the world's word, never 'brief' — the writer's brief is the premise; the agent leaves the world's word → **no such part** — the story ledger
+- **M31** the ledger says what it saw; the regex dresses the page, it doesn't undress it → **no such part** — the story ledger
+- **M32** the spoken lines and the thoughts have a colour; untouched builtins follow the coat → **no such part** — Cozy Tavern's own shell
+- **M33** the dom walk — try again answers, the edit buttons wear the house's clothes, no story without a storyteller → **no such part** — the storyteller's pages
+- **M34** the record (Summaryception, ported whole); the keyboard stays down; the 🎨 pack ships on → **no such part** — the story record and branching
+- **M35** the record is verified and mended — Summaryception's auditor ported; relations and the real record → **no such part** — the story ledger
+- **M36** the craft core — the writer's law distilled and bound to the house's truth → **held by design** — the craft is his engine, sliced by owner — js/engine/slices.js
+- **M37** DeepSeek's thinking switch in its own words; the follow law; the workers say what they wrote → **ported** — DeepSeek thinking:{type} + reasoning_effort — js/providers.js
+- **M38** the housekeeper keeps the lore shelf — add, edit, remove, staged and undoable like everything else → **no such part** — the story record and branching
+- **M39** the stream is dressed as it arrives — one dresser for the finished page and the live paint → **no such part** — the storyteller's pages
+- **M40** versions keep their ledger; the swipe bar; the thinking clock; seated people have pages; rescan → **no such part** — the story ledger
+- **M41** the auditor — the whole ledger against the brief, the pages and the record → **no such part** — the story ledger
+- **M42** reset every setting to the house's defaults — connections, stories and the writer's own rules untouched → **not ported** — no reset-to-defaults in CozyMaker
+- **M43** the mend is quiet on the page; a branch carries its checkpoint (ledger, snapshots, versions, record, lore) → **no such part** — the story ledger
+- **M44** Summaryception's checkpoint and coverage laws, held against the tavern — five gaps closed → **no such part** — the story record and branching
+- **M45** the founder — the ledger from the brief, the cast notes, the cards and the lore, before the first page → **no such part** — the story ledger
+- **M45-002** AXIS LOCK — a standing is toward the main character only; the founder refuses others in code, the auditor zeroes the ones already written → **no such part** — the story ledger
+- **M45-002** the end-to-end law names the main character in its cause, as the lock requires → **no such part** — the story machinery
+- **M46** 'reading now…' on the workers' panel; the founder keeps out of the scene → **no such part** — the story ledger
+- **M46-002** the thinking time is kept whenever a thought was seen and shown on the finished page ('thought for 12s'); a DOM scenario with a thinking storyteller proves it → **no such part** — the storyteller's pages
+- **M46-003** the thinking time is saved — store.append kept it off its list (and masthead and mended with it); proved with a thinking storyteller in the walk → **no such part** — the story record and branching
+- **M47** the mood is stated whole, every page — a stale mood cannot linger → **no such part** — the story ledger
+- **M48** the auditor may not take a standing away on judgment — only a standing provably written for someone else; earned or brief-named standings are guarded in code → **no such part** — the story ledger
+- **M48-002** restoring a wrongly-zeroed standing the brief proves is the auditor's job; lowering on judgment is what it may not do → **no such part** — the story ledger
+- **M49** the writer's digits are read in code (founder applies, auditor restores); any log entry can be taken back on its own → **no such part** — the story ledger
+- **M50** the brief's digits read the way the brief is shaped (heading → target lines); junk and duplicate standings cleaned in code every audit; rebuild every standing from the brief, th… → **no such part** — an audit of Cozy Tavern's own code
+- **M50-002** a label (CORE, ARC, …) is never a person — a labelled line under a heading belongs to the heading; label entries are cleared in code → **held by design** — a label line (CORE:, ID:) belongs to its heading; a dossier is a person, not every heading — countOf in js/doc/lint.js
+- **M50-003** a set standing reads 'set — <cause>', never 'grew warmer'; the cause names whose hand → **no such part** — the story ledger
+- **M51** the auditor, the rebuild and the mender read the whole record (oldest to newest), not the summarizer's 14k tail — turn 200 still knows turn 0 → **no such part** — the story ledger
+- **M52** the gradual rebuilder — the record re-folded and the people re-read six pages at a time from turn 0 with the record-so-far, Summaryception's way; both restorable → **no such part** — the story ledger
+- **M53** the reader is given the writer's law of the standings whole (scores move on revelation, disposition not mood, a limit is a fact not a minus); a nudge carries a number, not a word → **no such part** — the story ledger
+- **M54** the scribe carries Character Gravity; the world agent carries the people's physics — every worker holds its slice of the writer's preset → **held by design** — every worker holds its slice of the craft — js/engine/slices.js
+- **M55** the rest button draws a moon (▦ was a white tile on Android); a branch stays on its project's shelf and keeps the story's own switches → **no such part** — the story record and branching
+- **M56** a tale moves to a shelf from its row menu (and back to loose) → **no such part** — Cozy Tavern's own shell
+- **M57** passers-through retire — no page for scene texture, retirement in code after thirty quiet turns, out of the storyteller's sight, woken by any entrance or page → **no such part** — the story ledger
+- **M57-002** a label line without digits (CORE: …) is never a heading — Aurora owns her → Jovan line; tested on the writer's exact block → **held by design** — a label line is never a heading — countOf in js/doc/lint.js
+- **M57-003** a heading is a person (never a family, a school, a label); a blank line ends a block; commas/parentheticals after a name allowed; an unrecognized block owns nothing rather than … → **held by design** — a heading is a person only with ID: or CORE: under it — countOf in js/doc/lint.js
+- **M58** the model reads the brief's stated standings (whose, toward whom); code only validates; the line parser is the fallback → **no such part** — the story ledger
+- **M59** updates are serialized per row — overlapping writes to a story, a page or a connection no longer lose each other → **ported** — a turn lands on the world as it stands now — landTurn, the save line in js/store.js
+- **M60** the housekeeper's panel — fullscreen (Esc leaves it first), a draggable top bar on a desk, ↻ Retry; Chat Assistant read in full and its panel laws ported → **ported** — the busy composer says where the crew is working — js/ui/app.js
+- **6dd26f6** DOM-11c: the housekeeper sees the brief, stages a card, Apply changes the page, Undo takes it back — proven through the real UI → **no such part** — tests, docs or housekeeping in Cozy Tavern's repo
+- **M61** Chat Assistant's fixed bugs, held against the housekeeper in one pass — served whole, anchors at arrival, blind edits fetched, stale cards visible and retired, ripple sweep, mal… → **held by design** — anchors at arrival, blind edits fetched by name — <need> in js/doc/index.js
+- **M62** Chat Assistant's panel, whole — sessions (new/branch/branch-here/rename/delete/clear/delete-last), the shortcut commands, the More tools (context, raw, episode progress, directi… → **ported** — conversations: new, rename, delete — js/ui/drawer.js
+- **M62-002** a reopened sheet is never hidden by a stale close timer; a busy send says so instead of dropping; the walk waits for the ask button → **ported** — a busy send says so instead of dropping — js/ui/app.js
+- **M63** the useful asks become named tools in More; redundant tags demoted with the reason; M24's intermittent failure was a recycled /tmp path — a fresh directory per run → **held by design** — every test run gets a fresh temporary directory
+- **M64** the housekeeper's sheet in Chat Assistant's shape — the talk fills the room, a cards box only while cards stand, Clear and Del last visible, More as a drop-up, rules folded away… → **no such part** — the story record and branching
+- **M65** hidden wins (a class display rule was drawing the empty cards box and the seed form); the sheet's controls are real buttons in Chat Assistant's shape; no dashed separators → **held by design** — hidden means hidden — [hidden] rules in css/cozy.css
+- **M66** a branch never carries a later ledger — nearest earlier checkpoint, else a clean ledger re-read from the brief and the carried pages → **no such part** — the story ledger
+- **M66-002** the M43 law reads the whole of branchFrom (its window was too short for the catch-up) → **no such part** — the story record and branching
+- **M67** a version checkpoint belongs to the last page only — an old page's swipe no longer overwrites its checkpoint with the present; a branch from the last page carries the present af… → **no such part** — the story record and branching
+- **M68** the checkpoint invariant — a branch at any page carries exactly that page's ledger, held under a random sequence of sends, swipes, retries, edits and deletes; the replay for his… → **no such part** — the story ledger
+- **M69** Summaryception's journal, ported — every ledger write stamped with its page, the ledger a fold of the journal, rewinds exact without a model, the timeline repaired by its own st… → **no such part** — the story ledger
+- **M70** a branch at a writer's page folds to the last storyteller page the branch contains — the first message gets an empty ledger but for the founding; a busy branch says so → **no such part** — the story ledger
+- **M71** a branch at a writer's page carries no clock from nothing, and a pre-journal story uses that message's own checkpoint, never the next turn's → **no such part** — the story record and branching
+- **M72** the ledger foolproof — every write a journaled note (the scribe, the world's word, the take-back), the fold by what a snapshot holds, a new version on an old page replays, a wri… → **no such part** — the story ledger
+- **M73** the housekeeper's bubble row, whole — Chat Assistant's attachMsgIcons on both voices (edit-and-continue, copy, branch, delete), retry as a version of the last answer with the ve… → **not ported** — swipes and retry-as-version: CozyMaker has no swipes
+- **M73-002** the last answer wears the swipe bar — ▸ past its versions writes another answer, ◂ walks back; ↻ stays on older answers; the older-page replay is claimed before any await (a bra… → **not ported** — swipes and retry-as-version: CozyMaker has no swipes
+- **M74** the housekeeper sees every surface it is told to keep and can write every one — the brief and cast notes whole and editable (<brief>), the pages of the people whole, the lore wh… → **no such part** — the story ledger
+- **M75** the housekeeper rides the storyteller's connection by default, is decisive by law, and is sent back in code when an asked-for change comes with no block — [THE BRIEF] and [NOTHI… → **ported** — a claimed change with no block is sent back once — runWorker in js/agents/run.js
+- **M75-002** the housekeeper's pot is Chat Assistant's 8192 as a floor — a 2000-token pot was cutting DeepSeek mid-block and losing the card; cut-short and thinking-consumed answers are reco… → **held by design** — workers ask for 8000 tokens; thinking raises the floor to 16000 — js/providers.js
+- **M75-003** nothing lost in silence — the model's whole answer kept and shown under each reply, an unreadable block is a visible refused card and is asked for once as plain JSON, brief edit… → **ported** — an unreadable block is re-asked once and never dropped silently — js/agents/run.js
+- **M76** the housekeeper thinks (its own effort, default high — DeepSeek was being run non-thinking), every card shows before → after and what the ledger will write, reasons shown or the… → **held by design** — the thinking is kept on the turn — js/ui/app.js
+- **M77** every round's thinking is kept so the block stays under the reply; the housekeeper thinks as its connection says unless set; the viewers are pop-ups (Chat Assistant's), never du… → **held by design** — the thinking is kept on the turn — js/ui/app.js
+- **M78** staleness is the anchor — many cards on one surface land in one Apply all (six brief cards, two edits per page/record line, two lore adds, an edit beside a switch); whole-hash o… → **held by design** — edits auto-apply against the live text; nothing waits to go stale
+- **M79** read the order, never duplicate — the overfit class law and its hard-coded example are gone; general laws (what/where/who/shape, a rule only when asked, say how you read it); co… → **ported** — an add the document already holds is refused — alreadyHolds() in js/doc/edits.js
+- **M80** the thinking the writer watched stream is written onto the turn if the wire returned none; the kept fold sits above the reply; the raw fold says whether thinking came → **no such part** — the story record and branching
+- **M81** the model sees its own past answers whole (blocks included) and a [STATE] note of what became of every card, as Chat Assistant does; the thinking never rides → **held by design** — each worker reads the live documents, so it sees what landed
+- **M82** Chat Assistant's auto-supersede in code for every card kind — a second wave retires the cards it replaces (identical, refined, failed, dead-anchor), independent fixes stand, twi… → **held by design** — no staged cards, so nothing to supersede
+- **M83** Chat Assistant's whole list held against the housekeeper — the <edits> teaching restored (M79's slice had removed it) with a guard; ledger undo node-scoped and refusal-first thr… → **held by design** — each worker job has a channel timeout — js/agents/call.js
+- **M84** Chat Assistant's code read end to end — editable viewers for the directive and the editor's notes, twelve pages per fetch round, two thinking retries, and the remaining prompt l… → **no such part** — the storyteller's pages
+- **M85** the writer's preset held against the tavern whole — the NSFW law always on in the craft (the intimate module a reminder), the command table (#q, #time skip, #story opens a fresh… → **no such part** — the story ledger
+- **M85-002** what is situational leaves the cached prefix — the rendering half of the NSFW law is the intimate rule (woken a beat early by the writer's own typed words), each command's whole… → **no such part** — the storyteller's pages
+- **M86** the living world held against the writer's ACW law — the absent ranked by who can reach the scene (toward by ETA > seeking > tense > busy > waiting), and the ledger trims the cr… → **no such part** — the story ledger
+- **M87** the long play — ninety turns of the real app in jsdom, measured: flat context (+3% from turns 25-45 to 60-89), the clock round trip every turn and a three-day skip, an arrival s… → **no such part** — the story ledger
+- **M88** the house's eye — the finished page held against the craft's mechanical laws in code every turn (ghost dialogue, echo, the dead phrases, marks on the page, the header), findings… → **no such part** — the storyteller's pages
+- **M89** the reset puts the rulebook back as shipped too — forks of builtins lifted, pins on builtins cleared, the writer's own rules kept; connections, worker assignments, stories and l… → **no such part** — the story ledger
+- **M89-002** the ledger auditor by hand, proven in the long play — a fixable issue lands, an earned standing is refused, the unfixable is reported, the workers' line says so → **no such part** — the story ledger
+- **M90** the brief wins, resolved by the house — a brief-vs-pages contradiction is mended by the smallest edit, corrected in the record with a [Correction] line that reads last and is ne… → **no such part** — the story ledger
+- **M91** a branch at the newest page carries the ledger as it stands — the journal fold rides only where the journal reaches (journalReaches), never from nothing on a store from before t… → **no such part** — the story ledger
+- **M92** the mood board is owed on every page (one sharper ask when the extractor forgot it); a fact is one fact (knowledge deduplicated by normalized text and clipping, at add time and … → **no such part** — an audit of Cozy Tavern's own code
+- **M93** nothing the auditor sees is left for the writer — a brief at odds with itself is settled by the pages and locked; no finding is reported as unfixable; the drawer says 'seen, lef… → **no such part** — the story ledger
+- **M94** the auditor reads every page by default (Summaryception's cadence) — a slip never waits two turns now that the auditor is the house's repair → **no such part** — the story ledger
+- **M95** the house's own examples are never people — every worker prompt uses placeholders (no real family, no story-like names), the applier refuses a placeholder outright, and the audi… → **held by design** — the return contract uses placeholders only — js/agents/run.js
+- **M96** people.forget erases a person who was never the story's (undoable whole) and the leak sweep uses it; the passed-through rows say so and offer 'Forget for good'; the housekeeper'… → **no such part** — the story ledger
+- **M97** voices read in the ledger drawer, never on the scene; one slim toolbar of icon rooms; Copy on a connection; the housekeeper follows the house choice (the crew's connection) and … → **no such part** — the story ledger
+- **M98** the world reaches the scene by call, text or note from an absent person with a live want; the friend an absent person talks to off the page exists from then on → **no such part** — the storyteller's pages
+- **M98** the check reads across the law's line break → **no such part** — Cozy Tavern's own tests
+- **M98** the check reads across the law's line break → **no such part** — Cozy Tavern's own tests
+- **M98** the checks read across the law's line breaks → **no such part** — Cozy Tavern's own tests
+- **M99** saving a changed brief or cast runs the auditor at once — the brief wins, no button to remember → **held by design** — the eye reads everything back after any change — runTurn
+- **M100** the ripple — one fact changed by an edit (the writer's hand or a landed housekeeper card) is made true everywhere: a name in code with word boundaries across the ledger (people.… → **held by design** — the eye reads the whole back, not only near the change — runTurn
+- **M102** plainer words — passers-through are not dead; the by-hand page form says what it is → **no such part** — the story ledger
+- **M103** seats have a life in code — a seat stands only while the story carries the person (brief, standing, thread, on the way, named in the last twelve pages, or seated within six turn… → **no such part** — the story ledger
+- **M104** every character row says why the house carries them (carriedBy — the seat law's own judgment, read in the drawer); information only → **no such part** — the story ledger
+- **M105** settings in six rooms and the ledger in four (tab strips, one open at a time, remembered); the story shelf drags wider; Copy the thinking on the page and in the housekeeper; the… → **no such part** — the story ledger
+- **M106** a fold is exact only from a page-stamped snapshot (M91's p<=0 shortcut folded a pre-journal story from nothing on a branch two pages back — reproduced in DOM-8f); the storytelle… → **no such part** — the story record and branching
+- **M107** the store held against itself — a consistency invariant over every book, run after the random walk, the branch store, the ripple and the ninety turns; it found checkpoints orpha… → **no such part** — the story record and branching
+- **M108** The World Does Not Bend — positivity bias named as a law in the craft (interests diverge by default, plans fail, offences cost, accord tells banned) and watched by the house's e… → **no such part** — the story machinery
+- **M109** the shelf's resize handle outside the shelf, fixed to its edge, finger-sized, touch-safe — M105's sat inside the scroll box and could not be reached → **no such part** — Cozy Tavern's own shell
+- **M110** the auditor reads answered turns only — a writer's unanswered page is an attempt, never a fact (the writer's report: 'I go downstairs' seated the MC downstairs before the page r… → **no such part** — the story ledger
+- **M111** the hard tokens — names the ledger knows and figures with units checked in code against every record line and its detail; one sharper ask, then written beneath the line whatever… → **no such part** — the story ledger
+- **M112** a branch taken while the readers are still on the newest page re-reads that page itself (light), so its ledger never lacks the newest page's reads; the origin's chain is never t… → **no such part** — the story ledger
+- **M113** 'read again' on every storyteller page — the readers by hand for one page (rewind + chain for the last page; fold, fresh read and replay for an older one) → **no such part** — the story record and branching
+- **M113** the M44 count includes read again's hole → **no such part** — the story machinery
+- **M114** long press belongs to the reader (no page menu on touch, no body-wide user-select); a long story opens at its tail at once and lands earlier pages above in chunks → **no such part** — the storyteller's pages
+- **M115** the housekeeper's bold and emphasis render (text nodes only) → **no such part** — the story record and branching
+- **M116** the window is written once — the rule names its own heading as never-on-the-page, a page rule strips a rule's heading at the door, the eye warns on a doubled window → **no such part** — the storyteller's pages
+- **M117** control tokens leaked into the content end the page at the first one; an emptied page is asked again once by the house → **ported** — a leaked control token ends the reply — endAtControlToken in js/agents/run.js
+- **M118** the house's [NOTHING HAPPENED] nudge fires only on a real first-person claim (quoted prose stripped) and a question is a check unless it carries an imperative — the housekeeper … → **ported** — a claim is only a first-person claim, quotes stripped — claimsAChange
+- **M119** a glitch character from another script is found by the eye and mended by the house at once; a loosely-anchored housekeeper edit is verified after landing and re-asked once when … → **no such part** — the story record and branching
+- **M120** a page written inside the thinking is asked again once with a plain line, then salvaged from the thinking's last header line → **ported** — a block written in the thinking is still read — runWorker
+- **M121** the second reader knows a lie from a slip and a language from a glitch — a narration fact wrong against the ledger or a babble nobody here speaks is mended; a joke, a tease or a… → **no such part** — the story ledger
+- **M122** the house's automatic re-asks leave no word on the story page — a toast, gone in a breath → **held by design** — re-asks happen backstage and leave no word in the conversation
+- **M123** the moment is the extractor's — the auditor and the second reader keep to what lasts; the scene ledger is the moment before the page and a body the page moves is never drift → **no such part** — the story ledger
+- **M124** record handles are unique per line (the id's tail, not its constant head — every line had read #rnode-m and every record card landed on the first line); the anchor's line wins o… → **held by design** — an ambiguous anchor is refused, never guessed — locate()
+- **M125** the housekeeper's Audit holds every record line against the pages it folds, fetching them whole before judging → **no such part** — an audit of Cozy Tavern's own code
+- **M126** a question anywhere is a question; a declaration is an ask only when it names the brief or contradicts; the [NOTHING HAPPENED] nudge tells the model to answer the writer, never … → **ported** — a question is not an instruction — js/agents/router.js
+- **M127** the readers finish what they started — a last page with no checkpoint (the app closed mid-chain) is read again on open; a fresh branch is never resumed and an exact branch's las… → **no such part** — the story ledger
+- **M128** the header's ground and hour land in code with the extractor's writes; the auditor's scope enforced in code (the moment and any page for the main character never land); Copy all… → **no such part** — the story ledger
+- **M129** a window's people are elsewhere (law + a code refusal of presence.enter for window-only names); the second reader holds the brief as written and never calls absence drift; bold … → **no such part** — the story ledger
+- **M130** one now per person — the scribe writes state only for the present; a seated absent person's now is the seat, in the drawer and on the wire → **no such part** — the story ledger
+- **M131** the ownership audit — every ledger fact has one writer and every second writer is a named guard; the header wins over the extractor's own place/clock; a loose end that repeats a… → **no such part** — an audit of Cozy Tavern's own code
+- **M132** a rule that teaches a house block never rides the wire (the imported preset's Voices Block was still waking on every social scene); the import engine retires Voices Block into t… → **no such part** — the storyteller's pages
+- **M133** the preset held block by block — Contested Resolution and The World Beyond retire into the engines (the referee rules; the house's window rule carries the once-only law); an alr… → **no such part** — the referee
+- **M134** loose ends close on sense and a full list evicts the oldest (pages had frozen twenty turns behind); the hour's law is spoken from the clock (the small hours sleep) and a clock j… → **no such part** — the story ledger
+- **M135** the rebuilt character pages land in the last turn's boundary snapshot and the last page's checkpoint, so a retry or swipe starts from them → **no such part** — the story record and branching
+- **M136** turns on screen (the latest 30 drawn, a button shows thirty more) and the glossary room — every button, panel, reader and word explained → **not ported** — a glossary room: every control is named in words instead
+- **M136-002** the glossary's 'when something looks wrong' — symptom to press, usually nothing → **not ported** — a glossary room: every control is named in words instead
+- **M137** a read cache in the store — settings rows and page lists served from memory, every write invalidating — the lag was dozens of IndexedDB reads per action → **no such part** — the storyteller's pages
+- **M138** the paint — only a fresh page animates, off-screen pages skip layout and paint (content-visibility), the shelf's slide on its own layer, the drawer and settings contained → **no such part** — the storyteller's pages
+- **M139** revert the content-visibility/contain rules that broke scrolling on Android; 'Turns on screen' moved to Appearance where the glossary says; the drawer's slide layered → **held by design** — no content-visibility or contain rules anywhere
+- **M140** the books off the main thread — the device sync exported the whole store to JSON on the UI thread at boot and after every write (the twenty-second open, the lag everywhere); a w… → **no such part** — the storyteller's pages
+- **M141** the tavern looks for a new coat on open, on return and every ten minutes and reloads itself once (never mid-page); the thread is not painted behind the ledger; the session's cha… → **no such part** — the story ledger
+- **M142** settings renders the open room first and the rest on idle ticks; the drawer is never rebuilt under a scrolling finger (throttled, deferred, scroll kept) → **ported** — the drawer keeps its scroll when redrawn — js/ui/drawer.js
+- **M143** nothing is ever unmounted — the story stays laid out, Settings is an overlay, the drawer keeps its layout when hidden; a hidden surface costs no layout (the open/close stutter) → **held by design** — sheets and the drawer overlay the room; nothing is unmounted
+- **M144** the drawer fills its panels before it shows (the ledger's first-scroll stutter); a tap during the fill-beat closes → **no such part** — the story ledger
+- **M145** measured in a real Chromium at a phone's throttle — closing Settings repainted sixty pages (the story view flipped hidden and back); the story view is never hidden now, Settings… → **no such part** — the storyteller's pages
+- **M146** the drawer scrolls like the housekeeper — no transform, no will-change, the inner panels box is the scroller; opacity-only open and close → **no such part** — the story record and branching
+- **M147** the data-proportional costs — the journal capped at 1500 (was 6000) with reach requiring coverage; the drawer reads the ledger once per render; a late boot pull of the device's … → **no such part** — the story ledger
+- **M148** the drawer draws only the open room; pending rooms draw on tap or on a quiet idle pass — open 117→33ms at a phone's throttle → **held by design** — the drawer draws only when it is opened
+- **M149** no idle pass in the drawer — the hidden rooms were drawing between two flicks of the first scroll; a room draws only when its chip is tapped → **held by design** — the drawer draws only when it is opened
+- **M150** the drawer shows when its panels have gone quiet (no DOM change for 90ms, capped at 700ms) — the scene room's fill no longer races the first scroll → **no such part** — the storyteller's pages
+- **M151** the scene room's by-hand clock folded — a dozen native form controls at the top of the drawer were the scene room's first-scroll cost on Android → **no such part** — the story record and branching
+- **M152** the final sweep — syntax, shell, no debug, the idle-pass stub gone; HANDOFF.md for the next session → **no such part** — an audit of Cozy Tavern's own code
+- **M153** no tap highlight and no focus ring on a tap (the blue box); the scene room's last by-hand forms folded → **held by design** — no tap highlight — css/cozy.css
+- **M154** a second browser reads the device's books whole on demand and says plainly when none reached it; the fallback read gets a long leash → **no such part** — multi-browser sync
+- **M155** books per story on the device, like SillyTavern — one file per tale plus the house, a manifest, pull the missing/newer and push only what changed; and the worker's relative fetc… → **held by design** — fetches are rooted at the server, never relative to a script
+- **M156** the boot toast says which it is — an old server (restart serve.py) or no server → **held by design** — a boot with no server says to run cozymaker — js/ui/app.js
+- **M157** the launcher relights the lamps when the coat changed or the lit server is an older version (/api/version, baked at boot); serve.py re-execs itself when its file changes → **held by design** — the launcher compares the server's git commit — cozymaker.sh
+- **M158** the launcher always douses and relights the tavern's server on every run (the launcher that pulled M157 was the old copy) → **held by design** — the launcher relights its own server only — cozymaker.sh
+- **M159** the closing sweep — the launcher touches only this folder's lamp; all suites and the two-browser proof green; handoff updated → **held by design** — the launcher touches only its own port — cozymaker.sh
+- **M160** the deep audit — the service worker was keeping the device's books; a tale takes every row with it → **held by design** — the service worker keeps nothing — sw.js
+- **M161** the house is a book too — the M160 sweep was eating bookStamp:_house → **no such part** — multi-browser sync
+- **M162** the second sweep — the wire, the ages, and two laws that were never running → **no such part** — an audit of Cozy Tavern's own code
+- **M163** every reader of an age reads pages — and two silent losses → **no such part** — the storyteller's pages
+- **M164** the live paint self-tunes; a seat under a near-name no longer overwrites its page → **no such part** — the story ledger
+- **M165** the people-rebuild's way back, and the lore keys → **no such part** — the story ledger
+- **M166** the magic keys, the housekeeper's own journal ids, and a fight with no writer on the field → **no such part** — the referee
+- **M167** the 🎨 pack follows the coat → **no such part** — Cozy Tavern's own shell
+- **M168** the daylight coat, measured — every text surface meets AA in both coats → **no such part** — Cozy Tavern's own shell
+- **M169** the last of the reading — every control in the house is named → **ported** — every control named in words — the drawer, the document jobs
+- **M170** the last door — factions — and a guard that reached into free text → **no such part** — lore and pictures
+- **M171** the housekeeper's anchor froze the room — 974ms to 243ms, same answers → **ported** — the close search is bounded: 116ms to 10.5ms, same answers — locate()
+- **M172** a close belongs to the nearest open — one card, and the words survive → **no such part** — the story machinery
+- **M173** two doors the housekeeper could walk through by accident → **held by design** — one door: every job goes through the conversation — ask() in js/ui/kit.js
+- **M174** -M175: the referee was ruling blind; a pin that killed a rule → **no such part** — the referee
+- **M176** the war let the writer fight himself; two fights in three lost their odds → **no such part** — the referee
+- **M177** the engine keeps the writer off the enemy line, however the fight was written → **no such part** — the referee
+- **M178** a take-back that reversed the wrong row → **no such part** — the story machinery
+- **M179** the last file, and the last overlay → **no such part** — the story machinery
+- **2c9eafb** tests/wipe.py — the wipe test: clear everything the browser holds, reopen, lose nothing → **no such part** — tests, docs or housekeeping in Cozy Tavern's repo
+- **M180** the three invariants the ledger rests on, fuzzed → **no such part** — the story ledger
+- **M181** the twenty-second window is closed → **no such part** — the storyteller's pages
+- **M182** the books announce themselves — live sync across every browser → **no such part** — multi-browser sync
+- **M183** a page is appended, not a book rewritten → **held by design** — one file per world on the device — serve.py
+- **M184** a whole book never sweeps away another browser's page → **no such part** — the storyteller's pages
+- **M185** a page the writer let go must stay gone → **ported** — a deleted document or world stays deleted, even under a waiting save — landTurn, js/store.js
+- **M186** the final audit of the new system — three holes, closed → **no such part** — an audit of Cozy Tavern's own code
+- **M187** a tombstone is a marker, not the whole book → **no such part** — the story machinery
+- **M188** an empty tale never overwrites a full one → **held by design** — a world is only written from a full copy of itself
+- **M189** a browser holds the tales it is read in, not a copy of everything → **no such part** — multi-browser sync
+- **M190** the audit of M180-M189 — what the new sync did to a tale you had not opened → **no such part** — an audit of Cozy Tavern's own code
+- **M191** a correction is not a new rename → **no such part** — the story record and branching
+- **M192** the record's detail line — three faults in one line → **no such part** — the story record and branching
+- **M193** the other mid-word cut → **no such part** — the story machinery
+- **M194** the keeper never checked a figure → **no such part** — the story record and branching
+- **M195** a wrong fact is not a detail worth keeping → **no such part** — the story record and branching
+- **M196** a line too poor to annotate is rewritten by the house → **no such part** — the story machinery
+- **M197** the detail is judged by need, and the prefix carries where → **no such part** — the story record and branching
+- **M198** the settings text said two readers were one → **no such part** — Cozy Tavern's own shell
+- **M199** the panel kept losing the writer's place, and the buttons said nothing → **ported** — a redraw keeps his place — js/ui/app.js
+- **M200** thrown out of your own reading, and a coat that would not come → **ported** — a finished reply no longer throws him out of his reading — js/ui/app.js
+- **M201** the ledger, during a rebuild, over and over → **no such part** — the story ledger
+- **M202** the old Summaryception prompt, and a rebuild that called a stumble "finished" → **no such part** — the story record and branching
+- **M203** what the house is doing, while it does it → **held by design** — the status line says what the crew is doing — js/ui/app.js
+- **M204** the banner is for the writer's own hand only → **no such part** — the story machinery
+- **M205** auditing M203's own work, which the suites had passed throughout → **no such part** — an audit of Cozy Tavern's own code
+- **M206** the closing sweep — auditing this session's own work → **no such part** — an audit of Cozy Tavern's own code
+- **M207** "the keeper stumbled — outwaited" — the rebuild could never finish → **no such part** — the story record and branching
+- **M208** a stop for the writer's own hand, and no more token dumps in the record → **no such part** — the story record and branching
+- **M209** a stop is not a stall → **ported** — Stop stops the crew and the front — runTurn
+- **M210** one button, one meaning → **ported** — one button, one meaning: Stop looks like Stop, a double tap is not a Stop
+- **M211** the banner counted calls, not batches → **no such part** — the story machinery
+- **M212** the prompt the keeper is SENT, not the prompt in the file → **held by design** — the tests read what reaches the model, not the files
+- **M213** the rebuild stopped at batch 3 of 16 and said "nothing to rebuild" → **no such part** — the story record and branching
+- **M214** the closing audit — three faults in the banner work → **no such part** — an audit of Cozy Tavern's own code
+- **M215** "does it always retry?" — it did not → **ported** — only 408, 429 and 5xx are retried; a 400 fails at once — js/agents/call.js
+- **M216** two things Summaryception has had for years, read from its code → **no such part** — the story record and branching
+- **M217** the line that "came back from the dead", and the button that only pretended → **no such part** — the story machinery
+- **M218** the last two on the writer's list → **no such part** — an audit of Cozy Tavern's own code
+- **M218** close the owed note — both items are built → **no such part** — an audit of Cozy Tavern's own code
+- **M219** the closing audit of M216-M218 → **no such part** — an audit of Cozy Tavern's own code
+- **M220** name it what the writer calls it — Summarize now → **ported** — named as he names it: "Tidy it up", "New plot essential"
+- **M221** a turn spent entirely on fetching → **ported** — a worker that only asks to read more is told to do the job — runWorker
+- **M222** the Audit button's one instruction could never be obeyed → **no such part** — an audit of Cozy Tavern's own code
+- **M223** sight without reach — a record edit could not touch the detail → **no such part** — the story record and branching
+- **M224** the housekeeper nagging about cards nobody could apply → **no such part** — the story record and branching
+- **M225** the safety hole M224 opened → **no such part** — the story machinery
+- **M226** the extractor could not see the story it was writing down → **ported** — every worker is handed the conversation — conversationFor
+- **M227** the scribe could not see the loose ends it was meant to close → **ported** — every worker is handed the conversation — conversationFor
+- **M228** no page is read by nobody → **no such part** — the storyteller's pages
+- **M229** the detail had no memory of the story it was writing about → **ported** — every worker is handed the conversation — conversationFor
+- **M230** the token dump had two homes and M208 closed one → **no such part** — the story machinery
+- **M231** the connection the writer chose is the connection that answers → **held by design** — the connection he chose answers — pickConnection
+- **M232** nothing set means the provider's default, not the house's zero → **held by design** — nothing set means nothing sent
+- **M233** thinking is the writer's to decide, like everything else → **held by design** — thinking is his to set; unset sends nothing
+- **M234** a comma is a decimal point, and a closing form threw the writer down the page → **no such part** — the storyteller's pages
+- **M235** "STATS: none" on every line, and a line severed mid-name → **no such part** — the story machinery
+- **M236** two doors into the people ledger, one guarded → **no such part** — the story ledger
+- **M237** the sweep — every cap, every door → **held by design** — every cap is said out loud — TALK_BUDGET, the partial-document line
+- **M238** the ledger could hold the same person twice and never say so → **no such part** — the story ledger
+- **M239** the four ledgers nobody had read → **no such part** — the story ledger
+- **M240** the auditor was auditing a ledger it could not see → **no such part** — the story ledger
+- **M241** I told the auditor to use a tool that did not exist → **held by design** — workers are told only of <need>, which exists
+- **M243** a line that overran was stored cut, and only the writer could tell → **ported** — a reply cut at the limit says so — readChunk, js/ui/app.js
+- **M244** "so I just accept it's cut?" — no → **ported** — a reply cut at the limit says so — readChunk, js/ui/app.js
+- **M245** the same dial twice, and a branch of a branch of a branch → **no such part** — the story record and branching
+- **M246** a line the WIRE cut was stored as a finished line → **ported** — a reply cut at the limit says so — readChunk, js/ui/app.js
+- **M247** a regression I shipped an hour earlier → **no such part** — an audit of Cozy Tavern's own code
+- **M248** a mark the writer can read at a glance, and a house that finishes what it started → **no such part** — the story machinery
+- **M249** the world agent was told to use a record it was never given → **ported** — a worker is never told to use what it is not given — conversationFor
+- **M250** a worker failing quietly while the writer plays on → **ported** — a worker that fails or loses changes is told to the front — backstageBrief
+- **M251** the ledger had no way back → **no such part** — the story ledger
+- **M252** the workers' line was in the wrong order → **no such part** — the story machinery
+- **M253** the closing audit — two of this session's own fixes were dead → **no such part** — an audit of Cozy Tavern's own code
+- **M254** a green light that means something, and a third coat → **no such part** — Cozy Tavern's own shell
+- **M255** the light was computed at the wrong moment, and there were only two → **no such part** — the story machinery
+- **M256** the auditor was doing a job nobody else could → **no such part** — the story ledger
+- **M257** a name cut short, and a person in two places → **no such part** — the story machinery
+- **M258** the writer counted — thirteen fixes, and I had explained two → **no such part** — an audit of Cozy Tavern's own code
+- **M259** the ledger bulletproof — every reader sees all of it and reads every page to its end → **no such part** — the story ledger
+- **M260** a worker that can look — no reader is cut off by a number → **held by design** — index always, bodies on demand: no reader is cut off by a number — js/doc/index.js
+- **M261** one story so far for every ledger reader, and a ledger that does not go stale → **no such part** — the story ledger
+- **M262** the house heals what the old readers left → **held by design** — an old world is healed into the new shape on open, and saved — upgradeWorld
+- **M263** the writer's own words stand, and squeezed lines heal too → **ported** — his hand edit made during a turn is kept — landTurn
+- **M264** the writer chooses when the record squeezes; the record rides in the room his context leaves → **no such part** — the story record and branching
+- **M265** NO SILENT CUT — every reader of the record gets it whole in its room → **ported** — a cut in the conversation is said out loud — conversationFor
+- **M266** every note in the ledger is kept whole; the storyteller sees the whole state of things → **no such part** — the story ledger
+- **M267** the report says only what is wrong; the second reader never sees the moment → **no such part** — the storyteller's pages
+- **M268** the brief outranks a page; a mend that should never have been is put back by the house → **no such part** — the story ledger
+- **M269** a streamed piece costs nothing — the housekeeper never freezes the screen → **no such part** — the story record and branching
+- **M270** every housekeeper round streams; the question stands at once → **no such part** — the story record and branching
+- **M271** the housekeeper works on behind a closed sheet; its history stays; a heavy history opens fast → **no such part** — the story record and branching
+- **M272** the housekeeper's cards have names of their own; the brief's opening stays; Mr. is not Mrs. → **no such part** — the story ledger
+- **M273** cards that fix one problem are one group — taking one back takes them all → **held by design** — one worker's changes are one batch to put back
+- **M274** the audit → **no such part** — an audit of Cozy Tavern's own code
+- **M275** the green light comes back by itself — a gap the house opens, the house folds → **no such part** — the story record and branching
+- **M276** an outage closes while the writer plays on, and while the house is idle → **ported** — an outage closes by itself: saves are kept and retried until they land — js/store.js
+- **M277** the main character holds no standing; the auditor starts a standing only from the brief → **no such part** — the story ledger
+- **M278** a standing is toward the main character — never one the brief set toward someone else → **no such part** — the story ledger
+- **M278-002** the cleanup reads the reason a standing stands on → **no such part** — the story ledger
+- **M279** the live thinking is read from its first word; 'stands as the pages moved it' is no finding → **no such part** — the storyteller's pages
+- **M280** the page reader decides every open thread; the writer's own people wait → **no such part** — the story ledger
+- **M281** the people's pages reach the storyteller; the people follow the room → **no such part** — the story ledger
+- **M282** who matters rides without a pin; a first name recalls; 'player' in a name is a person → **no such part** — the story machinery
+- **M283** the scribe reads the brief; the writer's material rides whole; the story's ground brings people forward → **no such part** — the story ledger
+- **M284** a newcomer is carried; everyone without a card is a line that says who they are → **no such part** — the story ledger
+- **M285** the model's room has one answer — the writer's number, else his provider's → **not ported** — requests are not sized against the model's context window
+- **M286** twelve in the scene — the present take what the away do not need; no one here is a bare mention → **no such part** — the storyteller's pages
+- **M287** the final audit — no request outgrows its model → **not ported** — requests are not sized against the model's context window
+- **M288** the audit continued — the housekeeper fits its model; every page can be fetched whole → **not ported** — requests are not sized against the model's context window
+- **M289** the house asks the provider how much its model holds; DeepSeek holds a million → **not ported** — the house does not ask a provider how much its model holds
+- **M290** Retry while the page's readers are still out — nothing of the page let go lands → **no such part** — the storyteller's pages
+- **M291** the character pages, tidied once and read alive → **no such part** — the storyteller's pages
+- **M292** one page view; where the absent are said once; a title's period does not end a sentence → **no such part** — the storyteller's pages
+- **M293-1** a Stop dropped queued jobs without settling them — the queue settles what it drops, a replay's tail lets the gate go, laws M293-1 and DOM-34 → **held by design** — Stop settles every queued job — stopWork
+- **M293-2..5** the device sync — answers matched by kind alone, deletions that resurrected, a dropped stream never caught up on, two hands on one tale → **ported** — two hands on one world: idempotent landing and one save line — landTurn, js/store.js
+- **M293** the audit recorded — AGENTS.md entry, HANDOFF.md counts and limits, version m293-001 → **no such part** — an audit of Cozy Tavern's own code
+- **M294** the main character's page was never shown to the scribe, so it was never kept — its record rides in the scribe's request; a stale note says its age for everyone; version m294-001 → **no such part** — the story ledger
+- **M295** the device's fold is idempotent (a kill mid-write puts no let-go page back), a branch sends one whole book not one per page, a double tap on try-again runs one turn; version m29… → **ported** — a double tap within 700ms is one tap — js/ui/app.js
+- **M296** a housekeeper re-ink (and its take-back) lets the record line go and reads the page again — one door for every re-ink (chat.js pageReinked); DOM-37; version m296-001 → **no such part** — the story record and branching
+- **M297** a brought-over chat keeps the file's order — pages stamped strictly after the one before, a date only moves a page forward; version m297-001 → **no such part** — the storyteller's pages
+- **M298** a ruling on a hidden 'Go on.' page stands on the next turn — hidden is not gone in the referee's prune; the pass completed; version m298-001 → **no such part** — the referee
+- **M299** the main character's now is the scene's, written in code from the ledger — one writer per fact; the scribe's note only while fresh; version m299-001 → **no such part** — the story ledger
+- **M300** a seat says how old it is — the living world is never read as the present when it is the past; the state of things traced fact by fact; version m300-001 → **no such part** — the story ledger
+- **M301** the thinking of a telling that left no page is kept (Stop, a dropped wire, an empty reply, the housekeeper) — copyable live, through a reload, gone when the next page lands; the… → **held by design** — the thinking of a stopped turn is kept
+- **M302** the magma room darker and measured against the writer's own reference (the glow in the corners and a seam, 3.7x less light; ground #070c0e, inks lowered with it — body 13.7:1); … → **no such part** — the story record and branching
+- **M303** speech in a soft orange in the magma coat (hue 28, 9.6:1, quieter than the ember — measured off a real page); the Kimi family speaks its own spelling — kimi-k3 is sent reasoning… → **ported** — Kimi K3 reasoning_effort low|high|max, off as low; K2 a switch — js/providers.js
+- **M304** nobody who leaves the page is nowhere — 'what's happening elsewhere' had drained to one or two people. Leaving keeps where they were last seen (the ground the page began on), a … → **no such part** — the story ledger
+- **M305** the books no longer forget — who-knows-what kept the newest twelve facts a person and the threads kept eight, and what fell off was the OLDEST (a secret learned long ago, a riva… → **no such part** — the story ledger
+- **M306** the rest of the whole-ledger check — a character's card showed the three OLDEST loose ends and never the newest (the newest three now, newest first, the rest counted); the recor… → **no such part** — the story ledger
+- **M307** the prefill — the words a reply was started with are part of the reply (every house answers only with what follows them, and nothing put them back: a page begun '[The Bluebird —… → **no such part** — prefill
+- **M308** the thinking room is a number only two houses can hear — it was read for Claude and OpenRouter and silently dropped everywhere else (512 on Kimi or DeepSeek went nowhere, and no… → **ported** — a thinking budget only where a house takes one (Anthropic) — js/providers.js
+- **M309** the Authorship Frame is discarded wherever it could come from - it was the first section of the house's own craft (the importer has retired the preset's block since M36), it mad… → **no such part** — the storyteller's pages
+- **M310** the device keeps its own safety copies - 'Take a copy' made the browser fold the whole store into one string, which a phone cannot hold at ~3,000 pages, so the button did nothin… → **held by design** — serve.py keeps rolling gzipped backups on the device
+- **M311** the shelves come back by themselves, and a browser speaks only for the rows it changed - the list of shelves is one row of the house book, a browser holding only part of the hou… → **held by design** — one file per world; nothing is a row in another world's book
+- **M312** the ledger and Settings lagged with the size of the WHOLE library - settings.keys() and exportHouse() asked IndexedDB for every settings row whole (every checkpoint of every tal… → **no such part** — the story ledger
+- **M313** the browser holds the tale that is open; the device holds the library - a tale not open is let go from the browser only when every local row and page is proven on the device val… → **held by design** — the browser holds only the open world
+- **M314** a checkpoint no longer carries its own copy of the journal and the log - each entry is kept once per tale in a bank keyed by its content, a checkpoint is its ledger plus keys, a… → **no such part** — the story ledger
+- **M315** the light stayed yellow after every page ('the keeper... could not fold a gap in the record yet') on a connection that tests fine - a worker's room is the size of its ANSWER (th… → **ported** — thinking raises a worker's room so it cannot eat the answer — js/providers.js
+- **M316** the record can never stay stuck on a page - the writer's keeper does NOT think (M315's cause was not his); a keeper run that got no usable answer for the oldest due pages broke … → **no such part** — the story record and branching
+- **M317** the yellow light, found - the light and the keeper measured the record's gap with two different windows: the keeper (the only thing that folds) read the writer's Settings, while… → **no such part** — the story record and branching
+- **M318** the storyteller 'suddenly stopped thinking at low, medium, high, xhigh, max' - a started reply (the prefill) is answered WITHOUT thinking on DeepSeek (its docs make a prefix's r… → **no such part** — prefill
+- **M319** 'prefill is off - all my models can't think' - the send path was RUN in the real app: on this code DeepSeek and Kimi are asked to think and the thinking is kept and shown, so it… → **no such part** — prefill
+- **M320** one person, one name, in every book - a seat was found by its EXACT name and written under whatever name a worker used, while the people's pages have known since M238 that 'Vane… → **no such part** — the story ledger
+- **M321** one voice on the wire, and picking a connection uses it - the storyteller was sent three system messages in a row, a briefing opening with the bare tag [story-state], and up to … → **ported** — one voice on the wire: roles alternate, his words once — oneVoice
+- **M322** everything before the header is thinking, not page - with thinking Off a model often thinks on the page anyway (the craft's own Pass): that plan was saved as page, rode back as … → **no such part** — the storyteller's pages
+- **M323** 'when the output put into the thinking is long it just stops and never gives the header and the rest' - three faults in M322, found by streaming a reply the way a model streams … → **no such part** — the storyteller's pages
+- **M324** the writer's screenshot - the whole plan ('Planning: ... Beat: ...') shown as the page with the house's own masthead above it, which the house draws only when a page does NOT op… → **no such part** — the storyteller's pages
+- **M325** 'it doesn't have a header - the text just ends with a full stop, planning' - in a tale whose pages open with a header, a reply that opens with a self-labelled plan and holds NO … → **no such part** — the storyteller's pages
+- **M326** 'it makes thinking and planning but never gives the real output' - a model with no thinking channel DRAFTS on the page: the writer's five screenshots of one reply show a plan, t… → **no such part** — the storyteller's pages
+- **M327** the two names - who tells, and who listens. The writer keeps a teller in his frame and wants it real to the model, but the house spoke like a form ('the writer', 'the house has … → **ported** — the front calls him by his name — frontBody
+- **M328** the thinking prefill - the writer's SillyTavern extension (Prefill Control 1.5.1) brought into the house. A prefill that opens with <think> is a seed for the model's scratchpad:… → **no such part** — prefill
+- **M329** is the prefill WORKING for this model? 'Test it' said 'Took it - the reply picked up where the prefill left off' for any 200 without one look at the reply, and the seed at the h… → **no such part** — prefill
+- **M330** '[Correction] sixteen is now seventeen' - the house leaves NO comment in the record, and the brief outranks a value changed on a page. The housekeeper's cards land by themselves… → **no such part** — an audit of Cozy Tavern's own code
+- **M331** 'should I edit 17 back to 16 myself, or just continue?' - neither: on opening a tale, every mend (page.mended.before) and every housekeeper edit (its undo shelf) whose ONE chang… → **no such part** — the story ledger
+- **M332** 'I branch, the page suddenly refreshes, and all the memory records are gone' / 'I must refresh for a setting to apply' - reproduced in a real browser. A branch was made in the o… → **no such part** — the story ledger
+- **M333** one 'You are' - checked what the storyteller is sent with a teller in the frame: nothing calls it an assistant, an AI or a model; the one other identity in the request was the c… → **held by design** — one "You are": his frame first, nothing calls it an assistant — js/agents/persona.js
+- **M334** first person or second - the person the teller thinks in. A teller written as 'I' and then handed seventy thousand characters of 'You maintain... you render... your craft' holds… → **held by design** — first or second person, his choice — js/agents/persona.js
+- **M335** the teller's thinking read like an auditor's because it had been ORDERED to - the craft's own Pass says 'read the ledger, the record, and the world's word... Your notes cover tw… → **ported** — the front is never taught the workers' tools — brief({forFront})
+- **M336** 'the thinking said something that never happened' - a fact must say WHEN it was learned. The teller read a true line ten scenes old, about another walk ('Rias called the twelve-… → **no such part** — the story ledger
+- **M337** 'that fact should never happen since I branched and that thing never happens' - nothing in a ledger may be dated after its tale's last page. The fold and the branch test exact, … → **no such part** — the story ledger
+- **M338** WHO COULD KNOW THIS? - the blind spots of the people in the scene. Claire told Jovan 'You gave me the schedule yesterday' - a telling that never happened (the four o'clock was s… → **no such part** — the story ledger
+- **M339** a reply that is the teller THINKING is never a page - and the switch. His screenshots: under the house's own masthead stood the teller thinking the scene over in its own voice (… → **no such part** — the storyteller's pages
+- **M340** the first pages of a tale, for a model that does not think. His screenshots: the header card he loves, and what a non-thinking model gave on a tale's first page - 'Saturday, Jun… → **no such part** — the story ledger
+- **M341** 'your fix suddenly, on the first turn, breaks my persona' - M340's page skeleton was a nine-line form in a manual's voice (a heading, the header form, and dummy prose: 'A paragr… → **no such part** — the story ledger
+- **M342** 'just normal as ever' - NOTHING about the page's shape is said to the storyteller. The writer saw the broken output become normal after updating and asked whether that was the h… → **no such part** — the storyteller's pages
+- **M343** the older-model switch ('Derestricted / older model (GLM 4.6 and the like): help it keep the thread') - ships OFF, and OFF is not one byte of any request. ON, for story pages: (… → **no such part** — the story ledger
+- **M344** 'never drop... I asked to make it SMART, not to remove details' - the older-model switch removes NOTHING. M343's 64k cap is gone (the room is the provider's; every page, the not… → **no such part** — the story ledger
+- **M345** the referee's outcome reaches the storyteller (it never did since M11: chat.js never passed ruling:) - first in the closing words, in the writer's natural voice; the cast sheet … → **no such part** — the story ledger
+- **M346** canon verification, whole, behind its own switch - the writer's Canon Grounding v0.63.0 vendored as itself (tools/vendor-canon.py, three asserted changes) on a SillyTavern stand… → **no such part** — the story ledger
+- **M347** What the storyteller saw, word for word - Normal (tap a part to open its words, Copy) and Raw (the request as the model took it: settings, then every message under its role; Cop… → **not ported** — a viewer of the raw request; the tests read the wire instead
+- **M348** a model is what its provider says it is - Kimi K3 behind Synthetic's alias (syn:large:vision) was spoken to as a generic model (a thinking switch K3 must not get; Off sent as a … → **ported** — a model is known by its name through a relay (Kimi K3) — thinkingStyle
+- **M349** a relay that lists a model's levels is spoken to in exactly those words (Synthetic: one field, reasoning_effort, a listed value; Off = none where listed) - GLM on Synthetic no l… → **ported** — GLM by generation — thinkingFields
+- **M350** the model teaches the house how it thinks - a refusal is read (the levels it offers, or the one field it does not take) and the same turn goes again fitted to it; an Off that di… → **ported** — a refused level steps down once; the learning memory is not ported
+- **M351** 'it still isn't thinking' is answered by the app - a page that asked for thinking and got none says so once per connection and level; Test now sends what a page sends, reads any… → **not ported** — the "is it thinking" probe
+- **M352** canon verification's switch was unfindable - it was in no room's list and unlisted meant the glossary; it stands with the referee in Settings > The readers now, an unlisted sect… → **no such part** — the referee
+- **M353** a provider that refuses a web page is carried by his own server - serve.py gains /api/relay (https only, never a private address, streams as it comes, passes the provider's own … → **held by design** — every call already goes through serve.py
+- **M354** making the 27B punch above its weight, all of it behind the derestricted switch - five plain lines at the end (his character is his, anyone against him stays against him, let th… → **no such part** — the storyteller's pages
+- **M355** the same words again - a page that repeats the last pages (or itself) is seen mechanically (six-word phrases, three real words, never his own words or the room's names, overlapp… → **no such part** — the storyteller's pages
+- **M356** the sensors - after each page, five narrow propositions answered as numbers by a decisions model (Jev) or any model as JSON; averaged over the last four readings, the sensor fur… → **no such part** — the storyteller's pages
+- **M357** a landed page is the story - the header is no longer read as prose (it flagged every page), and nothing sends a page back: what the house saw is said once in his voice before th… → **no such part** — the storyteller's pages
+- **M359** the grounding phrase woven into the standing words (after the opening breath and at the paragraph break nearest a third down) and set in front of every house command's law; a ba… → **no such part** — the story ledger
+- **M360** the reading of his preset, grouped - what HE wrote that names the machine first, what of his only reads like a manual second, the house's own rulebook counted and never listed a… → **no such part** — the story machinery
+- **M361** {{user}}/{{char}} (and <USER>/<BOT>) are swapped for his names wherever his standing words are voiced, as SillyTavern does - they went to the storyteller as raw template syntax;… → **ported** — {{user}}/{{char}}/<USER>/<BOT> read as his names — voiceMacros
+- **M362** the name his rules use for him (What your rules call you, e.g. LO) goes out as whatever Your name says - whole words, case as typed, possessives included, never inside another w… → **not ported** — no "what your rules call you" box yet
+- **M363** a crowd of accounts is not him - 'User Pool Array' on an in-story feed is no longer flagged as calling him the user; 'the user' still is; version m363-001 → **no such part** — the story machinery
+
+## Cozy Chat
+
+- **b6e525e** Initial commit → **no such part** — tests, docs or housekeeping in Cozy Chat's repo
+- **v1.0.0** single-file chat client → **no such part** — Cozy Chat's own shell
+- **v2.0.0** reasoning tags, swipes, depth injections, themes, web search → **held by design** — the thinking is shown folded under the reply
+- **v3.0.0** file editing, instruction sets, search, attachments → **held by design** — the edit protocol — js/doc/edits.js
+- **v3.0.0**  → **held by design** — the edit protocol — js/doc/edits.js
+- **v3.1.0** thinking effort, model dropdown, quieter file strip → **ported** — thinking levels per house — js/providers.js
+- **v3.2.0** remove the file strip, stop repeating the model name → **no such part** — Cozy Chat's own shell
+- **1541c30** Add sillytavern-immersive.css — same reading layout, in SillyTavern → **no such part** — tests, docs or housekeeping in Cozy Chat's repo
+- **9feb9cf** Move test files out of the repo root → **no such part** — tests, docs or housekeeping in Cozy Chat's repo
+- **e89a2d1** Rewrite the SillyTavern CSS — three real bugs → **no such part** — tests, docs or housekeeping in Cozy Chat's repo
+- **e5d4009** Give the prose a reading surface; hide stray name-row markers → **no such part** — tests, docs or housekeeping in Cozy Chat's repo
+- **dce8481** Outrank stylesheets that load after the Custom CSS box → **no such part** — tests, docs or housekeeping in Cozy Chat's repo
+- **51ae08d** Bring back the turn number; make edit reachable on touch → **no such part** — tests, docs or housekeeping in Cozy Chat's repo
+- **d2723cf** Add a Termux installer and a cozy launcher → **no such part** — tests, docs or housekeeping in Cozy Chat's repo
+- **v4.0.0** prompt order, the SillyTavern way → **no such part** — instruction sets
+- **v4.0.1** fix the white textarea in the prompt editor → **no such part** — Cozy Chat's own shell
+- **v4.0.2** the update wasn't reaching the browser → **held by design** — serve.py sends no-store; the launcher compares commits
+- **e4edc1e** cozy: serve without caching, report versions, update itself → **no such part** — tests, docs or housekeeping in Cozy Chat's repo
+- **v4.1.0** fix the frozen panel; the assistant can create files → **held by design** — create_file is part of the edit protocol
+- **v4.2.0** fix the scroll properly; squash system messages → **ported** — the scroll law — js/ui/app.js
+- **v4.3.0** the block editor is the main system prompt field → **no such part** — instruction sets
+- **v4.4.0** text boxes grow instead of scrolling inside → **held by design** — the composer grows with its text
+- **v4.5.0** long text gets its own screen → **held by design** — a document opens on its own full screen
+- **v5.0.0** settings belong to the chat → **no such part** — Cozy Chat's own shell
+- **v5.1.0** attach several files to one chat → **held by design** — a world holds several documents at once
+- **v5.1.1** hidden now means hidden → **held by design** — hidden means hidden — css/cozy.css
+- **v5.1.2** the panel could show a set that wasn't in use → **no such part** — Cozy Chat's own shell
+- **v5.2.0** a reply streams into the chat that asked for it → **ported** — a reply lands in the conversation that asked — landTurn, updateWorld
+- **v5.2.1** dragging an instruction works on a touchscreen → **no such part** — instruction sets
+- **v5.2.2** you own the scroll; the stream stops fighting your finger → **ported** — he owns the scroll, during and after a reply — js/ui/app.js
+- **v5.2.3** a fling survives its release → **held by design** — nothing fights a fling: the scroll is only read
+- **v5.3.0** the stream reads whole frames, and Hermes shows its work → **ported** — the stream reads whole lines AND what is left at the end — js/agents/call.js
+- **v5.4.0** projects hold your chats, smart context reads the part that matters → **ported** — worlds hold conversations — js/store.js, js/ui/drawer.js
+- **v5.5.0** the archive is a place you can walk into, not a riddle → **no such part** — pictures and search
+- **v5.6.0** the agent asks permission in the chat, and a tap answers it → **no such part** — the agent's permission cards
+- **v5.7.0** search comes back with pictures, and markdown shows them → **no such part** — pictures and search
+- **v5.7.1** the agent's own pictures arrive as pictures → **no such part** — pictures and search
+- **v5.7.2** runs mode degrades gracefully instead of eating the message → **no such part** — the agent's permission cards
+- **v5.7.3** the fallback says it once, and a leaked MEDIA tag explains itself → **no such part** — pictures and search
+- **v5.7.4** the fallback says it once, ever, and shows its state where the setting lives → **no such part** — the agent's permission cards
+- **v5.8.0** asking for a picture fetches real pictures → **no such part** — pictures and search
+- **v5.8.1** the tool log folds like thinking, and stays how you left it → **no such part** — Cozy Chat's own shell
+- **v5.9.0** stale edit cards can no longer double-apply: a newer reply's matching proposal supersedes the old card (newest wins, shown on the card, excluded from Apply all); every version o… → **held by design** — changes land at once; no stale card can double-apply
+- **v5.10.0** failed edits fix themselves: every reply that proposed edits now carries the live fate of its cards (applied / pending / skipped / superseded / failed and why) into each request… → **held by design** — workers read the live documents each call
+- **v5.11.0** rename in one card: "all": true on a find/replace changes every exact occurrence in a single undoable edit (Replace everywhere, occurrence count on the card); literal match only… → **held by design** — "all": true replaces every exact occurrence — applyEdit
+- **v5.13.0** the author's toolbox: batch Undo reverts an Apply-all on every file it touched (changed-since files skipped with a note, per-file undo still reaches buried steps); a determinist… → **ported** — worldbook export to SillyTavern World Info — js/ui/docs.js; batch undo and the check were held
+- **v5.13.1** a docedits block can no longer hide, and the model can no longer claim edits it never staged: blocks emitted inside think-tags or on a separate reasoning channel are parsed, car… → **ported** — a block in the thinking is read; a claim without a block is sent back — runWorker
+- **v5.14.0** three reported failures fixed at the root: a failed edit, an unreadable block or a cut-off batch now each offer a one-tap re-request that sends itself (exact failure, verbatim r… → **ported** — every complete change in a broken or cut block is kept, in order — salvageEdits
+- **v5.15.0** an audit release: undo now tells the truth, a failed edit's Ask again is actually on screen, and a reply's second edit block stops vanishing → **held by design** — undo refuses what changed since, and says so — undoBatch
+- **v5.16.0** the assistant's reply can be started for you: write its first words and the model carries on from them → **no such part** — Cozy Chat's own shell
+- **v5.17.0** a Test prefill button that tells you whether it actually works on the connection and model you're using → **no such part** — prefill
+- **v5.17.1** turning the prefill on no longer risks your next message on a service that never wanted the extra field → **no such part** — prefill
+- **6504076** tests: prove the prefill changed nothing about the request Cozy was already sending → **no such part** — tests, docs or housekeeping in Cozy Chat's repo
+- **v5.18.0** an attached file stops arriving in several conflicting versions → **held by design** — each document exists once
+- **v5.19.0** the assistant stops quoting Cozy's own notes back at you → **held by design** — house notes are never handed back as the maker's own words
+- **3231b91** chore: keep node_modules and scratch verifiers out of the tree → **no such part** — tests, docs or housekeeping in Cozy Chat's repo
+- **v5.20.0** the story stops ending up inside the thinking block, and the thinking stops leaking into the story → **ported** — an empty reply with only thinking says so — js/ui/app.js
+- **v5.21.0** Cozy looks things up when the model needs it, instead of when you remember to ask → **no such part** — Cozy Chat's own shell
+- **bf365ed** tests: prove the model decides, and that a request can never become a reply → **no such part** — tests, docs or housekeeping in Cozy Chat's repo
+- **v5.21.0** 1488 checks, measured from real output → **no such part** — Cozy Chat's own shell
+- **v5.22.0** project instructions are draggable blocks like the instruction set's, and thinking effort offers XHigh and Max where the connection can say them → **ported** — XHigh and Max where a house can say them — js/providers.js
+- **v5.22.1** a thinking level the model refuses steps down and resends instead of eating your message → **ported** — a refused level steps down and resends — js/agents/call.js
+- **v5.23.0** project instructions are a full instruction set on the project: role, position, depth, the conversation marker — post-history included → **no such part** — instruction sets
+- **v5.24.0** the boundary: a project's chats use the project's own instruction set alone; global sets stay outside, and a global set can be copied in to start the project's → **no such part** — instruction sets
+- **v5.24.1** the Instructions tab says when the open chat is in a project, instead of promising a set switch it cannot deliver → **no such part** — instruction sets
+- **v5.24.2** a detached file leaves an explicit absence on the wire, so the model stops answering from memory of a file it no longer has → **not ported** — a deleted document is simply absent from the index
+- **v5.24.3** old chats learn what they provably had: files their replies edited are named as gone when no longer attached; no trace, no note → **not ported** — a deleted document is simply absent from the index
+- **v5.25.0** the phone keeps a copy: served from Termux, everything mirrors to cozy-vault.json on disk and a wiped browser is restored on open → **ported** — the device keeps the work; a save that fails is kept and retried — js/store.js
+- **v5.26.0** never-forget: standing instructions can ride a second time near the newest message, at a chosen depth, per set and per project → **no such part** — instruction sets
+- **v5.26.1** thinking blocks have a Copy button that copies exactly what the block shows, without folding it → **not ported** — no Copy button on the thinking fold

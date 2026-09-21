@@ -75,3 +75,23 @@ export function group(title, hint) {
   if (hint) g.append(el('p', 'hint', hint));
   return g;
 }
+
+/* ONE DOOR, MANY HANDLES. "Tidy it up" on a document, "Start a plot essential"
+ * in an empty world — each sends its job through the same conversation the
+ * writer types into, and shows up there in his own words. There is no second
+ * pipeline behind a button; a button is only a way to find the door. */
+const askers = new Set();
+export function onAsk(fn) { askers.add(fn); return () => askers.delete(fn); }
+export function ask(text, worker) {
+  for (const fn of askers) Promise.resolve().then(() => fn(text, worker)).catch((e) => toast(`That did not start: ${(e && e.message) || e}`));
+}
+
+export function when(ms) {
+  if (!ms) return 'not yet';
+  const d = Math.floor((Date.now() - ms) / 1000);
+  const ago = (n, unit) => `${n} ${unit}${n === 1 ? '' : 's'} ago`;
+  if (d < 90) return 'just now';
+  if (d < 3600) return ago(Math.round(d / 60), 'minute');
+  if (d < 86400) return ago(Math.round(d / 3600), 'hour');
+  return ago(Math.round(d / 86400), 'day');
+}

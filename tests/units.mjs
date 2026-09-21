@@ -17,13 +17,17 @@ const ROOT = join(HERE, '..');
 
 import { cutSections, sliceFor, sliceReport, SLICES, SPINE, setEngineForTests } from '../js/engine/slices.js';
 import { parseDoc, indexLines, inPlay, brief, readNeed, stripNeed, resolveNeed, estimateTokens } from '../js/doc/index.js';
-import { parseEdits, stripEdits, tolerantJson, locate, applyEdit, applyRun, undoBatch, hash } from '../js/doc/edits.js';
+import { parseEdits, stripEdits, tolerantJson, locate, applyEdit, applyRun, undoBatch, hash, salvageEdits, setFuzzyPruneForTests } from '../js/doc/edits.js';
 import { lint, countOf, lostSomething, readEvents, namedPersonGate } from '../js/doc/lint.js';
 import { route } from '../js/agents/router.js';
-import { buildRequest, readAnswer, readChunk, houseOf, alwaysThinks } from '../js/providers.js';
-import { personaOf, greeting, openingFor, inPerson } from '../js/agents/persona.js';
+import { buildRequest, readAnswer, readChunk, houseOf, alwaysThinks, thinkingFields, thinkingStyle, withoutThinking } from '../js/providers.js';
+import { personaOf, greeting, openingFor, inPerson, voiceMacros, unfilledMacros } from '../js/agents/persona.js';
+import { upgradeWorld } from '../js/store.js';
+import { worldbookToST, guessKind } from '../js/ui/docs.js';
+import { when } from '../js/ui/kit.js';
+import { callModel } from '../js/agents/call.js';
 import { pickConnection } from '../js/agents/roster.js';
-import { naturalize, commit, sweep, backstageBrief, capUndo, UNDO_KEPT } from '../js/agents/run.js';
+import { naturalize, commit, sweep, backstageBrief, capUndo, UNDO_KEPT, frontBody, landTurn, oneVoice, conversationFor, claimsAChange, endAtControlToken, docBriefs, either } from '../js/agents/run.js';
 
 let pass = 0, fail = 0;
 const failures = [];
@@ -352,7 +356,11 @@ ok('the system message goes first', req.body.messages[0].role === 'system');
 req = buildRequest({ ...conn, temperature: 0, topP: 0.9, thinking: 'off' }, { messages: [], maxTokens: 100 });
 ok('a temperature of zero the writer chose IS sent', req.body.temperature === 0);
 ok('a top-p the writer chose is sent', req.body.top_p === 0.9);
-ok('"do not think" is spoken in this house\'s words', req.body.reasoning_effort === 'minimal');
+/* The first version sent DeepSeek "off" as reasoning_effort "minimal" — a word
+ * DeepSeek does not have — and this line pinned that mistake. DeepSeek's own
+ * switch is thinking:{type:"disabled"} (Cozy Tavern M37). */
+ok('"do not think" is spoken in DeepSeek\'s own words',
+  req.body.thinking && req.body.thinking.type === 'disabled' && !('reasoning_effort' in req.body), JSON.stringify(req.body));
 
 req = buildRequest({ ...conn, url: 'https://open.bigmodel.cn/api/paas/v4', thinking: 'off' }, { messages: [], maxTokens: 100 });
 ok('z.ai is told not to think in its own words', req.body.thinking && req.body.thinking.type === 'disabled');
@@ -402,8 +410,7 @@ ok('first person rewrites the body too',
   openingFor({ ...p, person: 'first' }, 'You are building something.').includes('I am building something.'));
 
 /* THE FIREWALL: nothing the front reads may carry the craft's machinery. */
-const FRONT_TEXT = openingFor(p, readFileSync(join(ROOT, 'js/agents/run.js'), 'utf8')
-  .split('const FRONT_BODY = `')[1].split('`;')[0]);
+const FRONT_TEXT = openingFor(p, frontBody(p));
 ok('the front of the house is given no bracketed markers', !/\[[A-Z][A-Z0-9_]{4,}\]/.test(FRONT_TEXT));
 ok('the front of the house is given no section numbers', !/§|\bsection \d/i.test(FRONT_TEXT));
 ok('the front of the house is given no way to edit', !FRONT_TEXT.includes('<edits>'));
@@ -532,6 +539,279 @@ ok('capping twice changes nothing more', capUndo(netProject) === false);
 /* The craft file is asked for from the root, never relative to a caller. */
 ok('the craft is fetched from the root',
   readFileSync(join(ROOT, 'js/engine/slices.js'), 'utf8').includes("fetcher('/engine/generalist.md'"));
+
+/* ========== what the whole history of both frontends taught ============== */
+
+/* --- thinking, in each house's own words (Cozy Tavern M37, M303, M349) --- */
+const TW = (url, model, level) => thinkingFields({ url, model }, level);
+eq('DeepSeek off', TW('https://api.deepseek.com', 'deepseek-chat', 'off'), { thinking: { type: 'disabled' } });
+eq('DeepSeek medium is its high', TW('https://api.deepseek.com', 'deepseek-chat', 'medium'), { thinking: { type: 'enabled' }, reasoning_effort: 'high' });
+eq('DeepSeek xhigh is its max', TW('https://api.deepseek.com', 'deepseek-chat', 'xhigh').reasoning_effort, 'max');
+eq('Kimi K3 cannot be told not to think — off is its low', TW('https://api.moonshot.ai/v1', 'kimi-k3', 'off'), { reasoning_effort: 'low' });
+eq('Kimi K3 medium is its high', TW('https://api.moonshot.ai/v1', 'kimi-k3', 'medium'), { reasoning_effort: 'high' });
+ok('Kimi K3 is never sent the K2 thinking block', !('thinking' in TW('https://api.moonshot.ai/v1', 'kimi-k3', 'high')));
+eq('Kimi K2 on Moonshot is a switch only', TW('https://api.moonshot.ai/v1', 'kimi-k2-0905', 'high'), { thinking: { type: 'enabled' } });
+eq('GLM 4.6 off', TW('https://api.z.ai/api/paas/v4', 'glm-4.6', 'off'), { thinking: { type: 'disabled' } });
+eq('GLM 5.3 always thinks — off is its low', TW('https://api.z.ai/api/paas/v4', 'glm-5.3', 'off'), { thinking: { type: 'enabled' }, reasoning_effort: 'low' });
+eq('Qwen is a switch', TW('https://dashscope.aliyuncs.com/v1', 'qwen-max', 'off'), { enable_thinking: false });
+eq('nothing set, nothing sent', TW('https://api.deepseek.com', 'deepseek-chat', ''), {});
+eq('a word no house takes is never sent', TW('https://api.deepseek.com', 'deepseek-chat', 'minimal'), {});
+ok('Kimi K3 is recognised through a relay by its model name', thinkingStyle({ url: 'https://openrouter.ai/api/v1', model: 'moonshotai/kimi-k3' }) === 'kimi');
+eq('a refused level steps down to nothing',
+  Object.keys(withoutThinking({ model: 'm', thinking: { type: 'enabled' }, reasoning_effort: 'high', reasoning: {}, enable_thinking: true, temperature: 0.5 })).sort(),
+  ['model', 'temperature']);
+ok('thinking on raises a worker\'s room so the thinking cannot eat the answer',
+  buildRequest({ url: 'https://api.deepseek.com', model: 'deepseek-chat', thinking: 'high' }, { messages: [], maxTokens: 800 }).body.max_tokens >= 16000);
+ok('thinking off leaves the room alone',
+  buildRequest({ url: 'https://api.deepseek.com', model: 'deepseek-chat', thinking: 'off' }, { messages: [], maxTokens: 800 }).body.max_tokens === 800);
+
+/* --- the wire: a 400 is not waited on; a refused level steps down once --- */
+{
+  const realFetch = globalThis.fetch;
+  const bodies = [];
+  let script = [];
+  globalThis.fetch = async (url, init) => {
+    bodies.push(JSON.parse(init.body).body);
+    const next = script.shift();
+    return { json: async () => next };
+  };
+  const conn = { url: 'https://api.deepseek.com', model: 'deepseek-chat', key: 'k', thinking: 'high' };
+  const answer = { choices: [{ message: { content: 'done' }, finish_reason: 'stop' }] };
+
+  script = [{ error: 'provider', status: 400, detail: 'unknown parameter: reasoning_effort' }, answer];
+  let t0 = Date.now();
+  let r = await callModel(conn, { user: 'x' });
+  ok('a refused thinking field steps down and the answer still comes', r.ok && r.text === 'done', JSON.stringify(r));
+  ok('the second try carried no thinking at all', !('reasoning_effort' in bodies[1]) && !('thinking' in bodies[1]), JSON.stringify(bodies[1]));
+  ok('stepping down costs no waiting', Date.now() - t0 < 1000, `${Date.now() - t0}ms`);
+
+  bodies.length = 0;
+  script = [{ error: 'provider', status: 401, detail: 'invalid api key' }, answer, answer, answer, answer];
+  t0 = Date.now();
+  r = await callModel(conn, { user: 'x' });
+  ok('a bad key fails at once instead of after thirty seconds', !r.ok && Date.now() - t0 < 1000, `${Date.now() - t0}ms`);
+  ok('a bad key is asked exactly once', bodies.length === 1, `${bodies.length} calls`);
+  ok('a bad key says what the provider said', /invalid api key/.test(r.error), r.error);
+  globalThis.fetch = realFetch;
+}
+
+/* --- a reply cut at the limit says so (Cozy Tavern M244, M246) --- */
+ok('an OpenAI-shaped cut is seen', readChunk('openai', { choices: [{ delta: { content: 'and then' }, finish_reason: 'length' }] }).cut === true);
+ok('a finished OpenAI-shaped reply is not called cut', !readChunk('openai', { choices: [{ delta: { content: 'end.' }, finish_reason: 'stop' }] }).cut);
+ok('an Anthropic cut is seen', readChunk('anthropic', { type: 'message_delta', delta: { stop_reason: 'max_tokens' } }).cut === true);
+ok('a finished Anthropic reply is not called cut', readChunk('anthropic', { type: 'message_delta', delta: { stop_reason: 'end_turn' } }) === null);
+
+/* --- never add what is already there (Cozy Tavern M79) --- */
+{
+  const doc = '# PE\n\n## WORLD\n- The city lives inside a dormant leviathan.\n\n## SCENE\nWHERE: the Ribway\n';
+  const again = applyEdit(doc, { append: true, replace: '- The city lives   inside a DORMANT leviathan.' });
+  ok('an append the document already holds is refused', !again.ok && /already in the document/.test(again.why), JSON.stringify(again));
+  const under = applyEdit(doc, { insert_after: '## SCENE', replace: '- The city lives inside a dormant leviathan.' });
+  ok('an insert the document already holds is refused', !under.ok && /already in the document/.test(under.why));
+  ok('a new fact still goes in', applyEdit(doc, { append: true, replace: '- The Ribway floods at every tide.' }).ok);
+  ok('a short separator may repeat', applyEdit(doc, { append: true, replace: '\n---\n' }).ok);
+}
+
+/* --- one stray quote never voids every change (Cozy Chat v5.14.0) --- */
+eq('every complete change survives a broken one', salvageEdits('[{"find":"a","replace":"1"},{"find":"b "broken" q","replace":"2"},{"find":"c","replace":"3"}]').map((e) => e.find), ['a', 'c']);
+{
+  /* a stray quote inside the FIRST change inverts the scanner's idea of what
+   * is a string for everything after it; the second pass recovers the rest,
+   * and they must come back in the order they were written */
+  const block = '[\n  {"find":"one "x","replace":"1"},\n  {"find":"two","replace":"2"},\n  {"find":"three","replace":"3"},\n  {"find":"four","replace":"4"}\n]';
+  eq('salvaged changes come back in the order they were written', salvageEdits(block).map((e) => e.find), ['two', 'three', 'four']);
+  const r = parseEdits('<edits>' + block + '</edits>');
+  eq('the loss is counted exactly', r.warn, 'one of the changes could not be read and was left out; the 3 that could were used');
+  const two = parseEdits('<edits>[\n{"find":"a "q","replace":"1"},\n{"find":"b "q","replace":"2"},\n{"find":"c","replace":"3"}\n]</edits>');
+  eq('two lost, one kept, said in grammar', two.warn, '2 of the changes could not be read and were left out; the one that could be read was used');
+}
+ok('a block in the thinking channel is still a block', (() => {
+  const r = parseEdits('<edits>[{"find":"a","replace":"b"}]</edits>');
+  return r.edits.length === 1;
+})());
+
+/* --- the bounded close search gives exactly the unbounded answer --- */
+{
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const vocab = 'the council argued about directive nobody moved rain over harbour lamps guild spire old salt'.split(' ');
+  const line = (n) => Array.from({ length: n }, () => vocab[Math.floor(rnd() * vocab.length)]).join(' ');
+  let same = 0, total = 0;
+  for (let t = 0; t < 60; t++) {
+    const doc = Array.from({ length: 30 + Math.floor(rnd() * 40) }, () => line(6 + Math.floor(rnd() * 14))).join('\n');
+    const lines = doc.split('\n');
+    const pick = lines[Math.floor(rnd() * lines.length)].split(' ');
+    if (rnd() < 0.7) pick[Math.floor(rnd() * pick.length)] = vocab[Math.floor(rnd() * vocab.length)];
+    const needle = rnd() < 0.2 ? line(10) : pick.join(' ');
+    setFuzzyPruneForTests(true);
+    const a = locate(doc, needle);
+    setFuzzyPruneForTests(false);
+    const b = locate(doc, needle);
+    setFuzzyPruneForTests(true);
+    total++;
+    if (JSON.stringify(a) === JSON.stringify(b)) same++;
+  }
+  eq('the bounds never change an answer (60 random documents)', same, total);
+}
+
+/* --- a turn lands in the world as it stands NOW (Cozy Tavern M59, M185, M263) --- */
+{
+  const snap = new Map([['A.md', 'one'], ['B.md', 'two'], ['C.md', 'three']]);
+  const result = { project: { docs: [
+    { name: 'A.md', text: 'ONE', kind: 'pe' },
+    { name: 'B.md', text: 'TWO', kind: 'pe' },
+    { name: 'C.md', text: 'THREE', kind: 'pe' },
+    { name: 'New.md', text: 'fresh', kind: 'notes' },
+  ], recentSections: ['x'] } };
+  const turn = {
+    role: 'maker', text: 'done', at: 424242,
+    cards: ['A.md', 'B.md', 'C.md', 'New.md'].map((n) => ({ status: 'applied', name: n, reason: 'r' })),
+    batches: [{ id: 'b1', items: ['A.md', 'B.md', 'C.md', 'New.md'].map((n) => ({ name: n, before: null, afterHash: 'h' })) }],
+  };
+  const liveWorld = {
+    docs: [{ name: 'A.md', text: 'one' }, { name: 'B.md', text: 'two, edited by hand meanwhile' }],
+    chats: [{ id: 'c1', turns: [{ role: 'writer', text: 'go' }] }],
+  };
+  const r = landTurn(liveWorld, { chatId: 'c1', snapshot: snap, result, makerTurn: turn });
+  const doc = (n) => r.world.docs.find((d) => d.name === n);
+  eq('an untouched document takes the crew\'s change', doc('A.md').text, 'ONE');
+  eq('a document he edited meanwhile keeps his words', doc('B.md').text, 'two, edited by hand meanwhile');
+  ok('a document he deleted meanwhile stays deleted', !doc('C.md'));
+  eq('a document the crew started arrives', doc('New.md').text, 'fresh');
+  const cards = r.world.chats[0].turns[1].cards;
+  ok('the kept hand edit is said on its card', cards.find((c) => c.name === 'B.md').status === 'refused' &&
+    /by hand/.test(cards.find((c) => c.name === 'B.md').why));
+  ok('the deletion is said on its card', /stays deleted/.test(cards.find((c) => c.name === 'C.md').why));
+  eq('put-it-back never reaches a document that was not changed',
+    r.world.chats[0].turns[1].batches[0].items.map((i) => i.name).sort(), ['A.md', 'New.md']);
+  ok('the reply lands in the conversation that asked', r.landed && r.world.chats[0].turns.length === 2);
+  ok('the world is not mutated in place', liveWorld.docs[0].text === 'one' && liveWorld.chats[0].turns.length === 1);
+  const gone = landTurn({ docs: [{ name: 'A.md', text: 'one' }], chats: [] }, { chatId: 'c1', snapshot: snap, result, makerTurn: turn });
+  ok('a deleted conversation lets the reply go and still lands the documents', !gone.landed && gone.world.docs.find((d) => d.name === 'A.md').text === 'ONE');
+  const twice = landTurn(r.world, { chatId: 'c1', snapshot: snap, result, makerTurn: turn });
+  ok('landing twice is landing once', twice.already === true && JSON.stringify(twice.world) === JSON.stringify(r.world));
+  ok('the names never collide: a document he started meanwhile is kept',
+    landTurn({ docs: [{ name: 'New.md', text: 'his own' }], chats: [{ id: 'c1', turns: [] }] },
+      { chatId: 'c1', snapshot: snap, result, makerTurn: turn }).world.docs.find((d) => d.name === 'New.md').text === 'his own');
+}
+
+/* --- one voice on the wire (Cozy Tavern M321) --- */
+eq('two from one side become one', oneVoice([{ role: 'user', content: 'a' }, { role: 'user', content: 'b' }]), [{ role: 'user', content: 'a\n\nb' }]);
+eq('an answer before any question is dropped', oneVoice([{ role: 'assistant', content: 'x' }, { role: 'user', content: 'q' }]), [{ role: 'user', content: 'q' }]);
+eq('empty turns are dropped', oneVoice([{ role: 'user', content: 'q' }, { role: 'assistant', content: '  ' }, { role: 'user', content: 'r' }]), [{ role: 'user', content: 'q\n\nr' }]);
+
+/* --- the workers hear the conversation (Cozy Tavern M226, M249) --- */
+{
+  const turns = [{ role: 'writer', text: 'the city is inside a leviathan' }, { role: 'maker', text: 'lovely' }, { role: 'writer', text: 'fold all that in' }];
+  const talk = conversationFor(turns, p);
+  ok('the worker hears what "all that" was', talk.includes('the city is inside a leviathan'));
+  ok('the worker hears who said it, by name', talk.startsWith('Bruce: the city') && talk.includes('Eni: lovely'));
+  ok('newest last', talk.trim().endsWith('fold all that in'));
+  const long = Array.from({ length: 200 }, (_, i) => ({ role: i % 2 ? 'maker' : 'writer', text: 'x'.repeat(300) + i }));
+  const cut = conversationFor(long, p, 3000);
+  ok('a cut in the conversation is said out loud', cut.startsWith('(earlier conversation is not shown'));
+  ok('the cut keeps the newest', cut.includes('x'.repeat(300) + '199'));
+}
+
+/* --- "I changed it" with no block is sent back (Cozy Tavern M75, M118) --- */
+ok('a claim of work is recognised', claimsAChange("I've updated Claire's age and moved the rule."));
+ok('a claim of work is recognised in plain past', claimsAChange('We added the Ribway as its own entry.'));
+ok('reading is not a claim of work', !claimsAChange('I checked the timeline and read every dossier; nothing needed changing.'));
+ok('a quoted line is not a claim of work', !claimsAChange('The storyteller wrote "I changed my mind about the siege".'));
+ok('a single-quoted line is not a claim of work', !claimsAChange("Her last words were 'I changed everything for you' and then she left."));
+ok('a contraction is not mistaken for a quotation', claimsAChange("I've updated Claire's age, and I've moved the rule."));
+
+/* --- a control token ends the answer (Cozy Tavern M117) --- */
+eq('the answer ends at a leaked control token', endAtControlToken('All done.<|im_end|>\nuser: next'), 'All done.');
+eq('an answer without one is untouched', endAtControlToken('All done.'), 'All done.');
+
+/* --- the front calls him by name, never "the writer" (Cozy Tavern M327) --- */
+ok('the front calls him by his name', frontBody(p).includes('Bruce'));
+ok('the front never calls him "the writer"', !/the writer/i.test(frontBody(p)));
+ok('with no name the front still reads as talk', !/the writer|undefined|null/i.test(frontBody(personaOf({ settings: {} }))));
+
+/* --- SillyTavern's names read as his names (Cozy Tavern M361) --- */
+eq('{{user}} and {{char}} read as the two names',
+  voiceMacros('You are {{char}}. {{user}} is here. <USER> and <BOT>.', p), 'You are Eni. Bruce is here. Bruce and Eni.');
+eq('an unset name leaves its macro as written', voiceMacros('{{user}}', personaOf({ settings: {} })), '{{user}}');
+eq('{{User}} in any case is his name', voiceMacros('{{User}} and {{ CHAR }}', p), 'Bruce and Eni');
+eq('a preset\'s own <user> tag is markup, not a name', voiceMacros('<user>hi</user> <USER>', p), '<user>hi</user> Bruce');
+ok('the house can point at an unfilled macro', unfilledMacros(personaOf({ settings: { makerName: 'Eni' }, personaFrame: '{{user}} and {{char}}' })).join() === '{{user}}');
+
+/* --- the front reads the book without the workers' tools (Cozy Tavern M335) --- */
+{
+  const bigWorld = { docs: [{ name: 'Plot Essential.md', kind: 'pe', text: many }] };
+  const forFront = docBriefs(bigWorld, { message: 'TIMELINE', forFront: true });
+  const forWorker = docBriefs(bigWorld, { message: 'TIMELINE' });
+  ok('the front is never taught to ask for pages', !forFront.includes('<need>'), forFront.slice(-200));
+  ok('the front is never told what it may not rewrite', !/do not rewrite/i.test(forFront));
+  ok('a worker still is', forWorker.includes('<need>') && /do not rewrite/i.test(forWorker));
+}
+
+/* --- either reason to stop stops it --- */
+{
+  const a = new AbortController(), b = new AbortController();
+  const s1 = either(a.signal, b.signal);
+  b.abort();
+  ok('the channel\'s own timeout stops a worker even when the writer has not pressed Stop', s1.aborted);
+  const c = new AbortController(), d = new AbortController();
+  const s2 = either(c.signal, d.signal);
+  c.abort();
+  ok('the writer\'s Stop stops it too', s2.aborted);
+}
+
+/* --- worlds hold conversations; an old world moves in whole (Cozy Chat v5.4.0) --- */
+{
+  const old = { id: 'w', title: 'Old', docs: [{ name: 'A.md', text: 'x' }],
+    turns: [{ role: 'writer', text: 'first', at: 100 }, { role: 'maker', text: 'second', at: 200 }] };
+  const w = upgradeWorld(JSON.parse(JSON.stringify(old)));
+  ok('an old world gets one conversation', w.chats.length === 1);
+  eq('every turn moves across, in order', w.chats[0].turns.map((t) => t.text), ['first', 'second']);
+  ok('the old list is gone, so nothing is kept twice', !('turns' in w));
+  ok('the open conversation is set', w.openChat === w.chats[0].id);
+  ok('the documents are untouched', w.docs[0].text === 'x');
+  const again = upgradeWorld(JSON.parse(JSON.stringify(w)));
+  ok('upgrading twice changes nothing', JSON.stringify(again) === JSON.stringify(w));
+  const fresh = upgradeWorld({ id: 'n', title: 'New' });
+  ok('a new world has somewhere to talk', fresh.chats.length === 1 && fresh.chats[0].turns.length === 0);
+}
+
+/* --- the undo net is shared across every conversation in a world --- */
+{
+  const w = { chats: [{ turns: [] }, { turns: [] }] };
+  for (let i = 0; i < UNDO_KEPT + 4; i++) {
+    w.chats[i % 2].turns.push({ at: i, batches: [{ id: 'b' + i, items: [{ name: 'A.md', before: 'x', afterHash: 'h' }] }] });
+  }
+  capUndo(w);
+  const all = w.chats.flatMap((c) => c.turns).sort((a, b) => a.at - b.at).map((t) => t.batches[0]);
+  eq('across conversations, the newest stay undoable', all.slice(-UNDO_KEPT).filter((b) => b.tooOld).length, 0);
+  eq('across conversations, the oldest lose their payload', all.slice(0, 4).filter((b) => b.tooOld).length, 4);
+}
+
+/* --- the worldbook goes to SillyTavern in SillyTavern's shape (Cozy Chat v5.13.0) --- */
+{
+  const st = worldbookToST([
+    { name: 'The Ribway', keys: ['Ribway', 'market'], content: 'a street', strategy: 'green', order: 50, position: 'before_char' },
+    { name: 'The Rules', keys: [], content: 'always', strategy: 'blue', position: 'at_depth', depth: 2, probability: 60 },
+    { name: 'Echo', keys: ['x'], content: 'y', strategy: 'chain' },
+  ]);
+  const e = st.entries;
+  ok('a green entry fires on its keys', e['0'].selective === true && e['0'].constant === false && e['0'].key.join() === 'Ribway,market');
+  ok('a blue entry is always on', e['1'].constant === true && e['1'].key.length === 0);
+  ok('a chain entry is vectorized and keyless', e['2'].vectorized === true && e['2'].key.length === 0);
+  ok('the name becomes the entry\'s title', e['0'].comment === 'The Ribway');
+  ok('position is carried', e['0'].position === 0 && e['1'].position === 4 && e['2'].position === 1);
+  ok('depth is carried only where it means something', e['1'].depth === 2 && e['0'].depth === 4);
+  ok('a probability under a hundred switches probability on', e['1'].useProbability === true && e['1'].probability === 60);
+}
+eq('a pasted worldbook is known by its shape', guessKind('stuff.md', '[{"name":"x"}]'), 'worldbook');
+eq('a pasted continuation file is known by its heading', guessKind('file.md', '# PLOT ESSENTIAL CONTINUITY — X — FILE 2'), 'continuity');
+eq('one hour ago, in grammar', when(Date.now() - 3600 * 1000), '1 hour ago');
+eq('two days ago, in grammar', when(Date.now() - 2 * 86400 * 1000), '2 days ago');
+eq('a moment ago is just now', when(Date.now() - 5000), 'just now');
+eq('a plot essential is the default', guessKind('Plot Essential.md', '# PLOT ESSENTIAL — X'), 'pe');
+eq('a note that opens with a bracket is words, not a worldbook', guessKind('Scratch.md', '[OOC: remember the siege]\nmore'), 'pe');
+eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries":{"0":{"comment":"a"}}}'), 'worldbook');
 
 /* ================================================================ done */
 

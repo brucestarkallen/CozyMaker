@@ -202,7 +202,15 @@ export function brief(doc, name, opts = {}) {
    * right now. Without this sentence a worker shown eight of forty events can
    * hand back a "complete" document holding eight, and mean it honestly. */
   const partial = bodies.length < doc.sections.length || bodies.some((b) => b.trimmed);
-  if (partial) {
+  /* The front of the house reads the book the way a friend would: what is in
+   * it and what is in front of them. It is never taught the workers' tools —
+   * a way to ask for pages it cannot use, a rule about rewriting it will never
+   * do. Machinery in its reading is machinery in its voice (Cozy Tavern M335:
+   * the teller's thinking read like an auditor's because it had been ordered
+   * to). */
+  if (partial && opts.forFront) {
+    parts.push('The rest of it is written and real — it is listed above by name.');
+  } else if (partial) {
     parts.push(
       'Everything else is real and already written — it is listed above by name. ' +
       'If you need to read one of them word for word before you change anything, ' +

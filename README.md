@@ -70,15 +70,36 @@ If you are just talking, nobody gets sent anywhere. It is meant to be a
 comfortable place, and a comfortable place lets you talk.
 
 Changes land in the documents themselves and show as small cards underneath the
-reply, each with **put it back** if you want it gone. Tap the page icon to read
-or hand-edit any document.
+reply, each with **put it back** if you want it gone.
+
+**Your worlds and conversations** are on the left: tap ☰ at the top left, or
+swipe in from the left edge. Worlds are listed newest first. Inside the open
+one are its conversations — as many as you like, all working on the same
+documents — and its documents. Every world and conversation can be renamed or
+deleted from its ⋯.
+
+**New plot essential** starts one with the crew: tell them about the world and
+it gets built as you talk. **Bring one in** takes a plot essential,
+continuation file or worldbook you already have — paste it or pick the file —
+and tidies it on the way in.
+
+**Every document carries its jobs by name:** *Tidy it up* (untangle and
+declutter), *Make it shorter*, *Check it*. A worldbook also has *Export for
+SillyTavern*, which saves it in SillyTavern's World Info format — import it
+there under World Info. Each job shows in the conversation in plain words, the
+same as if you had typed it.
+
+While the crew works, the send button becomes **Stop** and looks like it. A
+turn that failed and changed nothing offers **Try again**. If the server on the
+phone stops answering, a note says so and your work keeps trying to save until
+it lands — keep the page open.
 
 ## The look
 
 Four coats of paint under the cog. **The tavern at night** puts a drawn scene
 behind the room — purple sky, two moons, an aurora, lanterns strung across a
 yard, a bard mid-song and somebody buying a round. It is one hand-drawn file,
-nothing is fetched from anywhere, and the words stay at 16.8:1 contrast over
+nothing is fetched from anywhere, and the words stay at 17.0:1 contrast over
 it, measured rather than assumed.
 
 ## The crew
@@ -104,5 +125,8 @@ of the whole. The cog, under the floor, shows exactly who reads what.
 Read `AGENTS.md` first.
 
 ```
-bash tests/all.sh    229 + 29 + 64 checks
+bash tests/all.sh    six suites, 546 checks
 ```
+
+`docs/lineage.md` lists every version of Cozy Tavern and Cozy Chat and what
+each one means for CozyMaker.

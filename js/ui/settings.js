@@ -5,6 +5,7 @@
 import * as store from '../store.js';
 import { $, el, openSheet, toast, applyTheme, redraw, field, input, select, group } from './kit.js';
 import { WORKERS, FRONT } from '../agents/roster.js';
+import { personaOf, unfilledMacros } from '../agents/persona.js';
 import { callModel } from '../agents/call.js';
 import { loadEngine, sliceReport } from '../engine/slices.js';
 
@@ -14,13 +15,17 @@ const THEMES = [
   ['dusk', 'Dusk — cool and quiet'],
   ['paper', 'Paper — light'],
 ];
+/* The levels Cozy Tavern proved on the wire, and nothing else — each house
+ * is spoken to in its own words (js/providers.js). Left on the first, nothing
+ * about thinking is sent at all and the provider decides. */
 const THINKING = [
   ['', "Whatever the model does on its own"],
-  ['off', 'Do not think'],
-  ['minimal', 'Think a little'],
+  ['off', 'Off'],
   ['low', 'Low'],
   ['medium', 'Medium'],
   ['high', 'High'],
+  ['xhigh', 'XHigh'],
+  ['max', 'Max'],
 ];
 
 export function openHouse() {
@@ -50,19 +55,30 @@ function whoSection(house) {
   frame.style.minHeight = '140px';
   frame.value = house.personaFrame || '';
   frame.placeholder = 'Paste your own instructions here — who they are, how they talk, all of it.';
+  const macroNote = el('p', 'hint');
+  const showMacros = () => {
+    const missing = unfilledMacros(personaOf(store.getHouse()));
+    macroNote.textContent = missing.length
+      ? `Your instructions say ${missing.join(' and ')} — fill in the ${missing.length > 1 ? 'two names' : 'name'} below and ${missing.length > 1 ? 'they are' : 'it is'} read as ${missing.length > 1 ? 'those names' : 'that name'}, the way SillyTavern does.`
+      : '';
+    macroNote.style.display = missing.length ? '' : 'none';
+  };
   frame.addEventListener('change', async () => {
     house.personaFrame = frame.value;
     await store.saveHouse(house);
+    showMacros();
     toast('Saved.');
   });
   g.append(field('Their instructions, in your own words', frame));
+  g.append(macroNote);
+  showMacros();
 
   const maker = input(house.settings.makerName, 'Eni, Iron Man, Lothar — anyone');
-  maker.addEventListener('change', () => save('makerName', maker.value.trim()));
+  maker.addEventListener('change', () => save('makerName', maker.value.trim()).then(showMacros));
   g.append(field('What they are called', maker));
 
   const you = input(house.settings.yourName, 'Bruce, Jovan — whatever they should call you');
-  you.addEventListener('change', () => save('yourName', you.value.trim()));
+  you.addEventListener('change', () => save('yourName', you.value.trim()).then(showMacros));
   g.append(field('What you are called', you));
 
   const person = select([['second', 'As "you" — "Hey Eni, this is Bruce."'], ['first', 'As "I" — "I\'m Eni."']], house.settings.person || 'second');

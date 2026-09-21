@@ -1,0 +1,637 @@
+#!/usr/bin/env python3
+"""CozyMaker — tests/walk_worlds.py
+
+The second walk, for what the full history of Cozy Tavern and Cozy Chat taught.
+Real Chromium at a phone's size, the real server, a stand-in model that reads
+the prompts it was actually sent and can be told to answer slowly. Every check
+is on what reached the model, what reached the device, or what is on screen.
+
+    python3 tests/walk_worlds.py
+"""
+
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+import urllib.request
+import http.server
+import socketserver
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+PORT = 8805
+MODEL_PORT = 8806
+
+passed = 0
+failed = []
+calls = []
+DELAY = {"front": 0.0, "worker": 0.0}
+
+
+def ok(name, cond, detail=""):
+    global passed
+    if cond:
+        passed += 1
+    else:
+        failed.append(f"{name}{' — ' + str(detail)[:300] if detail else ''}")
+
+
+def which(system):
+    for marker, name in (("PROACTIVE CO-WRITER", "builder"), ("THE CLEANUP WORKFLOW", "showrunner"),
+                         ("THE EXPERT EYE", "eye"), ("Edit Mode Discipline", "editor"),
+                         ("SMART COMPRESSION SYSTEM", "compressor")):
+        if marker in system:
+            return name
+    return "front" if "craft work on a piece of fiction" not in system else "worker"
+
+
+class Model(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *a):
+        pass
+
+    def refuse(self, code, message):
+        raw = json.dumps({"error": {"message": message}}).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+
+    def do_POST(self):
+        n = int(self.headers.get("Content-Length") or 0)
+        sent = json.loads(self.rfile.read(n).decode())
+        # an address that will not take a thinking field, and one with a bad key
+        if self.path.startswith("/refuse/"):
+            calls.append({"who": "refuse", "body": sent})
+            if any(k in sent for k in ("thinking", "reasoning_effort", "reasoning", "enable_thinking")):
+                return self.refuse(400, "Unrecognized request argument supplied: reasoning_effort")
+        if self.path.startswith("/badkey/"):
+            calls.append({"who": "badkey", "body": sent})
+            return self.refuse(401, "Incorrect API key provided")
+        msgs = sent.get("messages", [])
+        system = next((m["content"] for m in msgs if m.get("role") == "system"), "")
+        rest = [m for m in msgs if m.get("role") != "system"]
+        who = which(system)
+        calls.append({"who": who, "system": system, "messages": rest, "stream": bool(sent.get("stream")), "body": sent})
+
+        if sent.get("stream") and self.path.startswith("/cut/"):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.end_headers()
+            for piece, fin in (("The harbour wall ", None), ("was built by the", "length")):
+                self.wfile.write(("data: " + json.dumps({"choices": [{"delta": {"content": piece}, "finish_reason": fin}]}) + "\n\n").encode())
+            self.wfile.write(b"data: [DONE]\n\n")
+            return
+
+        if sent.get("stream"):
+            time.sleep(DELAY["front"])
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.end_headers()
+            try:
+                for piece in ["All ", "right — ", "done ", "and ", "done. "] + ["More words so the reply is long. "] * 30:
+                    self.wfile.write(("data: " + json.dumps({"choices": [{"delta": {"content": piece}}]}) + "\n\n").encode())
+                    self.wfile.flush()
+                    time.sleep(0.01)
+                self.wfile.write(b"data: [DONE]\n\n")
+                self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            return
+
+        time.sleep(DELAY["worker"])
+        if who == "builder":
+            body = ('I started the plot essential from what you described.\n\n<edits>\n'
+                    '[{"create_file":"Plot Essential.md","replace":"# PLOT ESSENTIAL — The Leviathan Quarter — V1.0\\n\\n'
+                    '## WORLD\\n### Rules\\n- The city lives inside a dormant leviathan.\\n\\n## SCENE\\nWHERE: the Ribway\\n",'
+                    '"reason":"the premise"}]\n</edits>')
+        elif who == "showrunner":
+            body = ('I tidied it: the rule now says what it means.\n\n<edits>\n'
+                    '[{"file":"Plot Essential.md","find":"- The city lives inside a dormant leviathan.",'
+                    '"replace":"- The city lives inside a leviathan that is dormant, not dead.","reason":"clearer"}]\n</edits>')
+        elif who == "compressor":
+            body = "<need>SCENE</need>"      # a worker that only ever asks to read more
+        elif who == "editor":
+            # like a real model: quote the line that is actually in the document it was shown
+            shown = rest[0]["content"] if rest else ""
+            m = re.search(r"(?m)^WHERE[^:\n]*: [^\n/]*", shown)
+            line = m.group(0).rstrip() if m else "WHERE: the Ribway"
+            target = re.search(r"to the (\w+)", rest[0]["content"].split("What the author just asked for:")[-1]) if rest else None
+            place = target.group(1) if target else "Heartworks"
+            body = ('I changed the scene.\n\n<edits>\n' + json.dumps([{"file": "Plot Essential.md", "find": line,
+                    "replace": "WHERE: the " + place, "reason": "moved the scene"}]) + '\n</edits>')
+        else:
+            body = "Read it all back; nothing else needed changing."
+        raw = json.dumps({"choices": [{"message": {"content": body}, "finish_reason": "stop"}]}).encode()
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
+
+class Threaded(socketserver.ThreadingMixIn, http.server.HTTPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+
+
+def api(path, method="GET", body=None):
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(f"http://127.0.0.1:{PORT}{path}", data=data, method=method)
+    if data:
+        req.add_header("Content-Type", "application/json")
+    return json.loads(urllib.request.urlopen(req).read())
+
+
+def world(pid):
+    return api(f"/api/project/{pid}")
+
+
+def main():
+    from playwright.sync_api import sync_playwright
+
+    home = Path(tempfile.mkdtemp(prefix="cozymaker-worlds-"))
+    env = dict(os.environ, COZYMAKER_HOME=str(home), COZYMAKER_PORT=str(PORT))
+
+    def start_server():
+        s = subprocess.Popen([sys.executable, str(ROOT / "serve.py")], env=env,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        for _ in range(200):
+            try:
+                urllib.request.urlopen(f"http://127.0.0.1:{PORT}/api/version", timeout=1).read()
+                break
+            except Exception:
+                time.sleep(0.1)
+        return s
+
+    srv = [start_server()]
+    model = Threaded(("127.0.0.1", MODEL_PORT), Model)
+    threading.Thread(target=model.serve_forever, daemon=True).start()
+
+    try:
+        house = api("/api/house")
+        house["connections"] = [{"id": "c1", "name": "the good one", "url": f"http://127.0.0.1:{MODEL_PORT}/v1",
+                                 "model": "test-model", "key": "k"}]
+        house["agentConnections"] = {"keeper": "c1"}
+        house["settings"].update({"makerName": "Eni", "yourName": "Bruce", "person": "second"})
+        house["personaFrame"] = "You are {{char}}, and {{user}} is the one you build worlds with."
+        api("/api/house", "PUT", house)
+
+        # a world saved the OLD way, with its turns on the world itself
+        api("/api/project/p_old", "PUT", {
+            "id": "p_old", "title": "An Older World",
+            "docs": [{"id": "d0", "name": "Notes.md", "kind": "notes", "text": "old notes"}],
+            "turns": [{"role": "writer", "text": "an old question", "at": 1000},
+                      {"role": "maker", "text": "an old answer", "at": 2000}],
+        })
+        time.sleep(0.05)
+        api("/api/project/p_new", "PUT", {"id": "p_new", "title": "The Leviathan Quarter", "docs": [], "chats": []})
+
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch()
+            ctx = browser.new_context(viewport={"width": 390, "height": 844}, device_scale_factor=2,
+                                      is_mobile=True, has_touch=True, accept_downloads=True)
+            page = ctx.new_page()
+            errors = []
+            page.on("pageerror", lambda e: errors.append(str(e)))
+            page.on("console", lambda m: errors.append("console:" + m.text) if m.type == "error" else None)
+            page.goto(f"http://127.0.0.1:{PORT}/", wait_until="networkidle")
+            page.wait_for_timeout(800)
+
+            # ---------------------------------------------------- the drawer
+            ok("the newest world opens first", page.locator("#worldName").inner_text() == "The Leviathan Quarter",
+               page.locator("#worldName").inner_text())
+            ok("the button that opens the drawer says what it is",
+               page.get_attribute("#menuBtn", "aria-label") == "Your worlds and conversations")
+            page.click("#menuBtn")
+            page.wait_for_timeout(400)
+            ok("the drawer slides in from the left", page.locator("#drawer.open").count() == 1)
+            text = page.locator("#drawerBody").inner_text()
+            ok("the drawer lists every world", "The Leviathan Quarter" in text and "An Older World" in text, text[:300])
+            ok("the drawer names its parts", "conversations" in text.lower() and "documents" in text.lower())
+            ok("an empty world offers a new plot essential by name", "New plot essential" in text)
+            ok("and a way to bring one in", "Bring one in" in text)
+            order = [t for t in re.findall(r"(The Leviathan Quarter|An Older World)", text)]
+            ok("worlds are listed newest first", order[:2] == ["The Leviathan Quarter", "An Older World"], order)
+
+            page.mouse.click(372, 420)
+            page.wait_for_timeout(300)
+            ok("tapping outside closes it", page.locator("#drawer.open").count() == 0)
+
+            page.mouse.move(0, 0)
+            page.evaluate("""() => {
+              const t = (x, y) => new Touch({ identifier: 1, target: document.body, clientX: x, clientY: y });
+              document.dispatchEvent(new TouchEvent('touchstart', { touches: [t(8, 400)], changedTouches: [t(8, 400)], bubbles: true }));
+              document.dispatchEvent(new TouchEvent('touchend', { touches: [], changedTouches: [t(150, 410)], bubbles: true }));
+            }""")
+            page.wait_for_timeout(350)
+            ok("a swipe from the left edge opens it", page.locator("#drawer.open").count() == 1)
+            page.mouse.click(372, 420)
+            page.wait_for_timeout(300)
+
+            # ---------------------------------------- the old world moves in whole
+            page.click("#menuBtn")
+            page.wait_for_timeout(300)
+            page.locator(".world-row", has_text="An Older World").click()
+            page.wait_for_timeout(700)
+            ok("an old world opens", page.locator("#worldName").inner_text() == "An Older World")
+            turns = page.locator(".turn .bubble").all_inner_texts()
+            ok("its old conversation is all there, in order", turns[:2] == ["an old question", "an old answer"], turns)
+            page.wait_for_timeout(1200)
+            saved = world("p_old")
+            ok("on the device it now lives in a conversation", len(saved.get("chats", [])) == 1 and "turns" not in saved,
+               json.dumps(saved)[:300])
+            ok("nothing of it was lost", [t["text"] for t in (saved.get("chats") or [{"turns": []}])[0]["turns"]] == ["an old question", "an old answer"])
+            first_id = (saved.get("chats") or [{}])[0].get("id")
+            page.locator(".world-row", has_text="The Leviathan Quarter").click() if False else None
+            page.reload(wait_until="networkidle")
+            page.wait_for_timeout(700)
+            ok("opening it again keeps the same conversation", (world("p_old").get("chats") or [{}])[0].get("id") == first_id)
+            page.click("#menuBtn")
+            page.wait_for_timeout(300)
+
+            page.locator(".world-row", has_text="The Leviathan Quarter").click()
+            page.wait_for_timeout(700)
+            page.mouse.click(372, 420)
+            page.wait_for_timeout(300)
+
+            # ---------------------------------------- a new plot essential, by name
+            ok("an empty world says how to begin", page.locator(".empty .btn", has_text="Start a plot essential").count() == 1)
+            calls.clear()
+            page.locator(".empty .btn", has_text="Start a plot essential").click()
+            page.wait_for_function("() => { const b = document.querySelectorAll('.turn.maker .bubble'); return b.length && /done/.test(b[b.length-1].textContent); }", timeout=30000)
+            page.wait_for_timeout(1300)
+            ok("the job appears in the conversation in plain words",
+               "Let's start a new plot essential" in page.locator(".turn.writer .bubble").first.inner_text())
+            ok("the builder was the one sent", any(c["who"] == "builder" for c in calls), [c["who"] for c in calls])
+            saved = world("p_new")
+            pe = [d for d in saved["docs"] if d["name"] == "Plot Essential.md"]
+            ok("the plot essential now exists on the device", pe and "dormant leviathan" in pe[0]["text"], json.dumps(saved["docs"])[:200])
+            ok("the conversation took its name from what was said",
+               saved["chats"][0]["title"].startswith("Let's start a new plot"), saved["chats"][0]["title"])
+
+            front = [c for c in calls if c["who"] == "front"][-1]
+            ok("the front was given his names, not SillyTavern's syntax",
+               "You are Eni, and Bruce is the one" in front["system"] and "{{" not in front["system"], front["system"][:120])
+            roles = [m["role"] for m in front["messages"]]
+            ok("one voice on the wire: roles alternate", all(roles[i] != roles[i + 1] for i in range(len(roles) - 1)), roles)
+            ok("his words reach the front exactly once",
+               sum(m["content"].count("Let's start a new plot essential") for m in front["messages"]) == 1)
+            ok("the front is never taught the workers' tools", "<need>" not in json.dumps(front["messages"]))
+            ok("the front never calls him 'the writer'", "the writer" not in front["system"].lower())
+
+            # ---------------------------------------- the workers hear the talk
+            calls.clear()
+            page.fill("#say", "move the scene to the Heartworks")
+            page.click("#sendBtn")
+            page.wait_for_function("() => document.querySelectorAll('.turn.maker').length >= 2 && !document.querySelector('#sendBtn.stop')", timeout=30000)
+            page.wait_for_timeout(1300)
+            editor = [c for c in calls if c["who"] == "editor"]
+            ok("the editor was sent for a change", len(editor) == 1, [c["who"] for c in calls])
+            eyes = [c for c in calls if c["who"] == "eye"]
+            ok("the read-back says it is the house asking, not him",
+               eyes and "What the house needs from you" in eyes[0]["messages"][0]["content"]
+               and "What the author just asked for" not in eyes[0]["messages"][0]["content"])
+            ok("his own request is labelled as his",
+               editor and "What the author just asked for:\nmove the scene to the Heartworks" in editor[0]["messages"][0]["content"])
+            if editor:
+                u = editor[0]["messages"][0]["content"]
+                ok("the worker hears the conversation that led here", "Let's start a new plot essential" in u)
+                ok("the worker hears who said what, by name", "Bruce:" in u and "Eni:" in u)
+            saved = world("p_new")
+            ok("the change reached the device", "WHERE: the Heartworks" in saved["docs"][0]["text"])
+
+            # ---------------------------------------- Tidy it up, by name, on the document
+            page.click("#docsBtn")
+            page.wait_for_timeout(400)
+            page.locator("#docsBody .row .grow", has_text="Plot Essential.md").click()
+            page.wait_for_timeout(400)
+            jobs = page.locator(".doc-jobs").inner_text()
+            ok("a document carries its jobs by name", all(w in jobs for w in ("Tidy it up", "Make it shorter", "Check it")), jobs)
+            calls.clear()
+            page.locator(".doc-jobs .btn", has_text="Tidy it up").click()
+            page.wait_for_function("() => document.querySelectorAll('.turn.maker').length >= 3 && !document.querySelector('#sendBtn.stop')", timeout=30000)
+            page.wait_for_timeout(1300)
+            ok("Tidy it up sends the showrunner", any(c["who"] == "showrunner" for c in calls), [c["who"] for c in calls])
+            ok("and shows in the conversation as his own words",
+               "Tidy up Plot Essential.md." in page.locator(".turn.writer .bubble").last.inner_text())
+            saved = world("p_new")
+            ok("the tidy reached the device", "dormant, not dead" in saved["docs"][0]["text"])
+
+            # ---------------------------------------- a new conversation, same documents
+            page.click("#menuBtn")
+            page.wait_for_timeout(300)
+            page.locator(".part-head .btn", has_text="New conversation").click()
+            page.wait_for_timeout(700)
+            ok("a new conversation starts empty", page.locator(".turn").count() == 0)
+            ok("and still has the documents", "Everything in the documents is still here" in page.locator(".empty").inner_text())
+            saved = world("p_new")
+            ok("the world now holds two conversations", len(saved["chats"]) == 2)
+
+            # ---------------------------------------- the reply lands where it was asked
+            DELAY["front"] = 2.5
+            page.fill("#say", "change the scene to the Ribway please")
+            page.click("#sendBtn")
+            page.wait_for_timeout(500)
+            ok("while it works, the button is a Stop and looks like one",
+               page.locator("#sendBtn.stop").count() == 1 and page.get_attribute("#sendBtn", "aria-label") == "Stop")
+            page.locator("#sendBtn").click()   # the same tap again, a moment later
+            page.wait_for_timeout(100)
+            ok("a double tap is not a Stop", page.locator("#sendBtn.stop").count() == 1)
+            asking = world("p_new")["openChat"]
+            page.click("#menuBtn")
+            page.wait_for_timeout(300)
+            page.locator(".item.chat:not(.current) .item-main").first.click()   # walk into the other conversation mid-turn
+            page.wait_for_timeout(300)
+            ok("elsewhere, the composer says the crew is busy and where",
+               page.locator("#say").is_disabled() and "The crew is working in" in page.get_attribute("#say", "placeholder"))
+            page.wait_for_function("() => !document.querySelector('#say').disabled", timeout=30000)
+            page.wait_for_timeout(1300)
+            DELAY["front"] = 0.0
+            saved = world("p_new")
+            there = [c for c in saved["chats"] if c["id"] == asking][0]
+            here = [c for c in saved["chats"] if c["id"] != asking][0]
+            ok("the reply landed in the conversation that asked", there["turns"][-1]["role"] == "maker" and "done" in there["turns"][-1]["text"],
+               json.dumps(there["turns"][-1])[:200])
+            ok("and nowhere else", not any("Ribway please" in t["text"] for t in here["turns"]))
+
+            # ---------------------------------------- Stop stops everything
+            page.click("#menuBtn")
+            page.wait_for_timeout(300)
+            page.locator(".item.chat .item-main", has_text="change the scene").first.click()
+            page.wait_for_timeout(400)
+            DELAY["worker"] = 2.0
+            calls.clear()
+            page.fill("#say", "change the scene to the Spire")
+            page.click("#sendBtn")
+            page.wait_for_timeout(1000)
+            page.locator("#sendBtn").click()
+            page.wait_for_function("() => !document.querySelector('#sendBtn.stop')", timeout=30000)
+            page.wait_for_timeout(2500)
+            DELAY["worker"] = 0.0
+            ok("after Stop, the front is never called", not any(c["who"] == "front" for c in calls), [c["who"] for c in calls])
+            ok("the turn says it was stopped", page.locator(".turn.maker .bubble").last.inner_text() == "(stopped)")
+            ok("a stopped turn is never handed back to the model as its own words",
+               world("p_new")["chats"] and any(t.get("failed") for c in world("p_new")["chats"] for t in c["turns"]))
+
+            # ---------------------------------------- his hand edit wins over the crew's
+            DELAY["worker"] = 2.0
+            page.fill("#say", "change the scene to the Heartworks again")
+            page.click("#sendBtn")
+            page.wait_for_timeout(600)
+            page.click("#docsBtn")
+            page.wait_for_timeout(300)
+            page.locator("#docsBody .row .grow", has_text="Plot Essential.md").click()
+            page.wait_for_timeout(300)
+            area = page.locator("#docsBody textarea")
+            area.fill(area.input_value().replace("WHERE:", "WHERE (his own hand):"))
+            page.wait_for_timeout(1400)
+            page.click("#docsSheet [data-close]")
+            page.wait_for_function("() => !document.querySelector('#sendBtn.stop')", timeout=30000)
+            page.wait_for_timeout(1500)
+            DELAY["worker"] = 0.0
+            saved = world("p_new")
+            doc = [d for d in saved["docs"] if d["name"] == "Plot Essential.md"][0]["text"]
+            ok("a hand edit made while the crew worked is kept", "WHERE (his own hand):" in doc, doc[-200:])
+            cards = page.locator(".cards").last.inner_text()
+            ok("and the crew's change to it says why it was not used", "your version was kept" in cards, cards)
+
+            # ---------------------------------------- he owns the scroll
+            DELAY["front"] = 0.0
+            page.fill("#say", "just chatting now, tell me something long")
+            page.click("#sendBtn")
+            page.wait_for_timeout(250)
+            page.evaluate("document.getElementById('stream').scrollTop = 0")
+            page.wait_for_timeout(1200)
+            top = page.evaluate("document.getElementById('stream').scrollTop")
+            ok("scrolling up while a reply streams is not undone", top < 40, top)
+
+            # ---------------------------------------- bring one in
+            page.click("#menuBtn")
+            page.wait_for_timeout(300)
+            page.locator(".world-parts .btn", has_text="Bring one in").click()
+            page.wait_for_timeout(400)
+            page.locator("#docsBody input[type=text]").fill("Old Worldbook.json")
+            page.locator("#docsBody textarea").fill(json.dumps([
+                {"name": "The Ribway", "keys": ["Ribway"], "content": "a market street", "strategy": "green", "order": 9999},
+            ]))
+            page.locator("#docsBody .btn", has_text="Bring it in").click()
+            page.wait_for_timeout(1300)
+            saved = world("p_new")
+            wb = [d for d in saved["docs"] if d["name"] == "Old Worldbook.json"]
+            ok("a pasted worldbook arrives as a worldbook", wb and wb[0]["kind"] == "worldbook", json.dumps(wb)[:200])
+            ok("it is tidied on the way in", wb and json.loads(wb[0]["text"])[0]["order"] == 1000)
+
+            page.locator("#docsBody .row .grow", has_text="Old Worldbook.json").click()
+            page.wait_for_timeout(400)
+            with page.expect_download() as dl:
+                page.locator(".doc-jobs .btn", has_text="Export for SillyTavern").click()
+            path = dl.value.path()
+            st = json.loads(Path(path).read_text())
+            ok("the export is named for SillyTavern", dl.value.suggested_filename == "Old Worldbook - SillyTavern.json", dl.value.suggested_filename)
+            ok("the export is in SillyTavern's shape", st["entries"]["0"]["key"] == ["Ribway"] and st["entries"]["0"]["selective"] is True)
+
+            # ---------------------------------------- a world can be renamed and deleted
+            page.click("#docsSheet [data-close]")
+            page.wait_for_timeout(300)
+            page.click("#menuBtn")
+            page.wait_for_timeout(400)
+            page.once("dialog", lambda d: d.accept("The Leviathan Quarter, renamed"))
+            # a row is found by its exact visible name: the folded menu inside every
+            # row holds "Rename" and "Delete", and has_text reads hidden text too
+            row_for = lambda title: page.locator(".world-line").filter(
+                has=page.locator(".world-name", has_text=re.compile("^" + re.escape(title) + "$")))
+            row_for("An Older World").locator(".item-menu > .iconbtn").click()
+            row_for("An Older World").locator(".item-actions .btn", has_text="Rename").click()
+            page.wait_for_timeout(700)
+            ok("a world not on screen can be renamed", world("p_old")["title"] == "The Leviathan Quarter, renamed")
+            page.once("dialog", lambda d: d.accept())
+            ok("the drawer draws each world once", page.locator(".world-line").count() == 2, page.locator(".world-line").count())
+            row_for("The Leviathan Quarter, renamed").locator(".item-menu > .iconbtn").click()
+            row_for("The Leviathan Quarter, renamed").locator(".item-actions .btn", has_text="Delete").click()
+            page.wait_for_timeout(900)
+            ids = [p["id"] for p in api("/api/projects")["projects"]]
+            ok("a world can be deleted from the drawer", "p_old" not in ids, ids)
+            ok("the world on screen is untouched by it", page.locator("#worldName").inner_text() == "The Leviathan Quarter")
+
+            # ---------------------------------------- the front's refusals, through the real server
+            h = api("/api/house")
+            h["connections"] += [
+                {"id": "c2", "name": "no thinking here", "url": f"http://127.0.0.1:{MODEL_PORT}/refuse/v1",
+                 "model": "test-model", "key": "k", "thinking": "high"},
+                {"id": "c3", "name": "wrong key", "url": f"http://127.0.0.1:{MODEL_PORT}/badkey/v1",
+                 "model": "test-model", "key": "nope"},
+                {"id": "c4", "name": "an old level", "url": f"http://127.0.0.1:{MODEL_PORT}/v1",
+                 "model": "test-model", "key": "k", "thinking": "minimal"},
+            ]
+            h["agentConnections"]["keeper"] = "c2"
+            api("/api/house", "PUT", h)
+            page.reload(wait_until="networkidle")
+            page.wait_for_timeout(700)
+            ok("an old saved level is repaired to one that exists",
+               [c for c in api("/api/house")["connections"] if c["id"] == "c4"][0].get("thinking") == "low")
+            calls.clear()
+            page.fill("#say", "just chatting, nothing to change")
+            page.click("#sendBtn")
+            page.wait_for_function("() => !document.querySelector('#sendBtn.stop')", timeout=30000)
+            page.wait_for_timeout(1200)
+            refused = [c for c in calls if c["who"] == "refuse"]
+            ok("a refused thinking level steps down and goes again", len(refused) == 2, len(refused))
+            ok("the second try carried no thinking", len(refused) == 2 and "reasoning_effort" not in refused[1]["body"])
+            last = page.locator(".turn.maker .bubble").last.inner_text()
+            ok("and the reply arrives instead of an empty bubble", "done" in last, last[:120])
+
+            h["agentConnections"]["keeper"] = "c3"
+            api("/api/house", "PUT", h)
+            page.reload(wait_until="networkidle")
+            page.wait_for_timeout(700)
+            calls.clear()
+            page.fill("#say", "just chatting again")
+            page.click("#sendBtn")
+            page.wait_for_function("() => !document.querySelector('#sendBtn.stop')", timeout=30000)
+            page.wait_for_timeout(1200)
+            last = page.locator(".turn.maker .bubble").last.inner_text()
+            ok("a refused call says what the provider said", "did not go through" in last and "Incorrect API key" in last, last[:160])
+            ok("a bad key is asked once, not retried", len([c for c in calls if c["who"] == "badkey"]) == 1,
+               len([c for c in calls if c["who"] == "badkey"]))
+
+            # ---------------------------------------- the findable retry
+            ok("a failed turn that changed nothing offers Try again",
+               page.locator(".turn.maker").last.locator(".again").count() == 1)
+            h["agentConnections"]["keeper"] = "c1"
+            api("/api/house", "PUT", h)
+            page.reload(wait_until="networkidle")
+            page.wait_for_timeout(700)
+            before = len(page.locator(".turn").all())
+            page.locator(".turn.maker").last.locator(".again").click()
+            page.wait_for_function("() => !document.querySelector('#sendBtn.stop') && /done/.test([...document.querySelectorAll('.turn.maker .bubble')].pop().textContent)", timeout=30000)
+            page.wait_for_timeout(800)
+            writers = page.locator(".turn.writer .bubble").all_inner_texts()
+            ok("Try again sends his same words", writers[-1] == "just chatting again", writers[-3:])
+            ok("and does not leave the failed attempt behind", writers.count("just chatting again") == 1 and len(page.locator(".turn").all()) == before)
+            ok("the answer arrives", "done" in page.locator(".turn.maker .bubble").last.inner_text())
+
+            # ---------------------------------------- a turn spent entirely on asking to read more
+            calls.clear()
+            page.click("#docsBtn")
+            page.wait_for_timeout(300)
+            page.locator("#docsBody .row .grow", has_text="Plot Essential.md").click()
+            page.wait_for_timeout(300)
+            page.locator(".doc-jobs .btn", has_text="Make it shorter").click()
+            page.wait_for_function("() => !document.querySelector('#sendBtn.stop')", timeout=30000)
+            page.wait_for_timeout(800)
+            comp = [c for c in calls if c["who"] == "compressor"]
+            ok("a worker that only asks to read more is told to do the job with what it has",
+               any("You have been shown everything" in c["messages"][0]["content"] for c in comp), len(comp))
+            ok("and it is asked at most four times", len(comp) <= 4, len(comp))
+
+            # ---------------------------------------- the drawer keeps its place when redrawn
+            page.set_viewport_size({"width": 390, "height": 420})
+            page.click("#menuBtn")
+            page.wait_for_timeout(400)
+            room = page.evaluate("(() => { const b = document.getElementById('drawerBody'); return b.scrollHeight - b.clientHeight; })()")
+            ok("the drawer has somewhere to scroll at this size", room > 60, room)
+            page.evaluate("document.getElementById('drawerBody').scrollTop = 60")
+            page.wait_for_timeout(100)
+            page.evaluate("import('/js/ui/drawer.js').then((m) => m.draw())")
+            page.wait_for_timeout(600)
+            kept = page.evaluate("document.getElementById('drawerBody').scrollTop")
+            ok("a redraw does not throw him back to the top", kept == 60, kept)
+            page.mouse.click(372, 300)
+            page.wait_for_timeout(300)
+            page.set_viewport_size({"width": 390, "height": 844})
+            page.wait_for_timeout(300)
+
+            # ---------------------------------------- a reply cut at the limit says so
+            h = api("/api/house")
+            h["connections"].append({"id": "c5", "name": "short", "url": f"http://127.0.0.1:{MODEL_PORT}/cut/v1",
+                                     "model": "test-model", "key": "k"})
+            h["agentConnections"]["keeper"] = "c5"
+            api("/api/house", "PUT", h)
+            page.reload(wait_until="networkidle")
+            page.wait_for_timeout(600)
+            page.fill("#say", "tell me about the harbour")
+            page.click("#sendBtn")
+            page.wait_for_function("() => !document.querySelector('#sendBtn.stop')", timeout=30000)
+            page.wait_for_timeout(800)
+            ok("a reply cut at the limit says where it was cut", page.locator(".turn.maker").last.locator(".cutnote").count() == 1)
+            ok("a finished reply does not", page.locator(".turn.maker").nth(0).locator(".cutnote").count() == 0)
+            h["agentConnections"]["keeper"] = "c1"
+            api("/api/house", "PUT", h)
+
+            # ---------------------------------------- the name boxes, through the real settings panel
+            page.reload(wait_until="networkidle")
+            page.wait_for_timeout(600)
+            page.click("#settingsBtn")
+            page.wait_for_timeout(500)
+            you_box = page.locator("input[placeholder^='Bruce, Jovan']")
+            note_sel = "#houseBody p.hint:has-text('Your instructions say')"
+            ok("with both names set, nothing is pointed at", page.locator(note_sel).count() == 0 or not page.locator(note_sel).first.is_visible())
+            you_box.fill("")
+            you_box.dispatch_event("change")
+            page.wait_for_timeout(700)
+            ok("an empty name under a {{user}} is pointed at, plainly",
+               page.locator(note_sel).count() == 1 and page.locator(note_sel).first.is_visible()
+               and "{{user}}" in page.locator(note_sel).first.inner_text(), page.locator(note_sel).all_inner_texts())
+            you_box.fill("Bruce")
+            you_box.dispatch_event("change")
+            page.wait_for_timeout(700)
+            ok("filling it in clears the pointer", not page.locator(note_sel).first.is_visible())
+            ok("and the name is saved to the house", api("/api/house")["settings"]["yourName"] == "Bruce")
+            page.click("#houseSheet [data-close]")
+            page.wait_for_timeout(300)
+
+            # ---------------------------------------- the server dies mid-edit; nothing is lost
+            h = api("/api/house")
+            h["agentConnections"]["keeper"] = "c1"
+            api("/api/house", "PUT", h)
+            page.reload(wait_until="networkidle")
+            page.wait_for_timeout(700)
+            page.click("#docsBtn")
+            page.wait_for_timeout(300)
+            page.locator("#docsBody .row .grow", has_text="Plot Essential.md").click()
+            page.wait_for_timeout(300)
+            srv[0].terminate()
+            srv[0].wait(timeout=5)
+            area = page.locator("#docsBody textarea")
+            area.fill(area.input_value() + "\n- Written while the server was down.")
+            page.wait_for_timeout(2600)
+            ok("the house says plainly that it is not saved", page.locator("#saveNote").is_visible())
+            on_top = page.evaluate("""() => { const n = document.getElementById('saveNote'); const r = n.getBoundingClientRect();
+              return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) === n; }""")
+            ok("and it is on top of the document he is typing in, not behind it", on_top)
+            srv[0] = start_server()
+            page.wait_for_function("() => document.getElementById('saveNote').hidden", timeout=60000)
+            ok("when the server is back, the note goes by itself", page.locator("#saveNote").is_hidden())
+            pe = [d for d in world("p_new")["docs"] if d["name"] == "Plot Essential.md"][0]["text"]
+            ok("the words written during the outage reached the device", "Written while the server was down." in pe, pe[-160:])
+            # the browser's own log of refused connections during the outage is not the app throwing
+            errors[:] = [e for e in errors if not re.search(r"ERR_CONNECTION_REFUSED|Failed to load resource|Failed to fetch", e)]
+
+            ok("nothing threw the whole way through", not errors, "; ".join(errors[:4]))
+            browser.close()
+    finally:
+        srv[0].terminate()
+        try:
+            srv[0].wait(timeout=5)
+        except Exception:
+            srv[0].kill()
+        model.shutdown()
+        shutil.rmtree(home, ignore_errors=True)
+
+    print(f"\n{passed} passed, {len(failed)} failed")
+    for f in failed:
+        print("  ✗ " + f)
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

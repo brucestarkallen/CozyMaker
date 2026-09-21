@@ -144,7 +144,13 @@ def project_list():
                 "docs": [{"id": x.get("id"), "name": x.get("name"),
                           "kind": x.get("kind"), "chars": len(x.get("text", ""))}
                          for x in d.get("docs", [])],
-                "turns": len(d.get("turns", [])),
+                "chats": [{"id": c.get("id"), "title": c.get("title"),
+                           "turns": len(c.get("turns", [])), "updated": c.get("updated", 0)}
+                          for c in d.get("chats", [])]
+                         or ([{"id": "", "title": "First conversation",
+                               "turns": len(d.get("turns", [])), "updated": d.get("updated", 0)}]
+                             if d.get("turns") else []),
+                "turns": sum(len(c.get("turns", [])) for c in d.get("chats", [])) + len(d.get("turns", [])),
             })
         except Exception:
             continue

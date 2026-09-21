@@ -297,8 +297,11 @@ def main():
                 + "\n## EMPTY BIT\n\n"
                 + "## STILL HERE\ne002 [Tue 15 Apr 247, 10:00] [tension]: something [EPISTEMIC_VIOLATION] happened.\n")
             page.wait_for_timeout(900)
-            ok("there is no second way to tidy a document",
-               page.locator("#docsBody .btn", has_text="Tidy").count() == 0)
+            # "Tidy it up" is the showrunner's declutter-and-reshape, a model
+            # job sent through the conversation; the checks on leaving a
+            # document are code. Two different acts, one control each.
+            ok("a document has exactly one Tidy it up, and it is named that",
+               page.locator("#docsBody .btn", has_text="Tidy it up").count() == 1)
             # leaving the document is what runs the checks — no button, no chore
             page.locator("#docsAction").click()
             page.wait_for_timeout(700)

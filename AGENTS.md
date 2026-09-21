@@ -91,8 +91,9 @@ js/agents/run.js       the turn: workers backstage, one voice at the front
 js/doc/index.js        the whole shape always, full text only where it matters
 js/doc/edits.js        find, apply, undo, with a drift guard
 js/doc/lint.js         the checks that need no model
-js/store.js            the browser holds only the open world
-js/ui/                 kit, app (the room), docs, settings
+js/store.js            the open world, its conversations, and the one save line
+js/ui/                 kit, app (the room), drawer, docs, settings
+docs/lineage.md        every version of Cozy Tavern and Cozy Chat, held against this
 ```
 
 ### Why the index is built the way it is
@@ -119,6 +120,28 @@ floor that prevents corruption: a model that always thinks, pointed at a small
 reply budget, spends the budget reasoning and answers with nothing — so the
 floor raises the ceiling. It never lowers one the writer set.
 
+### Thinking, per house
+
+A thinking level is spoken in each provider's own words, copied from Cozy
+Tavern's proven table (M37, M303, M349) rather than re-guessed. The levels are
+Off, Low, Medium, High, XHigh, Max; unset sends nothing.
+
+    DeepSeek      thinking:{type:disabled} for Off; enabled + reasoning_effort low|high|max
+    Kimi K3       reasoning_effort low|high|max only; it always thinks, so Off is low
+    Kimi K2.x     thinking:{type} — a switch, no levels
+    GLM (Z.ai)    by generation: 5.3+ always thinks; <5.2 a switch; 5.2 switch + effort
+    Qwen          enable_thinking
+    OpenRouter    reasoning:{effort} or reasoning:{enabled:false}
+    Anthropic     a thinking budget, only when a level is set
+    anything else reasoning_effort
+
+A level a model refuses (a 4xx that names a thinking field) steps down and the
+same request goes again once, without it. Nothing else in the four-hundreds is
+retried — a bad key fails in one call, not after thirty seconds of backoff.
+When thinking is on, a worker's reply budget is raised to 16,000 so the
+thinking cannot eat the answer. A level saved by an older version that no
+provider takes ("minimal") is repaired to Low when the house loads.
+
 ### Storage
 
 The device holds everything, under `~/.cozymaker`. The browser holds only the
@@ -127,12 +150,39 @@ between browsers**, deliberately, and there never will be. Saves are atomic,
 the previous version is kept, and every document is also written as plain
 markdown under `~/.cozymaker/exports/` so it is reachable from the shell.
 
+**A world holds its documents and its conversations.** Every conversation in a
+world reads and changes the same documents. A world saved before conversations
+existed is moved, whole and in order, into a first conversation when it is
+opened, and written back at once (left in memory, every open would move it
+again under a new id).
+
+**The save line.** Every write to the device goes through one promise chain,
+and every step is caught where it joins (`inLine`) — one step that throws must
+never skip every save after it. A save that does not land is not dropped: the
+newest copy of each world waits in `pending` and is retried at 2s, 4s, 8s …
+up to 30s until it lands, and a note says plainly that it is not saved yet. A
+world opens from its waiting copy if it has one. Deleting a world drops its
+waiting copy, so a retry can never resurrect it. Nothing inside the line may
+await the line — that is a deadlock, and one was written and caught here.
+
+**Landing a turn.** The crew works from the documents as they were when he
+pressed send. `landTurn` lands the result on the world as it stands *now*: a
+document he changed by hand meanwhile keeps his words and the crew's change to
+it is refused with the reason; one he deleted stays deleted; the reply goes
+into the conversation that asked, even if he has walked into another world.
+Landing twice is landing once. For a world not on screen, only "not found"
+means deleted; any other failure is waited out and tried again.
+
 ---
 
 ## What was carried over from Cozy Tavern and Cozy Chat
 
 Both were read for their documented faults before this shipped — Cozy Tavern's
-`AGENTS.md` (8,495 lines of milestone history) and Cozy Chat's `AGENTS.md`.
+`AGENTS.md` (8,495 lines of milestone history) and Cozy Chat's `AGENTS.md` —
+and then every version record of both was read: 395 Cozy Tavern commits
+(M1 → M363) and 70 Cozy Chat commits (v1.0.0 → v5.26.1). **`docs/lineage.md`
+lists all 465, each with what it means here:** ported (and where), held by
+design (and where), not ported (and why), or a part CozyMaker does not have.
 Every class below is a fault one of them already paid for. Some were designed
 out; the rest were found here and fixed. Each has a test.
 
@@ -177,8 +227,12 @@ out; the rest were found here and fixed. Each has a test.
 - *Two doors for one act.* The documents panel had a "Tidy it" button doing by
   hand what the sweep does by itself. The sweep now runs when the writer
   finishes with a document — on leaving, never mid-keystroke, so it cannot
-  take away the empty heading he is about to fill. There is no button and
-  there is not meant to be.
+  take away the empty heading he is about to fill. **Taking the button away
+  entirely was itself the mistake:** he then could not find any way to tidy,
+  and a control he cannot find does not exist. "Tidy it up" is back as a
+  different act from the sweep — it sends the showrunner's declutter-and-
+  reshape (`*cleanup`) through the conversation. One button per act; the
+  automatic checks on leaving stay automatic.
 - *A hand edit lost on backgrounding.* One debounce in the house, not two
   stacked up.
 
@@ -219,33 +273,76 @@ out; the rest were found here and fixed. Each has a test.
   working the first time they forget.
 - **The launcher pulls a new copy of itself.** Bash reads a script as it runs,
   so the body is wrapped in `main()` and parsed whole before the pull.
+- **DeepSeek "off" was sent as `reasoning_effort: "minimal"`**, a word it does
+  not have, and 400s were retried four times over thirty seconds. See
+  *Thinking, per house*.
+- **Workers never saw the conversation.** "Fold all that in" folded nothing.
+  Every worker now gets the talk, newest last, with any cut said out loud.
+- **His message reached the front twice**, as two user turns in a row, and the
+  front's reading carried the workers' `<need>` tool. One voice on the wire;
+  the front gets the book without the tools (`forFront`).
+- **A refused call came back as an empty reply.** The stream reader only read
+  lines ending in a newline, and a refusal is one JSON line with none. What is
+  left when a stream ends is read too.
+- **A broken edit block voided every change**, a block in the thinking channel
+  was ignored, an empty answer read as "nothing to do", and "I changed it" with
+  no block was believed. Complete changes are salvaged in written order; each
+  of the others earns exactly one honest re-ask. A worker whose last round only
+  asked to read more is told to do the job with what it has.
+- **A hand edit made during a turn was overwritten** when the turn landed.
+  See *Landing a turn*.
+- **Stop did not stop** (the front was still called), and Send doubled as Stop
+  with the same icon, so a double tap cancelled his own turn. Stop looks like
+  Stop; a second tap within 700ms is the same tap.
+- **A finished reply threw him to the bottom** while he read. A redraw of the
+  same conversation keeps his place.
+- **`{{user}}`/`{{char}}` went to the model raw**, and the front called him
+  "the writer". Macros read as his names (angle forms in capitals only — a
+  preset's own `<user>` tag is markup); the front uses his name.
+- **Failed saves were only logged**, switching worlds after one dropped the
+  unsaved world, and a server hiccup was taken for a deleted world. See *The
+  save line*. The note that says so sits above the documents sheet — it was
+  first drawn underneath, where he types.
+- **The house's own jobs reached workers as "what the author asked for".**
+  A read-back or a repair is labelled as the house's.
+- **Try again removed his words before checking a turn was running**, so a
+  refusal lost them. It checks first.
+- **The close search froze the page on a long near-miss** (116ms on a desktop,
+  about 700ms on a phone, per edit). Two exact upper bounds skip what cannot
+  reach the floor: 10.5ms, identical answers over 60 random documents.
 
 ---
 
 ## Testing
 
 ```
-bash tests/all.sh           all three, exit code intact
+bash tests/all.sh           all six, exit code intact
 ```
 
-    node tests/units.mjs      229 checks — the real modules on a real document
-    python3 tests/server.py    29 checks — the real serve.py, real files on disk
-    python3 tests/browser.py   64 checks — real Chromium at 390x844, end to end
-    bash tests/launcher.sh     21 checks — real clone, install, updates pulled live,
-                                           and a Cozy Tavern stand-in that must survive
+    node tests/units.mjs         330 checks — the real modules on a real document
+    node tests/saves.mjs          20 checks — the real store against a server that goes down
+    python3 tests/server.py       29 checks — the real serve.py, real files on disk
+    python3 tests/browser.py      64 checks — real Chromium at 390x844, end to end
+    python3 tests/walk_worlds.py  82 checks — the drawer, conversations, named jobs, Stop,
+                                              landing, refusals, a real server killed mid-edit
+    bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
+                                              and a Cozy Tavern stand-in that must survive
 
-All three must be green before a push. Never pipe a gate through `tail` or
-`head` — they mask the exit code, and a gate whose failure cannot be seen is
-not a gate. Measure check counts from real output; never predict them.
+546 checks. All six must be green before a push. Never pipe a gate through
+`tail` or `head` — they mask the exit code, and a gate whose failure cannot be
+seen is not a gate. Measure check counts from real output; never predict them.
 
 A test must **run** the feature: write data, read it back, assert on what came
 back. A test that would still pass with the feature deleted is worse than no
 test. Nothing in these suites reads source, counts files, or checks a comment.
+Where a fix could be doubted it was proven both ways — the test fails with the
+fix taken out and passes with it in (the stream's last line, the save note's
+stacking, the save line itself).
 
-`tests/browser.py` stands a small real model up on a port and reads the prompts
-that were actually sent to it. That is how the persona firewall is proved and
-how it is known which worker was dispatched — not by reading the code that was
-supposed to do it.
+`tests/browser.py` and `tests/walk_worlds.py` stand a small real model up on a
+port and read the prompts that were actually sent to it. That is how the
+persona firewall is proved and how it is known which worker was dispatched —
+not by reading the code that was supposed to do it.
 
 ---
 
@@ -282,5 +379,5 @@ the moons and the aurora off the top.
 Text contrast over the scene is measured from real pixels in `browser.py` —
 the ink colour against the brightest part of the night actually sitting behind
 a paragraph, sampled from the stream's own margin where there is no text.
-Currently 16.8:1. A picture behind words is only worth having if the words are
+Currently 17.0:1. A picture behind words is only worth having if the words are
 still easy to read on the worst patch of it.

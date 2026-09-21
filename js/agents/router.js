@@ -72,7 +72,7 @@ const PLAIN = [
     /\bsummaryception\b/i,
   ] }],
   ['editor', { always: [], statement: [
-    /\b(change|set|make|update|fix|correct)\b[^.?!]{0,40}\b(to|into|as)\b/i,
+    /\b(change|set|make|update|fix|correct|switch|shift|put|move(?!\s+on\b))\b[^.?!]{0,40}\b(to|into|as)\b/i,
     /\b(add|give|remove|delete|drop)\b[^.?!]{0,40}\b(to|from|for)\b[^.?!]{0,30}\b(profile|dossier|entry|core|id|skills|rels|character|npc)\b/i,
     /\b(add|give)\b[^.?!]{0,30}\bto\s+[A-Z][a-z]+/,
     /\b(his|her|their|its)\s+(age|name|rank|title|height|build|hair|eyes?)\s+(is|should be)\b/i,
