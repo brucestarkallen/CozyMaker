@@ -481,6 +481,20 @@ export async function runTurn({
 
   const crew = [];
   const allCards = [];
+  /* the same failure, said once: a worker that sent one change four times does
+   * not make four cards (the "not done" he saw four times over) */
+  const refusedOnce = new Set();
+  allCards.push = function pushCards(...items) {
+    for (const c of items) {
+      if (c && c.status === 'refused') {
+        const k = `${c.name || ''}\u0000${c.find || ''}\u0000${c.why || ''}`;
+        if (refusedOnce.has(k)) continue;
+        refusedOnce.add(k);
+      }
+      Array.prototype.push.call(this, c);
+    }
+    return this.length;
+  };
   const batches = [];
   const asks = [];
   /* every change the crew made this turn, in order, so another version of
@@ -523,16 +537,32 @@ export async function runTurn({
      * documents as they now stand. */
     const missed = applied.cards.filter((c) => c.status === 'refused' && c.find &&
       /not in the document as written|appear \d+ times/.test(c.why || ''));
-    const placed = applied.cards.filter((c) => !missed.includes(c));
+    /* A CHANGE THAT PUT BACK THE VERY WORDS IT FOUND CHANGED NOTHING. It used to
+     * reach him as "not done: that change leaves the words exactly as they
+     * were" — four times over when a worker sent four, a failure he could do
+     * nothing about, over a document that had not moved. Either the words were
+     * already right (then there is nothing to report), or the worker meant a
+     * change and wrote the old words back (then the change he asked for never
+     * happened). So it goes back once, with the missed quotes: the worker sends
+     * the real change, or leaves it out — and he never sees it either way. */
+    const unchanged = applied.cards.filter((c) => c.status === 'refused' && c.find &&
+      /leaves the words exactly as they were/.test(c.why || ''));
+    const placed = applied.cards.filter((c) => !missed.includes(c) && !unchanged.includes(c));
     allCards.push(...placed);
-    if (!missed.length || requoting || stopped()) { allCards.push(...missed); return applied.cards; }
-    onStatus(`asking the ${worker} to quote again`);
-    const list = missed.map((c, i) =>
-      `${i + 1}. In ${c.name}, the change quoted:\n"${c.find}"\n— ${c.why}.`).join('\n\n');
+    const back = [...missed, ...unchanged];
+    if (!back.length || requoting || stopped()) { allCards.push(...missed); return applied.cards; }
+    onStatus(`asking the ${worker} to look at ${back.length > 1 ? 'those changes' : 'that change'} again`);
+    const seen = new Set();
+    const list = back.filter((c) => { const k = `${c.name}\u0000${c.find}\u0000${c.why}`; if (seen.has(k)) return false; seen.add(k); return true; })
+      .map((c, i) => (unchanged.includes(c)
+        ? `${i + 1}. In ${c.name}, the change put back the very words it found, so nothing changed:\n"${c.find}"`
+        : `${i + 1}. In ${c.name}, the change quoted:\n"${c.find}"\n\u2014 ${c.why}.`)).join('\n\n');
     const again = await send(worker,
-      `Some of your changes could not be placed, because what they quote is not in the document word for word — only spacing and the shape of quote marks may differ:\n\n${list}\n\n` +
-      'The documents are shown as they stand now, with every change that did land. Send only these changes again, each quoting the document exactly: the shortest stretch that appears only once. Nothing else.',
-      `${label} (quoted again)`, true, true);
+      `Some of your changes could not be placed, or changed nothing:\n\n${list}\n\n` +
+      'A quote must match the document word for word \u2014 only spacing and the shape of quote marks may differ \u2014 using the shortest stretch that appears only once. ' +
+      'A change that put back the words it found changed nothing: if you meant to change those words, send it again with the new words; if they were already right, leave it out. ' +
+      'The documents are shown as they stand now, with every change that did land. Send only these changes again. Nothing else.',
+      `${label} (looked at again)`, true, true);
     if (!again.length) allCards.push(...missed);
     return applied.cards;
   };

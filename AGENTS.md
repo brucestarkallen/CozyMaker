@@ -575,13 +575,24 @@ front can receive inside that harness.
   ("Jovan should be seventeen now, not sixteen"): it arrives whole, the listener sends the editor, the editor is
   shown it word for word, the change lands, and nothing else of his moves.
 
+### "Not done: that change leaves the words exactly as they were", four times (v1.1.14)
+
+- **A change that put back the very words it found reached him as a failure, once per copy.** He saw
+  "Bleach.md — not done: that change leaves the words exactly as they were" four times over a document that had
+  not moved, and the persona was told it too. Either the words were already right (nothing to report) or the
+  worker meant a change and wrote the old words back (the change he asked for never happened, and nobody tried
+  again). It now goes back to the worker once, in the same round as a quote that missed: the worker sends the real
+  change or leaves it out, and he never sees it either way. Proven on the old code, which shows the four cards.
+- **The same failure is one card.** A worker that sends one failing change several times makes one card, not one
+  per copy (`allCards` keeps each refusal once).
+
 ## Testing
 
 ```
 bash tests/all.sh           all seven, exit code intact
 ```
 
-    node tests/units.mjs         628 checks — the real modules on a real document, and what the persona hears
+    node tests/units.mjs         634 checks — the real modules on a real document, and what the persona hears
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       46 checks — the real serve.py, real files on disk, streams timed
@@ -593,7 +604,7 @@ bash tests/all.sh           all seven, exit code intact
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-954 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
+960 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

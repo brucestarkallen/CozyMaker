@@ -1766,6 +1766,63 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
   } finally { globalThis.fetch = realFetch; }
 }
 
+/* ============================ a change that changed nothing (v1.1.14) */
+{
+  const { runTurn } = await import('../js/agents/run.js');
+  const { LISTENER_MARK } = await import('../js/agents/listener.js');
+  const calls = [];
+  let editorSays = () => '';
+  let front = '';
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    const req = JSON.parse(init.body);
+    if (req.stream) {
+      const m = req.body.messages; front = m[m.length - 1].content;
+      const sse = 'data: ' + JSON.stringify({ choices: [{ delta: { content: 'Mm.' } }] }) + '\n\ndata: [DONE]\n\n';
+      return new Response(new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(sse)); c.close(); } }), { status: 200 });
+    }
+    const sys = (req.body.messages.find((m) => m.role === 'system') || {}).content || '';
+    const user = (req.body.messages.find((m) => m.role === 'user') || {}).content || '';
+    let out = 'Read it all back.';
+    if (sys.includes(LISTENER_MARK)) out = '{"jobs":[{"worker":"editor","task":"Make Rukia a lieutenant."}]}';
+    else if (/Edit Mode Discipline/.test(sys)) { calls.push(user); out = editorSays(user, calls.length); }
+    return { ok: true, json: async () => ({ choices: [{ message: { content: out }, finish_reason: 'stop' }] }) };
+  };
+  const BLEACH = '# PLOT ESSENTIAL — Bleach — V1.0\n\n### Rukia (shinigami | active | 150)\nRANK: unseated officer\nID: a quiet shinigami\n\n### Renji (shinigami | active | 150)\nRANK: lieutenant\n';
+  const world = () => ({ id: 'pbl', docs: [{ id: 'd1', name: 'Bleach.md', kind: 'pe', text: BLEACH }], chats: [], recentSections: [] });
+  const house = { connections: [{ id: 'c1', url: 'https://one.example/v1', model: 'm', key: 'k' }], agentConnections: {}, settings: { yourName: 'Bruce' }, personaFrame: '' };
+  const blk = (edits) => 'Done.\n<edits>' + JSON.stringify(edits) + '</edits>';
+  try {
+    /* the real change lands; four "change X to X" are sent back once, the worker says they were right: he sees nothing */
+    editorSays = (user, n) => (n === 1 ? blk([
+      { file: 'Bleach.md', find: 'RANK: unseated officer', replace: 'RANK: lieutenant' },
+      { file: 'Bleach.md', find: 'ID: a quiet shinigami', replace: 'ID: a quiet shinigami' },
+      { file: 'Bleach.md', find: 'ID: a quiet shinigami', replace: 'ID: a quiet shinigami' },
+      { file: 'Bleach.md', find: 'ID: a quiet shinigami', replace: 'ID: a quiet shinigami' },
+      { file: 'Bleach.md', find: 'ID: a quiet shinigami', replace: 'ID: a quiet shinigami' },
+    ]) : 'Those were already right.');
+    let r = await runTurn({ house, project: world(), message: 'make Rukia a lieutenant' });
+    ok('the real change lands', r.project.docs[0].text.includes('RANK: lieutenant\nID: a quiet shinigami'), r.project.docs[0].text);
+    ok('a change that changed nothing is never shown to him as "not done"', !r.cards.some((c) => /leaves the words exactly/.test(c.why || '')), JSON.stringify(r.cards.map((c) => [c.status, c.why])));
+    ok('nor told to the persona', !/Not done/.test(front) && !/leaves the words/.test(front), front.slice(-200));
+    ok('it went back to the worker once, listed once, not four times', calls.length === 2 && (calls[1].match(/put back the very words it found/g) || []).length === 1, calls.length);
+
+    /* the worker meant a change and wrote the old words back: sent back, it sends the real one, and it lands */
+    calls.length = 0;
+    editorSays = (user, n) => (n === 1 ? blk([{ file: 'Bleach.md', find: 'RANK: unseated officer', replace: 'RANK: unseated officer' }])
+      : blk([{ file: 'Bleach.md', find: 'RANK: unseated officer', replace: 'RANK: lieutenant' }]));
+    r = await runTurn({ house, project: world(), message: 'make Rukia a lieutenant' });
+    ok('a change the worker botched by writing the old words back is caught, and the real one lands', r.project.docs[0].text.includes('RANK: lieutenant\nID:'), r.project.docs[0].text);
+
+    /* a genuine failure repeated is still shown — once */
+    calls.length = 0;
+    editorSays = () => blk([{ file: 'Bleach.md', find: 'NOT THERE AT ALL', replace: 'x' }, { file: 'Bleach.md', find: 'NOT THERE AT ALL', replace: 'x' }]);
+    r = await runTurn({ house, project: world(), message: 'make Rukia a lieutenant' });
+    const misses = r.cards.filter((c) => c.status === 'refused' && /not in the document/.test(c.why || ''));
+    ok('a real failure is still shown, once, not once per copy', misses.length === 1, misses.length);
+  } finally { globalThis.fetch = realFetch; }
+}
+
 /* ================================================================ done */
 
 console.log(`\n${pass} passed, ${fail} failed`);
