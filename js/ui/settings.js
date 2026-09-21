@@ -82,7 +82,13 @@ function whoSection(house) {
   you.addEventListener('change', () => save('yourName', you.value.trim()).then(showMacros));
   g.append(field('What you are called', you));
 
-  const person = select([['second', 'As "you" — "Hey Eni, this is Bruce."'], ['first', 'As "I" — "I\'m Eni."']], house.settings.person || 'second');
+  /* "second" was only ever the old default: it follows the frame now */
+  const shown = house.settings.person === 'first' ? 'first' : house.settings.person === 'you' ? 'you' : 'follow';
+  const person = select([
+    ['follow', 'The way your instructions are written'],
+    ['you', 'As "you" — "Hey Eni, this is Bruce."'],
+    ['first', 'As "I" — "I\'m Eni."'],
+  ], shown);
   person.addEventListener('change', () => save('person', person.value));
   g.append(field('How this place speaks to them', person));
 

@@ -417,13 +417,27 @@ front can receive inside that harness.
   `no-undef`, `no-shadow` and `no-redeclare` — no suite reaches every line, and a module that does not
   parse fails everything at once.
 
+### Found in the persona audit, second pass (v1.1.4)
+
+- **A persona written as "I" was addressed as "you".** The person setting defaulted to "second" whatever the
+  frame said; Cozy Tavern's "Follow the frame" (M334) was never carried over. Left alone it now follows the
+  frame's own opening words (`framePerson`); "you" and "I" overrule it. A house saved with the old default
+  "second" follows too — for a frame written as "you" that is exactly what it was.
+- **With no names set, the house wrote "You and they are building…" / "They and I are building…".** All four
+  voices (you/I × named/unnamed) are written by hand; `tests/units.mjs` checks each for broken grammar.
+- **With no name set, his words reached the persona as "you said:"** — telling it that it had said them.
+  They arrive as "What was just said to you:"; with a name, under his name.
+- **Go on put the house's order in his mouth** ("Bruce said: Carry on… No repetition and no preamble").
+  It is a house note with no speaker (`GO_ON`).
+- `inPerson`, the pronoun swapper, was dead code after v1.1.3 and is gone: no second way to voice the house.
+
 ## Testing
 
 ```
 bash tests/all.sh           all seven, exit code intact
 ```
 
-    node tests/units.mjs         495 checks — the real modules on a real document, and what the persona hears
+    node tests/units.mjs         522 checks — the real modules on a real document, and what the persona hears
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       31 checks — the real serve.py, real files on disk, streams timed
@@ -435,7 +449,7 @@ bash tests/all.sh           all seven, exit code intact
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-785 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
+812 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

@@ -21,7 +21,7 @@ import { parseEdits, stripEdits, tolerantJson, locate, applyEdit, applyRun, undo
 import { lint, countOf, lostSomething, readEvents, namedPersonGate } from '../js/doc/lint.js';
 import { route } from '../js/agents/router.js';
 import { buildRequest, readAnswer, readChunk, houseOf, alwaysThinks, thinkingFields, thinkingStyle, withoutThinking } from '../js/providers.js';
-import { personaOf, greeting, openingFor, inPerson, voiceMacros, unfilledMacros } from '../js/agents/persona.js';
+import { personaOf, greeting, openingFor, voiceMacros, unfilledMacros, framePerson } from '../js/agents/persona.js';
 import { upgradeWorld } from '../js/store.js';
 import { worldbookToST, guessKind } from '../js/ui/docs.js';
 import { when } from '../js/ui/kit.js';
@@ -403,7 +403,7 @@ eq('a streamed thought is kept on its own channel',
 const house = { settings: { makerName: 'Eni', yourName: 'Bruce', person: 'second' }, personaFrame: 'You are Eni. You swear a bit.' };
 const p = personaOf(house);
 eq('the greeting sounds like a person', greeting(p), 'Hey Eni, this is Bruce.');
-eq('first person turns it around', greeting({ ...p, person: 'first' }), "I'm Eni. Bruce is here, and we're building this together.");
+eq('first person turns it around', greeting({ ...p, person: 'first' }), "I'm Eni, and Bruce is here with me.");
 eq('with no names it says nothing rather than inventing one', greeting({ maker: '', you: '', person: 'second' }), '');
 const opening = openingFor(p, 'You and the writer are building something.');
 ok('the writer\'s own instructions come first and untouched', opening.startsWith('You are Eni. You swear a bit.'));
@@ -816,7 +816,63 @@ ok('a block in the thinking channel is still a block', (() => {
   const second = frontBody(personaOf({ settings: { yourName: 'Bruce' } }));
   ok('second person reads as it always did', second.includes('You and Bruce are building') && second.includes('Bruce only ever talks to you.'));
   const nobody = frontBody(personaOf({ settings: { person: 'first' } }));
-  ok('first person with no names still reads as sentences', nobody.startsWith('They and I are building') && nobody.includes('I am the only one they talk to.') && !/undefined|null/.test(nobody));
+  ok('first person with no names still reads as sentences', nobody.startsWith('The two of us are building') && nobody.includes('The person I am making this with only ever talks to me.') && !/undefined|null/.test(nobody), nobody.slice(0, 120));
+}
+
+/* --- every voice, named and not, reads as grammar a person would write --- */
+{
+  const BROKEN = /talks to I\b|behind I\b|\bI and\b|\bYou and they\b|\bThey and I\b|\bto I\b|documents yourself|\bI never edit\b.*yourself|\bundefined\b|\bnull\b|\$\{/;
+  for (const [person, maker, you] of [['first', 'Eni', 'Bruce'], ['first', '', ''], ['you', 'Eni', 'Bruce'], ['you', '', ''], ['first', 'Eni', ''], ['you', '', 'Bruce']]) {
+    const pp = personaOf({ settings: { person, makerName: maker, yourName: you } });
+    const text = openingFor(pp, frontBody(pp));
+    const bad = BROKEN.exec(text);
+    ok(`${person}, ${maker || 'no maker'}, ${you || 'no name'}: no broken grammar`, !bad, bad && text.slice(Math.max(0, bad.index - 50), bad.index + 50));
+    ok(`${person}, ${maker || 'no maker'}, ${you || 'no name'}: says a decision waits on him`, /cannot go further until/.test(text));
+    if (person === 'first') ok(`${person}, ${maker || 'no maker'}, ${you || 'no name'}: nothing left in the second person`, !/\byou\b|\byour(?:self)?\b/i.test(text), text.slice(0, 80));
+  }
+}
+
+/* --- the person follows how his instructions are written (Cozy Tavern M334) --- */
+eq('a frame written as "I" is read as first person', framePerson("I am Eni. I keep the world straight and I talk the way Bruce likes."), 'first');
+eq('a frame written as "you" is read as second person', framePerson('You are Eni. You keep the world straight and you talk the way Bruce likes.'), 'second');
+eq('an empty frame is second person', framePerson(''), 'second');
+eq('left alone, the setting follows the frame', personaOf({ settings: {}, personaFrame: "I am Eni and I love old maps." }).person, 'first');
+eq('the old stored default follows the frame too', personaOf({ settings: { person: 'second' }, personaFrame: "I am Eni and I love old maps." }).person, 'first');
+eq('"you" overrules a first-person frame', personaOf({ settings: { person: 'you' }, personaFrame: "I am Eni and I love old maps." }).person, 'second');
+eq('"I" overrules a second-person frame', personaOf({ settings: { person: 'first' }, personaFrame: 'You are Eni.' }).person, 'first');
+{
+  const pp = personaOf({ settings: { makerName: 'Eni', yourName: 'Bruce' }, personaFrame: "I am {{char}}. I keep {{user}}'s worlds." });
+  const text = openingFor(pp, frontBody(pp));
+  ok('a first-person frame left alone gets the first-person house', text.startsWith("I am Eni. I keep Bruce's worlds.") && text.includes('Bruce and I are building') && !/\bYou and Bruce\b/.test(text), text.slice(0, 160));
+}
+
+/* --- what the persona is told about who said what: the whole turn, on the wire --- */
+{
+  const { runTurn, GO_ON, FRONT_ONLY } = await import('../js/agents/run.js');
+  const sent = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    const req = JSON.parse(init.body);
+    if (req.stream) {
+      sent.push(req.body);
+      const sse = 'data: ' + JSON.stringify({ choices: [{ delta: { content: 'Mm.' } }] }) + '\n\ndata: [DONE]\n\n';
+      return new Response(new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(sse)); c.close(); } }), { status: 200 });
+    }
+    return { ok: true, json: async () => ({ choices: [{ message: { content: 'fine' }, finish_reason: 'stop' }] }) };
+  };
+  const world = { id: 'pn', docs: [{ id: 'd1', name: 'Plot Essential.md', kind: 'pe', text: '# PE\n\n## SCENE\nWHERE: the Ribway\n' }], chats: [], recentSections: [] };
+  const conn = [{ id: 'c1', url: 'https://relay.example/v1', model: 'm', key: 'k' }];
+  const last = () => { const b = sent[sent.length - 1]; return b.messages[b.messages.length - 1].content; };
+  try {
+    await runTurn({ house: { connections: conn, agentConnections: {}, settings: {}, personaFrame: 'You are a quiet archivist.' }, project: world, message: 'hi there, lovely evening' });
+    ok('with no name set, his words are never labelled "you said"', !/\byou said:/i.test(last()) && /What was just said to you:\nhi there, lovely evening$/.test(last()), last().slice(-120));
+    await runTurn({ house: { connections: conn, agentConnections: {}, settings: { yourName: 'Bruce' }, personaFrame: '' }, project: world, message: 'hi there, lovely evening' });
+    ok('with his name set, his words are under his name', /Bruce said:\nhi there, lovely evening$/.test(last()), last().slice(-80));
+    const history = [{ role: 'writer', text: 'tell me about the harbour', at: 1 }, { role: 'maker', text: 'The harbour wall was built by the', at: 2, cut: true }];
+    await runTurn({ house: { connections: conn, agentConnections: {}, settings: { yourName: 'Bruce' }, personaFrame: '' }, project: world, history, message: GO_ON, forceWorker: FRONT_ONLY });
+    ok('Go on is the house\'s note, never put in his mouth', last().endsWith(GO_ON) && !/Bruce said:/.test(last()), last().slice(-200));
+    ok('Go on carries on from the reply that was cut, which comes just before it', sent[sent.length - 1].messages.some((m) => m.role === 'assistant' && /built by the$/.test(m.content)));
+  } finally { globalThis.fetch = realFetch; }
 }
 
 /* --- his everyday phrases reach the right one --- */

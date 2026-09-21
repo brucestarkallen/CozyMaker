@@ -33,7 +33,7 @@ import urllib.error
 import subprocess
 from pathlib import Path
 
-VERSION = "1.1.3"
+VERSION = "1.1.4"
 ROOT = Path(__file__).resolve().parent
 HOME = Path(os.environ.get("COZYMAKER_HOME", Path.home() / ".cozymaker"))
 PROJECTS = HOME / "projects"
@@ -117,7 +117,7 @@ def default_house():
             "theme": "hearth",
             "makerName": "",
             "yourName": "",
-            "person": "second",
+            "person": "follow",
             "autoApply": True,
             "turnsOnScreen": 40,
         },

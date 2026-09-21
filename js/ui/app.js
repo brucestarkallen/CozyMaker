@@ -2,7 +2,7 @@
  * The room: the conversation that is open, and the way into everything else. */
 
 import * as store from '../store.js';
-import { runTurn, capUndo, landTurn, commit, versionOf, FRONT_ONLY } from '../agents/run.js';
+import { runTurn, capUndo, landTurn, commit, versionOf, FRONT_ONLY, GO_ON } from '../agents/run.js';
 import { onWork, stopWork, onLearn } from '../agents/call.js';
 import { undoBatch } from '../doc/edits.js';
 import { personaOf, names } from '../agents/persona.js';
@@ -543,7 +543,7 @@ async function branchHere(index) {
 }
 
 function goOn(index) {
-  send('Carry on from exactly where you stopped. No repetition and no preamble \u2014 only the rest.', FRONT_ONLY, { continueAt: index });
+  send(GO_ON, FRONT_ONLY, { continueAt: index });
 }
 
 /* ------------------------------------------------------------------ send */
