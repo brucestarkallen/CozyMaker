@@ -6,7 +6,8 @@ import * as store from '../store.js';
 import { $, el, openSheet, toast, applyTheme, redraw, field, input, select, group, fold, downloadText } from './kit.js';
 import { WORKERS, FRONT } from '../agents/roster.js';
 import { personaOf, unfilledMacros } from '../agents/persona.js';
-import { callModel } from '../agents/call.js';
+import { testConnection, listModels } from '../agents/call.js';
+import { spokenAs, learnedFacts, alwaysThinks, cannotStopThinking } from '../providers.js';
 import { loadEngine, sliceReport } from '../engine/slices.js';
 import { craftFor } from '../engine/crafts.js';
 
@@ -146,18 +147,46 @@ function connectionsSection(house) {
     const row = el('div', 'row');
     const grow = el('div', 'grow');
     grow.append(el('b', '', c.name || c.model || 'unnamed'));
-    grow.append(el('small', '', `${c.model || 'no model'} · ${hostOf(c.url)}`));
+    grow.append(el('small', '', `${c.model || 'no model'} \u00b7 ${hostOf(c.url)}`));
+    /* WHAT THIS CONNECTION SAYS ABOUT THINKING, WHERE HE LOOKS (Cozy Tavern
+     * M22-A, M303, M349, M350): the level and how it is actually spoken on this
+     * wire; a model that cannot be told Off says what its Off is; and what the
+     * model itself taught the house. */
+    const level = c.thinking || '';
+    if (level || alwaysThinks(c.model) || alwaysThinks(c.modelHf) || cannotStopThinking(c)) {
+      grow.append(el('small', 'conn-line', `thinking: ${level || 'whatever the model does on its own'} \u2014 ${spokenAs(c)}`));
+    }
+    const taught = learnedFacts(c);
+    const listed = Array.isArray(c.modelEfforts) && c.modelEfforts.length ? c.modelEfforts : null;
+    if ((taught && (taught.efforts || taught.drop.length || taught.offThinks || taught.down)) || listed || c.modelHf) {
+      const bits = [];
+      if (c.modelHf) bits.push(`it is ${c.modelHf}`);
+      if (taught && taught.efforts) bits.push('takes ' + taught.efforts.join(', '));
+      else if (listed) bits.push('takes ' + listed.join(', ') + ' (from its provider\'s list)');
+      if (taught && taught.drop.length) bits.push('does not take ' + taught.drop.map((f) => `\u201c${f}\u201d`).join(', '));
+      if (taught && taught.offThinks) bits.push('Off does not stop it, so Off asks for its least');
+      if (taught && taught.down) bits.push('refused thinking today, so none is sent until tomorrow');
+      grow.append(el('small', 'conn-line', 'learned from the model: ' + bits.join(' \u00b7 ')));
+    }
+    /* the last test, kept on the connection: the answer stays where he can read it */
+    const result = el('small', 'conn-line conn-test', c.tested && c.tested.words ? `Last tried ${new Date(c.tested.at).toLocaleString()}: ${c.tested.words}` : '');
+    result.hidden = !(c.tested && c.tested.words);
+    grow.append(result);
     grow.addEventListener('click', () => editConnection(c.id));
     row.append(grow);
     const test = el('button', 'btn quiet', 'Try it');
     test.addEventListener('click', async (e) => {
       e.stopPropagation();
-      test.textContent = '…';
-      const out = await callModel(c, { user: 'Reply with the single word: ready', maxTokens: 24 });
+      test.textContent = '\u2026';
+      test.disabled = true;
+      const out = await testConnection(c);
       test.textContent = 'Try it';
-      if (!out.ok) return toast(`No — ${out.error}`);
-      if (!out.text.trim()) return toast('It answered, but with nothing. Give it more room to reply, or turn its thinking down.');
-      toast(`Working — it said "${out.text.trim().slice(0, 40)}"`);
+      test.disabled = false;
+      c.tested = { at: Date.now(), words: out.words, ok: out.ok, thinks: Boolean(out.thinks) };
+      result.textContent = `Last tried just now: ${out.words}`;
+      result.hidden = false;
+      toast(out.words.split(' \u2014 ')[0].slice(0, 90));
+      try { await store.saveHouse(store.getHouse()); } catch (_) { /* the line on screen still says it */ }
     });
     row.append(test);
     g.append(row);
@@ -202,6 +231,42 @@ function editConnection(id) {
   g.append(field('Name', name));
   g.append(field('Address', url));
   g.append(field('Model', model));
+  /* THE MODELS ON OFFER (Cozy Tavern M348): picked from the provider's own list,
+   * a model is kept with what it is — the weights behind an alias, the levels
+   * of thinking it takes — so thinking is spoken to it right without guessing. */
+  let offered = [];
+  let picked = c.modelHf || c.modelEfforts ? { id: c.model, hf: c.modelHf || '', efforts: c.modelEfforts || null } : null;
+  const listBtn = el('button', 'btn quiet small', 'Show the models on offer');
+  const pick = document.createElement('select');
+  pick.hidden = true;
+  const listNote = el('p', 'hint', '');
+  listNote.hidden = true;
+  listBtn.addEventListener('click', async () => {
+    listBtn.disabled = true;
+    listNote.hidden = false;
+    listNote.textContent = 'Asking what\u2019s on offer\u2026';
+    const r = await listModels({ ...c, url: url.value.trim(), key: key.value.trim(), model: model.value.trim() });
+    listBtn.disabled = false;
+    if (!r.ok) { listNote.textContent = `The list did not come: ${r.error}. The model name above still stands.`; return; }
+    if (!r.models.length) { listNote.textContent = 'The list came back empty \u2014 the model name above still stands.'; return; }
+    offered = r.models;
+    pick.innerHTML = '';
+    const first = document.createElement('option');
+    first.value = ''; first.textContent = `${offered.length} on offer \u2014 pick one`;
+    pick.append(first);
+    for (const m of offered) { const o = document.createElement('option'); o.value = m.id; o.textContent = m.id + (m.hf ? ` (${m.hf})` : ''); pick.append(o); }
+    pick.hidden = false;
+    listNote.textContent = 'Picking one fills the model name and keeps what it is.';
+  });
+  pick.addEventListener('change', () => {
+    const m = offered.find((x) => x.id === pick.value);
+    if (!m) return;
+    model.value = m.id;
+    picked = m;
+  });
+  const listRow = el('div', 'btnrow');
+  listRow.append(listBtn);
+  g.append(listRow, pick, listNote);
   g.append(field('Key', key));
   g.append(field('Temperature', temp));
   g.append(field('Top-p', topP));
@@ -215,6 +280,11 @@ function editConnection(id) {
     c.name = name.value.trim() || model.value.trim() || 'a connection';
     c.url = url.value.trim();
     c.model = model.value.trim();
+    /* what the model is travels with its name, and only with its name */
+    if (picked && picked.id === c.model) {
+      if (picked.hf) c.modelHf = picked.hf; else delete c.modelHf;
+      if (picked.efforts) c.modelEfforts = picked.efforts; else delete c.modelEfforts;
+    } else { delete c.modelHf; delete c.modelEfforts; }
     c.key = key.value.trim();
     setNumberOrDrop(c, 'temperature', temp.value);
     setNumberOrDrop(c, 'topP', topP.value);

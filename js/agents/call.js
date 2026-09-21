@@ -13,7 +13,7 @@
  * so work for a world the writer has left never lands in the one he opened.
  */
 
-import { buildRequest, readAnswer, readChunk, WORKER_ROOM, withoutThinking, THINKING_FIELDS, REASONING_REFUSAL,
+import { buildRequest, readAnswer, readChunk, WORKER_ROOM, withoutThinking, THINKING_FIELDS, REASONING_REFUSAL, modelsUrl, modelsHeaders, reportedIdentity, spokenAs,
   lessonFrom, learnedFacts, learnKey, familyStyle, cannotStopThinking } from '../providers.js';
 
 /* WHAT A MODEL TEACHES IS KEPT (Cozy Tavern M350). A refusal of a thinking
@@ -152,7 +152,7 @@ export async function callModel(conn, opts = {}) {
        * judge, and the caller knows what it asked for. */
       noticeOff(c, out.thinking);
       if (conn !== c && c.learned) conn.learned = c.learned;
-      return { ok: true, text: out.text || '', thinking: out.thinking || '', finish: out.finish };
+      return { ok: true, text: out.text || '', thinking: out.thinking || '', finish: out.finish, thinkTokens: out.thinkTokens || 0, hiddenThought: Boolean(out.hiddenThought) };
     } catch (e) {
       if (e && e.name === 'AbortError') return { ok: false, text: '', thinking: '', error: 'stopped' };
       lastError = (e && e.message) || String(e);
@@ -160,6 +160,49 @@ export async function callModel(conn, opts = {}) {
     }
   }
   return { ok: false, text: '', thinking: '', error: lastError };
+}
+
+/* DOES IT ACTUALLY THINK, AT THE LEVEL THIS CONNECTION IS SET TO? (Cozy Tavern
+ * M351.) "Try it" said only that the line was good. It now sends exactly what
+ * a turn sends for the thinking, reads every channel thinking arrives on and
+ * the thinking tokens the answer reports, and — when nothing came back —
+ * asks once more at the top level, so it can say which it is: this LEVEL gives
+ * none, this ADDRESS gives none, or the model thought and the address keeps the
+ * words. A refused level is learned from and asked again on the way (M350). */
+export async function testConnection(conn) {
+  const level = conn && conn.thinking ? String(conn.thinking) : '';
+  const ask = (c) => callModel(c, { user: 'Answer with one word: ready.', maxTokens: 2000 });
+  const first = await ask(conn);
+  if (!first.ok) return { ok: false, words: `No \u2014 ${first.error}` };
+  const said = first.text.trim() ? ` It answered \u201c${first.text.trim().slice(0, 24)}\u201d.` : '';
+  const at = level ? `Asked at \u201c${level}\u201d (${spokenAs(conn)})` : 'Asked with nothing said about thinking, so the model decided';
+  const came = (o) => String(o.thinking || '').trim();
+  if (came(first)) return { ok: true, thinks: true, words: `Working. ${at} \u2014 ${came(first).length.toLocaleString()} characters of thinking came back.${said} Thinking works on this connection.` };
+  if (first.thinkTokens || first.hiddenThought) return { ok: true, thinks: true, hidden: true, words: `Working. ${at} \u2014 no thinking words came back, but it reported ${first.thinkTokens ? first.thinkTokens.toLocaleString() + ' thinking tokens' : 'hidden thinking'}: the model did think, and this address keeps the words to itself.${said}` };
+  if (level === 'off') return { ok: true, thinks: false, words: `Working. ${at} \u2014 it answered without thinking, as set.${said}` };
+  if (!level) return { ok: true, thinks: false, words: `Working. ${at} \u2014 it answered without thinking.${said} Choose a level under Thinking if you want it to think.` };
+  if (level === 'max') return { ok: true, thinks: false, words: `Working. ${at} \u2014 no thinking came back even at the top level: this address sends none back (the model may still think inside it).${said}` };
+  const top = await ask({ ...conn, thinking: 'max' });
+  if (!top.ok) return { ok: true, thinks: false, words: `Working. ${at} \u2014 no thinking came back. (Asking at the top level was refused, so it could not be compared.)${said}` };
+  if (came(top) || top.thinkTokens || top.hiddenThought) return { ok: true, thinks: false, levelTooLow: true, words: `Working. ${at} \u2014 no thinking came back. Asked again at \u201cmax\u201d, thinking did come back \u2014 so it is this LEVEL that gives none here, not the address: choose a higher one.${said}` };
+  return { ok: true, thinks: false, words: `Working. ${at} \u2014 no thinking came back, nor at \u201cmax\u201d: this address sends no thinking back at any level (the model may still think inside it).${said}` };
+}
+
+/* The models a provider offers, as it lists them (Cozy Tavern M348): each with
+ * what it is — the weights behind an alias, the thinking levels it takes. */
+export async function listModels(conn) {
+  const url = modelsUrl(conn);
+  if (!url) return { ok: false, error: 'there is no address yet' };
+  try {
+    const res = await fetch('/api/call', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, headers: modelsHeaders(conn), method: 'GET' }) });
+    const data = await res.json();
+    if (data && data.error) return { ok: false, error: data.detail || data.error };
+    const rows = Array.isArray(data && data.data) ? data.data : Array.isArray(data && data.models) ? data.models : Array.isArray(data) ? data : [];
+    const models = rows.filter((m) => m && (m.id || m.name)).map((m) => ({ id: String(m.id || m.name), ...reportedIdentity(m) }));
+    models.sort((a, b) => a.id.localeCompare(b.id));
+    return { ok: true, models };
+  } catch (e) { return { ok: false, error: (e && e.message) || String(e) }; }
 }
 
 /* The front of the house streams, so the writer sees words arriving. */

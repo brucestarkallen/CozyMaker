@@ -110,12 +110,16 @@ export function familyStyle(conn) {
   const c = conn || {};
   if (isAnthropicShape(c)) return 'anthropic';
   const url = String(c.url || '').toLowerCase();
-  const model = String(c.model || '').toLowerCase();
-  const any = (re) => re.test(model);
+  /* Cozy Tavern M348: an alias hides a model's family (Synthetic serves Kimi K3
+   * as "syn:large:vision"). The weights its provider's list names are read like
+   * the name, so the right thinking shape is spoken to it. */
+  const names = [c.model, c.modelHf].filter(Boolean).map((n) => String(n).toLowerCase());
+  const model = names[0] || '';
+  const any = (re) => names.some((n) => re.test(n));
   if (c.preset === 'hermes' || model === 'hermes-agent') return 'hermes';
   if (c.preset === 'openrouter' || url.includes('openrouter.ai')) return 'openrouter';
   const kimiHost = url.includes('moonshot') || /(^|[/.])kimi\.(ai|com)([/:]|$)/.test(url);
-  if (any(/kimi[-_.]?k[3-9]/) || (kimiHost && /^k[3-9]\b/.test(model))) return 'kimi';
+  if (any(/kimi[-_.]?k[3-9]/) || (kimiHost && names.some((n) => /^k[3-9]\b/.test(n)))) return 'kimi';
   if (kimiHost && /^kimi/.test(model)) return /k2\.?7-code/.test(model) ? 'none' : 'kimi2';
   if (c.preset === 'zai' || url.includes('api.z.ai') || any(/\bglm\b|^glm|glm-/)) return 'zai';
   if (any(/qwen/)) return 'qwen';
@@ -270,7 +274,7 @@ function thinks(conn) {
   const t = conn.thinking;
   if (t === 'off' || t === false || t === 'none') return cannotStopThinking(conn);
   if (EFFORT_RANK.includes(t)) return true;
-  return alwaysThinks(conn.model) || cannotStopThinking(conn);
+  return alwaysThinks(conn.model) || alwaysThinks(conn.modelHf) || cannotStopThinking(conn);
 }
 
 function applyThinking(body, conn, house) {
@@ -306,6 +310,13 @@ function applyThinking(body, conn, house) {
     }
   } else if (said) {
     Object.assign(body, thinkingFields(conn, t));
+  }
+  /* Cozy Tavern M348: the levels the provider's own list says this model takes
+   * fit the level he chose, exactly as levels learned from a refusal do. */
+  const listed = Array.isArray(conn.modelEfforts) && conn.modelEfforts.length ? conn.modelEfforts : null;
+  if (said && listed && !(learned && (learned.down || learned.efforts))) {
+    if (typeof body.reasoning_effort === 'string') body.reasoning_effort = fitEffort(body.reasoning_effort, listed, t === 'off');
+    if (body.reasoning && typeof body.reasoning.effort === 'string') body.reasoning.effort = fitEffort(body.reasoning.effort, listed);
   }
   if (learned && !learned.down) {
     const style = familyStyle(conn);
@@ -344,6 +355,23 @@ export function spokenAs(conn) {
   const shown = {};
   for (const k of [...THINKING_FIELDS, 'temperature']) if (k in probe) shown[k] = probe[k];
   return Object.keys(shown).length ? JSON.stringify(shown) : 'nothing about thinking is sent — the provider decides';
+}
+
+/* Where a provider lists its models (Cozy Tavern M348). */
+export function modelsUrl(conn) {
+  const base = String((conn && conn.url) || '').replace(/\/+$/, '').replace(/\/(chat\/completions|messages)$/, '');
+  if (!base) return '';
+  return /\/v\d+$/.test(base) ? base + '/models' : base + '/v1/models';
+}
+export function modelsHeaders(conn) { return headersFor(conn); }
+/* What a listed model is, in its provider's own words: the weights behind an
+ * alias, and the thinking levels it takes (Synthetic: reasoning_parameters). */
+export function reportedIdentity(m) {
+  if (!m || typeof m !== 'object') return { hf: '', efforts: null };
+  const hf = [m.hugging_face_id, m.huggingface_id, m.hf_id, m.canonical_slug].find((x) => typeof x === 'string' && x.trim());
+  const raw = (m.reasoning_parameters && m.reasoning_parameters.efforts) || null;
+  const efforts = Array.isArray(raw) ? raw.map((e) => String(e || '').toLowerCase().trim()).filter(Boolean) : null;
+  return { hf: hf ? hf.trim() : '', efforts: efforts && efforts.length ? efforts : null };
 }
 
 /* Build the request one house understands. */
@@ -387,15 +415,24 @@ export function readAnswer(house, data) {
     const blocks = Array.isArray(data.content) ? data.content : [];
     const text = blocks.filter((b) => b.type === 'text').map((b) => b.text || '').join('');
     const thinking = blocks.filter((b) => b.type === 'thinking').map((b) => b.thinking || '').join('');
-    return { text, thinking, finish: data.stop_reason || 'stop' };
+    const hiddenThought = blocks.some((b) => b.type === 'redacted_thinking');
+    return { text, thinking, finish: data.stop_reason || 'stop', hiddenThought, thinkTokens: 0 };
   }
   const choice = (data.choices && data.choices[0]) || {};
   const msg = choice.message || {};
   const text = typeof msg.content === 'string'
     ? msg.content
     : Array.isArray(msg.content) ? msg.content.map((c) => c.text || '').join('') : '';
-  const thinking = msg.reasoning_content || msg.reasoning || '';
-  return { text, thinking, finish: choice.finish_reason || 'stop' };
+  /* thinking on any channel a house uses (Cozy Tavern M351), words only */
+  let thinking = [msg.reasoning_content, msg.reasoning].find((v) => typeof v === 'string' && v) || '';
+  if (!thinking) {
+    for (const [k, v] of Object.entries(msg)) {
+      if (k !== 'content' && k !== 'role' && k !== 'refusal' && typeof v === 'string' && v && /reason|think|thought/i.test(k)) { thinking = v; break; }
+    }
+  }
+  const usage = data.usage || {};
+  const n = Number((usage.completion_tokens_details && usage.completion_tokens_details.reasoning_tokens) ?? usage.reasoning_tokens);
+  return { text, thinking, finish: choice.finish_reason || 'stop', thinkTokens: Number.isFinite(n) && n > 0 ? n : 0, hiddenThought: false };
 }
 
 /* One streamed chunk, whichever shape. Returns {text, thinking}. */

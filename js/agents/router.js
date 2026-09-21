@@ -85,13 +85,12 @@ const PLAIN = [
   ['worldbook', { always: [], statement: [/\b(worldbook|lorebook|world info)\b/i] }],
   ['auditor', { always: [], statement: [/\b(transplant|summaryception)\b/i] }],
   ['instructions', { always: [], statement: [/\b(system prompt|instruction set|ai instructions|instructions (document|doc|file)|(my|the|this) preset)\b/i] }],
+  /* ONLY AN EXPLICIT ASK BUILDS. "Here's my world…", "worldbuilding a city…",
+   * a long message with no plot essential yet — all brainstorming, and each
+   * used to start a plot essential he never asked for. */
   ['builder', { always: [], statement: [
-    /\b(start|begin|create|build|make)\b.{0,24}\b(new|fresh)\b.{0,24}\b(story|world|plot essential|pe|setting|book)\b/i,
-    /\bnew (story|world|plot essential|book|setting)\b/i,
-    /\bhere('| i)s my (world|setting|premise|story idea|characters|cast|roster)\b/i,
+    /\b(start|begin|create|build|make|write|draft)\b.{0,24}\b(the |a |my |our |this )?(new |fresh )?(plot essential|pe)\b/i,
     /\b(import|bring (in|over)|rebuild)\b.{0,30}\b(old|previous|existing|my) (story|doc|document|pe|plot essential)\b/i,
-    /\bfrom scratch\b/i,
-    /\bworld ?build/i,
   ] }],
   ['chronicler', { always: [], statement: [
     /\b(fold|integrate|merge|roll)\b.{0,30}\b(in(to)?|to)\b.{0,20}\b(the )?(pe|plot essential)\b/i,
@@ -228,9 +227,6 @@ export function route(message, { hasPlotEssential = true, hasDocs = true, asStat
     /* Nothing named a job. If there is no plot essential yet and the writer
      * has written something substantial, he is describing a world — that is a
      * build, never an update. The craft is explicit about this one. */
-    if (!hasPlotEssential && text.length > 160) {
-      return [{ worker: 'builder', why: 'there is nothing built yet and this reads like a world', about: text, strong: false }];
-    }
     return [];
   }
 

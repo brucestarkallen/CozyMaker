@@ -415,8 +415,31 @@ export function applyRun(docs, edits, { label = 'a change' } = {}) {
   const before = new Map(texts);
   const cards = [];
   const created = [];
+  const cleared = [];
+  const deleted = [];
 
   for (const e of edits) {
+    /* CLEAR AND DELETE, WHEN HE ASKS FOR THEM. Only the house writes these (a
+     * worker's own edits never carry "house"): "clear the plot essential"
+     * used to reach a worker, whose rewrite to nothing was then refused by the
+     * guard against accidental loss — so nothing was ever cleared. */
+    if (e.house === true && (e.clear === true || typeof e.delete_file === 'string')) {
+      const want = e.clear === true ? e.file : e.delete_file;
+      const name = nameIn(texts, want);
+      if (!name) { cards.push({ status: 'refused', name: want || '', reason: e.reason || '', why: 'there is no document by that name' }); continue; }
+      const old = texts.get(name);
+      if (e.clear === true) {
+        if (!String(old || '').trim()) { cards.push({ status: 'refused', name, reason: e.reason || '', why: 'it is already empty' }); continue; }
+        texts.set(name, '');
+        cleared.push(name);
+        cards.push({ status: 'applied', name, reason: e.reason || 'you asked for it to be cleared', how: 'cleared it', was: clip(old), now: '' });
+      } else {
+        texts.delete(name);
+        deleted.push({ name, text: old });
+        cards.push({ status: 'applied', name, reason: e.reason || 'you asked for it to be deleted', how: 'deleted it', was: clip(old), now: '' });
+      }
+      continue;
+    }
     if (typeof e.create_file === 'string' && e.create_file) {
       const name = e.create_file;
       if (texts.has(name)) {
@@ -443,11 +466,12 @@ export function applyRun(docs, edits, { label = 'a change' } = {}) {
     if (was === text) continue;
     items.push({ name, before: was, afterHash: hash(text) });
   }
+  for (const d of deleted) items.push({ name: d.name, before: d.text, afterHash: null, removed: true });
   const batch = items.length
     ? { id: 'u' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), at: Date.now(), label, items, undone: false }
     : null;
 
-  return { texts, cards, batch, created };
+  return { texts, cards, batch, created, cleared, deleted };
 }
 
 /* Put it back — unless something newer is there, in which case say so and do
@@ -458,6 +482,11 @@ export function undoBatch(docs, batch) {
   const byName = new Map(docs.map((d) => [d.name, d]));
   for (const item of batch.items) {
     const live = byName.get(item.name);
+    /* a deleted document comes back — unless another now has its name */
+    if (item.removed) {
+      if (live) return { ok: false, why: `a document called ${item.name} is here again, so the old one cannot come back beside it` };
+      continue;
+    }
     if (!live) return { ok: false, why: `${item.name} is no longer here` };
     if (hash(live.text) !== item.afterHash) {
       return { ok: false, why: `${item.name} has changed since then, so putting it back would undo the newer change too` };
@@ -465,6 +494,7 @@ export function undoBatch(docs, batch) {
   }
   const changes = [];
   for (const item of batch.items) {
+    if (item.removed) { changes.push({ name: item.name, text: item.before, add: true, kind: item.kind || 'pe' }); continue; }
     changes.push({ name: item.name, text: item.before, remove: item.before === null });
   }
   return { ok: true, changes };

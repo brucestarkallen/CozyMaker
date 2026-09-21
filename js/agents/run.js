@@ -131,6 +131,7 @@ export function naturalize(text) {
  * handed the talk that led here, newest last. If it has to be cut, the cut is
  * said out loud (M265: no silent cut). */
 export const TALK_BUDGET = 24000;
+export const BUILD_TALK = 120000;
 
 export function conversationFor(turns, p, budget = TALK_BUDGET) {
   const him = p.you || 'The author';
@@ -445,6 +446,7 @@ export async function runTurn({
     return agreed.length ? agreed : route(message, { hasPlotEssential: hasPE, hasDocs: docs.length > 0 });
   };
   let intents;
+  let acts = [];
   if (forceWorker === FRONT_ONLY) intents = [];
   else if (forceWorker) intents = [{ worker: forceWorker, about: message, why: 'asked for by name' }];
   else if (writtenCommand(message)) intents = route(message, { hasPlotEssential: hasPE, hasDocs: docs.length > 0 });
@@ -461,8 +463,19 @@ export async function runTurn({
     }));
     if (stopped()) return { project, reply: '', cards: [], batches: [], crew: [], edits: [], asks: [], error: 'stopped', stopped: true };
     intents = heard && heard.ok ? heard.jobs.map((j) => jobFor(j, open, message, p)) : oldReading();
+    if (heard && heard.ok) {
+      acts = [
+        ...(heard.clear || []).map((f) => ({ house: true, clear: true, file: f, reason: 'you asked for it to be cleared' })),
+        ...(heard.delete || []).map((f) => ({ house: true, delete_file: f, reason: 'you asked for it to be deleted' })),
+      ];
+    }
   }
   const talk = conversationFor(past.concat([{ role: 'writer', text: message }]), p);
+  /* WHEN HE SAYS BUILD IT, THE BUILDER READS THE WHOLE BRAINSTORM. Nothing is
+   * written while he talks a world through, so everything he said is still
+   * only in the conversation — a builder shown the last 24,000 characters
+   * of it would build from the end of the brainstorm. */
+  const buildTalk = conversationFor(past.concat([{ role: 'writer', text: message }]), p, BUILD_TALK);
 
   const crew = [];
   const allCards = [];
@@ -485,12 +498,12 @@ export async function runTurn({
     try { craft = await craftFor(worker, house); }
     catch (e) { return failed((e && e.message) || String(e)); }
     const res = await enqueue(project.id, worker, ({ signal: s, stale }) =>
-      runWorker({ worker, sections, conn: connFor(worker), project: working, message: about, talk, fromHouse, onStatus, signal: either(signal, s), stale, craft }));
+      runWorker({ worker, sections, conn: connFor(worker), project: working, message: about, talk: worker === 'builder' ? buildTalk : talk, fromHouse, onStatus, signal: either(signal, s), stale, craft }));
     if (!res || !res.ok) return failed((res && res.error) || 'did not finish');
     if (res.ask) asks.push({ worker, ask: res.ask, at: Date.now() });
     /* a change already made this turn is not made again: a re-quote that
      * repeats one that landed would only come back as a false "not done" */
-    const fresh = (res.edits || []).filter((e) => !landed.has(editKey(e)));
+    const fresh = (res.edits || []).map((e) => { const { house: _h, ...own } = e; return own; }).filter((e) => !landed.has(editKey(e)));
     const applied = commit(working, fresh, label);
     working = applied.project;
     fresh.forEach((e, i) => { if (applied.cards[i] && applied.cards[i].status === 'applied') landed.add(editKey(e)); });
@@ -522,13 +535,29 @@ export async function runTurn({
     return applied.cards;
   };
 
+  /* WHAT HE ASKED TO BE CLEARED OR DELETED, done by the house itself, first —
+   * "clear it and start again with a harbour town" clears, then builds. */
+  if (acts.length && !stopped()) {
+    const applied = commit(working, acts, 'as you asked');
+    working = applied.project;
+    turnEdits.push({ label: 'as you asked', edits: acts });
+    if (applied.batch) batches.push(applied.batch);
+    allCards.push(...applied.cards);
+  }
+
   for (const intent of intents) {
     if (stopped()) break;
     onStatus(`the ${intent.worker} is on it`);
     await send(intent.worker, intent.about || message, `${intent.worker} — ${short(intent.about || message)}`);
   }
 
-  if (!stopped()) {
+  /* THE CHECKS FOLLOW A CHANGE, NEVER A CONVERSATION. They ran on every turn, so
+   * a question — "what do you think of her?" — sent up to two heavy workers
+   * whenever the plot essential had any leftover finding (an undated event, a
+   * document grown heavy), and he waited on them before the persona said a word.
+   * They now run only when this turn changed a document. */
+  const changed = () => allCards.some((c) => c.status === 'applied');
+  if (!stopped() && changed()) {
     let repairsLeft = MAX_AUTO_REPAIRS;
     const linted = sweep(working);
     working = linted.project;
@@ -542,7 +571,12 @@ export async function runTurn({
     }
   }
 
-  if (!stopped() && allCards.some((c) => c.status === 'applied')) {
+  /* THE READ-BACK FOLLOWS REAL WORK. The craft's own *edit is "one field, one
+   * character, one fact. Required scan only" (11, 7.7): a full read-back after
+   * a surgical edit is the scope creep it forbids, and doubles the wait. A
+   * clear or a delete he asked for has nothing to read back. */
+  const surgical = intents.length > 0 && intents.every((i) => i.worker === 'editor');
+  if (!stopped() && changed() && intents.length && !surgical) {
     onStatus('reading the whole thing back');
     await send('eye',
       'The documents were just changed. Read the whole of them back, front to back, and put right anything that is wrong — not only near the change. Say what you read and what you found.',
@@ -653,6 +687,17 @@ export function landTurn(world, { chatId, snapshot, result, makerTurn, replaceAt
     if (now.text !== start) { conflicts.set(d.name, 'you changed it by hand while the crew worked, so your version was kept'); continue; }
     now.text = d.text;
   }
+  /* A DOCUMENT DELETED THIS TURN IS DELETED WHERE IT LANDS. Only additions and
+   * changes used to be carried over, so a delete he asked for came back. If he
+   * changed it by hand while the crew worked, his version stays. */
+  const kept = new Set(((result.project && result.project.docs) || []).map((d) => d.name));
+  for (const [name, start] of snapshot) {
+    if (kept.has(name) || !(result.project && result.project.docs)) continue;
+    const now = live.get(name);
+    if (!now) continue;
+    if (now.text !== start) { conflicts.set(name, 'you changed it by hand while the crew worked, so it was kept'); continue; }
+    next.docs = next.docs.filter((d) => d.name !== name);
+  }
   const cards = (makerTurn.cards || []).map((c) =>
     c.status === 'applied' && conflicts.has(c.name) ? { ...c, status: 'refused', why: conflicts.get(c.name) } : c);
   const batches = (makerTurn.batches || [])
@@ -700,6 +745,7 @@ export function commit(project, edits, label) {
   for (const [name, text] of run.texts) {
     const was = before.get(name);
     if (!was) continue;
+    if ((run.cleared || []).includes(name)) continue;   /* he asked for it emptied: that is not a loss */
     const lost = lostSomething(was.text, text, was.kind);
     if (lost) {
       guard = `a rewrite of ${name} would have lost ${lost}, so it was not allowed through`;
@@ -720,11 +766,13 @@ export function commit(project, edits, label) {
     if (was === text) continue;
     items.push({ name, before: was, afterHash: hash(text) });
   }
+  for (const d of run.deleted || []) items.push({ name: d.name, before: d.text, afterHash: null, removed: true, kind: (before.get(d.name) || {}).kind || 'pe' });
   const batch = items.length
     ? { id: run.batch ? run.batch.id : 'u' + Date.now().toString(36), at: Date.now(), label, items, undone: false }
     : null;
 
-  const next = { ...project, docs: (project.docs || []).map((d) => ({ ...d })) };
+  const gone = new Set((run.deleted || []).map((d) => d.name));
+  const next = { ...project, docs: (project.docs || []).filter((d) => !gone.has(d.name)).map((d) => ({ ...d })) };
   const byName = new Map(next.docs.map((d) => [d.name, d]));
   for (const [name, text] of run.texts) {
     if (byName.has(name)) byName.get(name).text = text;

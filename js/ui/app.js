@@ -137,7 +137,7 @@ function emptyRoom(p) {
   box.append(el('b', '', p.title));
   const hasPE = (p.docs || []).some((d) => d.kind === 'pe' && (d.text || '').trim());
   if (!hasPE) {
-    box.append(el('p', '', `Tell ${them} about the world you want to build — the place, the people, the trouble. Or start from something you already have.`));
+    box.append(el('p', '', `Talk the world through with ${them} — the place, the people, the trouble. Nothing is written until you ask; when you're ready, Start a plot essential builds it from everything you said. Or bring in one you already have.`));
     const row = el('div', 'btnrow center');
     const start = el('button', 'btn', 'Start a plot essential');
     start.addEventListener('click', newPlotEssential);
@@ -377,6 +377,7 @@ function putBackTurns(world, chatId, indices, onlyBatch = null) {
       if (!out.ok) return { ok: false, why: out.why };
       for (const ch of out.changes) {
         if (ch.remove) docs = docs.filter((d) => d.name !== ch.name);
+        else if (ch.add) docs = [...docs, { id: store.docId(), name: ch.name, kind: ch.kind || 'pe', text: ch.text || '' }];
         else docs = docs.map((d) => (d.name === ch.name ? { ...d, text: ch.text } : d));
       }
       chat.turns[i] = { ...chat.turns[i], batches: chat.turns[i].batches.map((b) => (b.id === batch.id ? { ...b, undone: true } : b)) };

@@ -110,7 +110,7 @@ function drawList() {
 
   if (!docs.some((d) => d.kind === 'pe')) {
     const g = group('No plot essential yet',
-      'Start one with the crew — tell them about the world and it gets built as you talk — or bring in one you already have.');
+      'Talk the world through first \u2014 nothing is written until you ask. Then start one and it is built from everything you said, or bring in one you already have.');
     const row = el('div', 'btnrow');
     const start = el('button', 'btn', 'New plot essential');
     start.addEventListener('click', () => { closeSheet('docsSheet'); newPlotEssential(); });

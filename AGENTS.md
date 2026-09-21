@@ -529,25 +529,52 @@ front can receive inside that harness.
   toast button is gone (it was a second way to read what the line now shows). `browser.py` asserts the version
   is in the house body.
 
+### Found when he said it was slow, built unasked, and would not clear (v1.1.12)
+
+- **A question was slow because the document checks ran on every turn.** The sweep's hand-over sent up to two
+  heavy workers whenever the plot essential had any leftover finding (an undated event, a heavy document), on
+  every message — "what do you think of Mira?" waited on the chronicler. The checks now run only when the turn
+  changed a document. A one-field edit is no longer read back in full: the craft's own `*edit` is "one field,
+  one character, one fact. Required scan only" (11, 7.7). Proven on the old code: a question ran
+  `listener, worker, front`; a one-field edit ran `listener, worker, worker, eye, front`.
+- **Brainstorming built a plot essential.** The craft's 7.6 reads "here's my world" as a build, the old
+  fallback built from any long message with nothing built yet, and a question was sent to the eye. The
+  listener is now told, above the craft: he decides when writing starts — brainstorming, ideas, questions,
+  opinions are conversation; nothing is written until he asks. The long-message rule and the loose builder
+  keywords are gone; only an explicit ask builds, and the builder then reads the whole brainstorm
+  (`BUILD_TALK`, 120,000 characters), not its last 24,000.
+- **"Clear the plot essential" did nothing.** There was no clear or delete at all, and a worker's rewrite to
+  nothing was refused by the guard against accidental loss. The listener now names documents to `clear` or
+  `delete`; the house does it itself, first, with a card and "put it back" (a deleted document comes back
+  with its kind). A delete lands on the live world too, unless he changed that document by hand meanwhile.
+  A worker's own edit can never claim to be the house.
+- **The connections did not say whether the model thinks.** Ported from Cozy Tavern: "Try it" is M351's
+  probe — the request a turn would send, thinking read on every channel and from the reported reasoning
+  tokens; a refused level is learned from and asked again (M350's fallback); nothing at his level is asked
+  again at "max" to say whether the LEVEL or the ADDRESS gives none. The verdict stays on the connection. The
+  card shows the level and how it is spoken, and what the model taught the house. "Show the models on offer"
+  lists the provider's models (M348); a picked one keeps what it is — the weights behind an alias, the
+  levels it takes — and those fit his chosen level automatically. The relay can GET a model list.
+
 ## Testing
 
 ```
 bash tests/all.sh           all seven, exit code intact
 ```
 
-    node tests/units.mjs         586 checks — the real modules on a real document, and what the persona hears
+    node tests/units.mjs         620 checks — the real modules on a real document, and what the persona hears
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       46 checks — the real serve.py, real files on disk, streams timed
-    python3 tests/browser.py      71 checks — real Chromium at 390x844, end to end
-    python3 tests/walk_worlds.py 147 checks — the drawer, conversations, swipes and versions, edit and
+    python3 tests/browser.py      74 checks — real Chromium at 390x844, end to end
+    python3 tests/walk_worlds.py 148 checks — the drawer, conversations, swipes and versions, edit and
                                               send again, delete, branch, go on, re-quoting, crafts,
                                               the thinking box live, backup and restore, a model too
                                               small for the world, a real server killed mid-edit
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-904 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
+942 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

@@ -33,7 +33,7 @@ import urllib.error
 import subprocess
 from pathlib import Path
 
-VERSION = "1.1.11"
+VERSION = "1.1.12"
 ROOT = Path(__file__).resolve().parent
 HOME = Path(os.environ.get("COZYMAKER_HOME", Path.home() / ".cozymaker"))
 PROJECTS = HOME / "projects"
@@ -421,10 +421,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if not (url.startswith("https://") or url.startswith("http://")):
             return self.send_json({"error": "that address does not look right"}, 400)
         headers = spec.get("headers") or {}
-        payload = json.dumps(spec.get("body") or {}).encode("utf-8")
         stream = bool(spec.get("stream"))
-        req = urllib.request.Request(url, data=payload, method="POST")
-        req.add_header("Content-Type", "application/json")
+        if str(spec.get("method") or "POST").upper() == "GET":
+            # a provider's list of its models (Cozy Tavern M348): a GET, with no body
+            req = urllib.request.Request(url, method="GET")
+        else:
+            payload = json.dumps(spec.get("body") or {}).encode("utf-8")
+            req = urllib.request.Request(url, data=payload, method="POST")
+            req.add_header("Content-Type", "application/json")
         for k, v in headers.items():
             if isinstance(k, str) and isinstance(v, str):
                 req.add_header(k, v)

@@ -225,8 +225,8 @@ def main():
             fronts = [p for p in seen_prompts if p["stream"]]
             ok("a worker was sent", len(workers) >= 1, f"{len(workers)} worker calls")
             ok("the one at the front spoke once", len(fronts) == 1, f"{len(fronts)} front calls")
-            ok("the eye read it back afterwards",
-               any("THE EXPERT EYE" in w["system"] for w in workers))
+            ok("a one-field edit is not followed by a full read-back (the craft's *edit: required scan only)",
+               not any("THE EXPERT EYE" in w["system"] for w in workers), [w["system"][:40] for w in workers])
 
             front = fronts[0]
             ok("the front was given the writer's own instructions first",
@@ -342,6 +342,20 @@ def main():
             page.wait_for_timeout(1200)
             ok("a connection can be tried for real", "Working" in page.locator("#toast").inner_text(),
                page.locator("#toast").inner_text())
+            verdict = page.locator("#houseBody .conn-test").first
+            ok("the test's verdict on thinking stays on the connection, not only in a toast",
+               verdict.is_visible() and "Asked" in verdict.inner_text() and "thinking" in verdict.inner_text().lower(), verdict.inner_text()[:160])
+            page.click("#houseSheet [data-close]")
+            page.wait_for_timeout(300)
+            page.click("#settingsBtn")
+            page.wait_for_timeout(500)
+            ok("and it is still there after the house is closed and opened again",
+               "Last tried" in page.locator("#houseBody .conn-test").first.inner_text())
+            page.locator("#houseBody .row .grow").first.click()
+            page.wait_for_timeout(300)
+            ok("a connection can list the models its provider offers", page.locator("#houseBody .btn", has_text="Show the models on offer").count() == 1)
+            page.locator("#houseBody .btn", has_text="Back").first.click()
+            page.wait_for_timeout(300)
 
             # -- what he types in the house is kept as he types it: no tap elsewhere, no Back
             def house_now():

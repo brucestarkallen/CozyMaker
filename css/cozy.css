@@ -428,3 +428,7 @@ textarea.plain { resize: vertical; min-height: 90px; font-family: var(--mono); f
   font-size: 13.5px; line-height: 1.5; max-height: 40vh; overflow-y: auto;
 }
 .turn .thinking-body .btn { margin-top: 6px; }
+
+/* a connection's thinking, what it learned, and its last test — one quiet line each */
+.row .grow small.conn-line { display: block; margin-top: 3px; color: var(--ink-faint); font-size: 12.5px; line-height: 1.35; overflow-wrap: anywhere; }
+.row .grow small.conn-test { color: var(--ink-soft, var(--ink-faint)); }

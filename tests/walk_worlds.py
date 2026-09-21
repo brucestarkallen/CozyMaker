@@ -386,10 +386,8 @@ def main():
             page.wait_for_timeout(1300)
             editor = [c for c in calls if c["who"] == "editor"]
             ok("the editor was sent for a change", len(editor) == 1, [c["who"] for c in calls])
-            eyes = [c for c in calls if c["who"] == "eye"]
-            ok("the read-back says it is the house asking, not him",
-               eyes and "What the house needs from you" in eyes[0]["messages"][0]["content"]
-               and "What the author just asked for" not in eyes[0]["messages"][0]["content"])
+            ok("a one-field edit is not followed by a full read-back (the craft's *edit: required scan only)",
+               not any(c["who"] == "eye" for c in calls), [c["who"] for c in calls])
             ok("his own request is labelled as his",
                editor and "What the author just asked for:\nmove the scene to the Heartworks" in editor[0]["messages"][0]["content"])
             if editor:
@@ -750,10 +748,15 @@ def main():
             api("/api/project/p_new", "PUT", wd)
             page.reload(wait_until="networkidle")
             page.wait_for_timeout(700)
+            calls.clear()
             page.fill("#say", "*cleanup")
             page.click("#sendBtn")
             settle()
             ok("the crew's answer changed the document", pe_text().count("dormant, not dead") == 1, pe_text()[:160])
+            eyes = [c for c in calls if c["who"] == "eye"]
+            ok("real work is read back afterwards, and the read-back says it is the house asking, not him",
+               bool(eyes) and "What the house needs from you" in eyes[0]["messages"][0]["content"]
+               and "What the author just asked for" not in eyes[0]["messages"][0]["content"], [c["who"] for c in calls])
             last_maker().locator(".diff-fold .fold-head").first.click()
             page.wait_for_timeout(300)
             was = last_maker().locator(".diff .was").first.inner_text()

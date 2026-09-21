@@ -29,13 +29,13 @@ import { stripThinking, stripTrailingCommasOutsideStrings, escapeRawControlsInSt
 
 export const LISTENER = 'listener';
 export const LISTENER_MARK = 'You are the one who listens.';
-export const LISTEN_TALK = 8000;
+export const LISTEN_TALK = 5000;
 export const MAX_JOBS = 5;
 
 /* The craft's own words on reading a request, and its commands. */
 export function listenerReading(sections) {
   const parts = [];
-  for (const id of ['7.6', '11']) {
+  for (const id of ['7.6']) {
     const s = sections && sections.get && sections.get(id);
     if (s && s.text) parts.push(s.text);
   }
@@ -78,18 +78,21 @@ export function listenerPrompt({ frame, reading, docs, talk, open = [], message,
     `${LISTENER_MARK} ${him} talks with ${front}; behind that voice a crew does the actual work on his documents. ` +
       `You read what ${him} just said \u2014 in the light of the conversation, the documents, and anything the crew is still waiting on him for \u2014 ` +
       'and decide who on the crew, if anyone, should act on it now. You never answer him, and you never do the work yourself.',
-    reading ? `How the craft reads a request, and its commands:\n\n${reading}` : '',
+    reading ? `How the craft reads a request:\n\n${reading}` : '',
     `The crew, and what each of them does:\n${crewLines()}`,
     [
       'Answer with one JSON object and nothing else:',
-      '{"jobs": [{"worker": "editor", "task": "\u2026", "resumes": false}]}',
+      '{"jobs": [{"worker": "editor", "task": "\u2026", "resumes": false}], "clear": [], "delete": []}',
       '',
-      '- "jobs" is empty when he is only talking, sharing a thought, asking an opinion, asking something the documents as they stand already answer, or turning something down.',
+      'HE DECIDES WHEN WRITING STARTS. This outranks the craft\'s own reading above. Brainstorming, ideas, what-ifs, a world or characters he is still talking through, a question, an opinion he wants: that is conversation, and it is answered by the one he talks to \u2014 send nobody. Nothing is written into a document until he asks for it to be written: make it, build it, start the plot essential, write it up, put that in, add it, change it, fold it in, update it. When you cannot tell, it is conversation.',
+      '',
+      '- "jobs" is empty when he is only talking, brainstorming, sharing a thought, asking an opinion or a question, or turning something down.',
       '- One job for each distinct thing he wants done \u2014 never two operations merged into one \u2014 in the order they should happen.',
       '- "worker" is one of the names above, exactly as written there.',
       '- "task" says exactly what that worker is to do: the names, the numbers, the change itself, and his own words where they matter. When he agrees to something offered in the conversation, the task is that thing, spelled out in full.',
       '- When the crew is waiting on him and what he said answers them, send it back to that same worker with "resumes": true, and say in the task what he decided \u2014 all of it, which part of it, or what he wants instead.',
-      '- A check, an audit, a diagnosis or a judgment he asks for goes to the one who does it, even when it is asked as a question.',
+      '- A check, an audit or a fix of the documents goes to the one who does it only when he asks for the documents to be checked, audited or fixed. A question about the story is answered in conversation.',
+      '- "clear" lists the documents he wants emptied, and "delete" the ones he wants gone \u2014 by their names above, and only when he says so (clear it, empty it, wipe it, delete it, get rid of it). The house does those itself; never send a worker for them.',
     ].join('\n'),
   ].filter(Boolean).join('\n\n---\n\n');
 
@@ -135,12 +138,13 @@ export function readJobs(text) {
     jobs.push({ worker, task, resumes: j.resumes === true });
   }
   if (obj.jobs.length && !jobs.length) return { ok: false, why: 'it named nobody on the crew' };
-  return { ok: true, jobs: jobs.slice(0, MAX_JOBS) };
+  const names = (v) => (Array.isArray(v) ? v : typeof v === 'string' && v ? [v] : []).map((x) => String(x || '').trim()).filter(Boolean);
+  return { ok: true, jobs: jobs.slice(0, MAX_JOBS), clear: names(obj.clear), delete: names(obj.delete) };
 }
 
 export async function listen({ conn, frame, sections, docs, talk, open, message, p, signal, stale }) {
   const { system, user } = listenerPrompt({ frame, reading: listenerReading(sections), docs, talk, open, message, p });
-  const out = await callModel(conn, { system, messages: [{ role: 'user', content: user }], maxTokens: 1500, signal, stale });
+  const out = await callModel(conn, { system, messages: [{ role: 'user', content: user }], maxTokens: 600, signal, stale });
   if (!out.ok) return { ok: false, error: out.error };
   let read = readJobs(out.text);
   if (!read.ok && out.thinking) {

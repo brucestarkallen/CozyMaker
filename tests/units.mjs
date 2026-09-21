@@ -329,7 +329,8 @@ ok('running the checks again changes nothing more',
 /* ============================================================ the router */
 
 eq('a written command is obeyed', route('*optimize 3').map((r) => r.worker), ['compressor']);
-eq('plain words find the builder', route('here is my world: a drowned city of guild-houses').map((r) => r.worker), ['builder']);
+eq('describing a world is brainstorming, not a build', route('here is my world: a drowned city of guild-houses').map((r) => r.worker), []);
+eq('asking for the plot essential builds it', route('okay, make the plot essential from all that').map((r) => r.worker), ['builder']);
 eq('plain words find the chronicler', route('fold all of that into the plot essential please').map((r) => r.worker), ['chronicler']);
 eq('plain words find the editor', route('change Claire\'s age to 15').map((r) => r.worker), ['editor']);
 eq('plain words find the showrunner', route('this has got convoluted, can you untangle it').map((r) => r.worker), ['showrunner']);
@@ -341,8 +342,8 @@ eq('two asks in one sentence go to two workers',
 eq('just talking sends nobody', route('hey'), []);
 eq('a thank you sends nobody', route('thanks, that is lovely'), []);
 eq('an opinion question sends nobody', route('what do you think of that name?'), []);
-eq('a long description with nothing built yet is a build',
-  route('x'.repeat(200), { hasPlotEssential: false }).map((r) => r.worker), ['builder']);
+eq('a long message with nothing built yet is still only talk',
+  route('x'.repeat(200), { hasPlotEssential: false }).map((r) => r.worker), []);
 eq('a long description with something already built sends nobody',
   route('x'.repeat(200), { hasPlotEssential: true }), []);
 
@@ -386,10 +387,10 @@ ok('a thinking model is recognised', alwaysThinks('kimi-k3') && alwaysThinks('o3
 
 eq('an openai-shaped answer is read',
   readAnswer('openai', { choices: [{ message: { content: 'hi', reasoning_content: 'mm' }, finish_reason: 'stop' }] }),
-  { text: 'hi', thinking: 'mm', finish: 'stop' });
+  { text: 'hi', thinking: 'mm', finish: 'stop', thinkTokens: 0, hiddenThought: false });
 eq('an anthropic-shaped answer is read',
   readAnswer('anthropic', { content: [{ type: 'thinking', thinking: 'mm' }, { type: 'text', text: 'hi' }], stop_reason: 'end_turn' }),
-  { text: 'hi', thinking: 'mm', finish: 'end_turn' });
+  { text: 'hi', thinking: 'mm', finish: 'end_turn', hiddenThought: false, thinkTokens: 0 });
 ok('a provider error becomes words, not a crash',
   readAnswer('openai', { error: 'provider', detail: 'no key' }).finish === 'error');
 eq('a streamed piece is read',
@@ -983,7 +984,8 @@ eq('"I" overrules a second-person frame', personaOf({ settings: { person: 'first
     ok('a check he asked for: its findings reach the persona as the answer to give',
       /What came back on what Bruce asked for \(the answer to give Bruce, all of it that matters\):\nClaire is 16 in one event and 17 in the next\. The harbour wall is built twice\./.test(heard()), heard().slice(-400));
     answer = (user) => (/What the author just asked for/.test(user) ? edit('WHERE: the Ribway', 'WHERE: the Quay') : 'Read every line back: the harbour wall is built twice.');
-    await runTurn({ house, project: world(), message: '*edit move the scene to the Quay' });
+    /* real work (not a one-field edit, which the craft reads with its required scan only) is read back afterwards */
+    await runTurn({ house, project: world(), message: 'Tidy up Plot Essential.md.', forceWorker: 'showrunner' });
     ok('a read-back he did not ask for is set aside, to mention only if it matters',
       /Read back afterwards, without being asked \(mention it only if it matters\):\nRead every line back: the harbour wall is built twice\./.test(heard()), heard().slice(-400));
 
@@ -1282,7 +1284,8 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
   /* --- reading its answer --- */
   eq('a plain answer is read', readJobs('{"jobs":[{"worker":"editor","task":"Make Mira twenty."}]}').jobs, [{ worker: 'editor', task: 'Make Mira twenty.', resumes: false }]);
   eq('fenced and with a trailing comma, still read', readJobs('```json\n{"jobs":[{"worker":"the Editor","task":"x",},]}\n```').jobs.map((j) => j.worker), ['editor']);
-  eq('nothing to do is an answer too', readJobs('{"jobs": []}'), { ok: true, jobs: [] });
+  eq('nothing to do is an answer too', readJobs('{"jobs": []}'), { ok: true, jobs: [], clear: [], delete: [] });
+  eq('a document to clear and one to delete are read by name', readJobs('{"jobs": [], "clear": ["Plot Essential.md"], "delete": "Notes.md"}'), { ok: true, jobs: [], clear: ['Plot Essential.md'], delete: ['Notes.md'] });
   ok('prose is not an answer', !readJobs('I think the editor should do it.').ok);
   ok('someone who is not on the crew is not an answer', !readJobs('{"jobs":[{"worker":"storyteller","task":"x"}]}').ok);
   ok('the listener cannot send itself', !readJobs('{"jobs":[{"worker":"listener","task":"x"}]}').ok);
@@ -1291,7 +1294,7 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
 
   /* --- what it reads --- */
   const reading = listenerReading(SECTIONS);
-  ok('it reads the craft\'s own words on reading a request (7.6) and its commands (11)', /Command Parsing \(Free-Form Input\)/.test(reading) && /11 · COMMANDS/.test(reading), reading.slice(0, 80));
+  ok('it reads the craft\'s own law on reading a request (7.6), and only that: a short reading answers fast', /Command Parsing \(Free-Form Input\)/.test(reading) && !/11 · COMMANDS/.test(reading) && reading.length < 4000, String(reading.length));
   const pr = listenerPrompt({ frame: 'FRAME', reading, docs: [{ name: 'Plot Essential.md', kind: 'pe', text: PE }], talk: 'Bruce: hello', open: [{ worker: 'showrunner', ask: 'Cut the north arc? Yes or no.' }], message: 'yes', p: { you: 'Bruce', maker: 'Eni' } });
   ok('it is told who does what, with the craft\'s commands that are theirs', /- showrunner: .*\*cleanup, #prune/.test(pr.system) && /- editor: .*\*edit/.test(pr.system), pr.system.slice(-900));
   ok('it sees what is waiting on him, word for word', pr.user.includes('The showrunner put this to him and is waiting for his answer:\nCut the north arc? Yes or no.'));
@@ -1561,6 +1564,162 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
   ok('names unset: the fallback is a plain word, grammatical as subject and possessive', /You are the one telling this, a quiet archivist/.test(noNames) && /the one telling this keeps the author's worlds/.test(noNames), noNames.slice(0, 140));
   eq('a possessive macro folds into the word', voiceMacros("{{user}}'s map", personaOf({ settings: {} })), "the author's map");
   eq('a lower-case <user> tag is still left as the preset\'s own markup', voiceMacros('<user>x</user> <USER>', named), '<user>x</user> Bruce');
+}
+
+/* ============================ chatting stays chatting; clear and delete work (v1.1.12) */
+{
+  const { runTurn, landTurn } = await import('../js/agents/run.js');
+  const { LISTENER_MARK } = await import('../js/agents/listener.js');
+  const { undoBatch } = await import('../js/doc/edits.js');
+  const calls = [];
+  let listenerSays = () => '{"jobs": []}';
+  let workerSays = () => 'Read it all back.';
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    const req = JSON.parse(init.body);
+    if (req.stream) {
+      calls.push({ who: 'front' });
+      const sse = 'data: ' + JSON.stringify({ choices: [{ delta: { content: 'Mm.' } }] }) + '\n\ndata: [DONE]\n\n';
+      return new Response(new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(sse)); c.close(); } }), { status: 200 });
+    }
+    const sys = (req.body.messages.find((m) => m.role === 'system') || {}).content || '';
+    const user = (req.body.messages.find((m) => m.role === 'user') || {}).content || '';
+    const who = sys.includes(LISTENER_MARK) ? 'listener' : /THE EXPERT EYE/.test(sys) ? 'eye' : /PROACTIVE CO-WRITER/.test(sys) ? 'builder' : 'worker';
+    calls.push({ who, user });
+    const out = who === 'listener' ? listenerSays(user) : workerSays(user, sys);
+    return { ok: true, json: async () => ({ choices: [{ message: { content: out }, finish_reason: 'stop' }] }) };
+  };
+  const house = { connections: [{ id: 'c1', url: 'https://one.example/v1', model: 'm', key: 'k' }], agentConnections: {}, settings: { makerName: 'Eni', yourName: 'Bruce' }, personaFrame: 'You are Eni.' };
+  /* a plot essential with leftover findings: undated events, a name inside a trait */
+  const MESSY = '# PLOT ESSENTIAL — Harbour — V1.0\n\n## WORLD\n### Rules\n- The city lives inside a dormant leviathan.\n\n## TIMELINE\ne001 Mira arrives.\ne002 The tide turns.\n\n## SCENE\nWHERE: the Ribway\n';
+  const world = () => ({ id: 'pq', docs: [{ id: 'd1', name: 'Plot Essential.md', kind: 'pe', text: MESSY }, { id: 'd2', name: 'Notes.md', kind: 'notes', text: 'ideas' }], chats: [], recentSections: [] });
+  const heavy = () => calls.filter((c) => c.who !== 'front' && c.who !== 'listener');
+  try {
+    /* a question, with findings sitting in the document: nobody works, the persona just answers */
+    let r = await runTurn({ house, project: world(), message: 'what do you think of Mira so far?' });
+    ok('a question sends no worker, even with leftover findings in the document', heavy().length === 0, calls.map((c) => c.who).join(','));
+    ok('and changes nothing', r.project.docs[0].text === MESSY);
+
+    /* brainstorming with nothing built: never a build, whether the listener answers or not */
+    const BRAIN = 'ok so I am thinking a drowned city where the guilds own the tides, and Mira is a salvager who hates the guild, and there is a lighthouse keeper who knows too much. Still thinking about the magic.';
+    const fresh = () => ({ id: 'pb', docs: [], chats: [], recentSections: [] });
+    calls.length = 0;
+    r = await runTurn({ house, project: fresh(), message: BRAIN });
+    ok('brainstorming builds nothing when the listener hears it as talk', !calls.some((c) => c.who === 'builder') && r.project.docs.length === 0);
+    calls.length = 0;
+    listenerSays = () => 'hm';
+    r = await runTurn({ house, project: fresh(), message: BRAIN });
+    ok('and nothing when the listener cannot answer either — the old "long message builds" rule is gone', !calls.some((c) => c.who === 'builder') && r.project.docs.length === 0, calls.map((c) => c.who).join(','));
+
+    /* when he says build it, the builder reads the whole brainstorm, however long */
+    calls.length = 0;
+    listenerSays = () => '{"jobs":[{"worker":"builder","task":"Build the plot essential from everything Bruce said."}]}';
+    const long = [];
+    for (let i = 0; i < 40; i++) long.push({ role: i % 2 ? 'maker' : 'writer', text: (i === 0 ? 'FIRST IDEA: the guilds own the tides. ' : 'more brainstorming. ') + 'x'.repeat(900), at: i });
+    await runTurn({ house, project: fresh(), history: long, message: 'okay, make the plot essential now' });
+    const b = calls.find((c) => c.who === 'builder');
+    ok('asked to build, the builder reads the whole brainstorm — its first idea too', b && b.user.includes('FIRST IDEA: the guilds own the tides.'), b ? 'first idea missing' : 'no builder');
+
+    /* clear: the house empties it; the guard against loss does not stop what he asked for */
+    calls.length = 0;
+    listenerSays = () => '{"jobs": [], "clear": ["plot essential"]}';
+    r = await runTurn({ house, project: world(), message: 'clear the plot essential' });
+    ok('"clear the plot essential" empties it', r.project.docs.find((d) => d.name === 'Plot Essential.md').text === '', JSON.stringify(r.cards));
+    ok('no worker was sent for it, and nothing read it back', heavy().length === 0, calls.map((c) => c.who).join(','));
+    ok('its card says so, with a way to put it back', r.cards.some((c) => c.status === 'applied' && c.how === 'cleared it') && r.batches.length === 1);
+    const back = undoBatch(r.project.docs.map((d) => ({ name: d.name, text: d.text })), r.batches[0]);
+    ok('putting it back restores every word', back.ok && back.changes[0].text === MESSY);
+
+    /* delete: gone from the world, gone where it lands, and it can come back */
+    calls.length = 0;
+    listenerSays = () => '{"jobs": [], "delete": ["Notes.md"]}';
+    const w0 = world();
+    r = await runTurn({ house, project: w0, message: 'delete the notes, I do not need them' });
+    ok('"delete the notes" deletes it', !r.project.docs.some((d) => d.name === 'Notes.md'));
+    const snap = new Map(w0.docs.map((d) => [d.name, d.text]));
+    const liveWorld = { ...w0, chats: [{ id: 'ch', turns: [] }] };
+    const landed = landTurn(liveWorld, { chatId: 'ch', snapshot: snap, result: r, makerTurn: { role: 'maker', text: 'Mm.', at: 5, cards: r.cards, batches: r.batches } });
+    ok('and it is deleted in the world it lands in', !landed.world.docs.some((d) => d.name === 'Notes.md'));
+    const undo = undoBatch(landed.world.docs.map((d) => ({ name: d.name, text: d.text })), r.batches[0]);
+    ok('and it can come back, with its kind', undo.ok && undo.changes[0].add === true && undo.changes[0].text === 'ideas' && undo.changes[0].kind === 'notes', JSON.stringify(undo));
+    const handChanged = { ...w0, docs: w0.docs.map((d) => (d.name === 'Notes.md' ? { ...d, text: 'he typed more' } : d)), chats: [{ id: 'ch', turns: [] }] };
+    const kept = landTurn(handChanged, { chatId: 'ch', snapshot: snap, result: r, makerTurn: { role: 'maker', text: 'Mm.', at: 6, cards: r.cards, batches: r.batches } });
+    ok('a document he changed by hand meanwhile is kept, never deleted from under him', kept.world.docs.some((d) => d.name === 'Notes.md' && d.text === 'he typed more'));
+
+    /* a worker cannot clear a document by claiming to be the house */
+    calls.length = 0;
+    listenerSays = () => '{"jobs":[{"worker":"editor","task":"tidy the notes"}]}';
+    workerSays = () => 'Done.\n<edits>[{"house": true, "clear": true, "file": "Plot Essential.md"}]</edits>';
+    r = await runTurn({ house, project: world(), message: 'tidy the wording in the notes' });
+    ok('a worker\'s edit that claims to be the house clears nothing', r.project.docs[0].text === MESSY, r.project.docs[0].text.slice(0, 40));
+
+    /* a one-field edit is not read back in full (the craft's *edit: required scan only) */
+    calls.length = 0;
+    listenerSays = () => '{"jobs":[{"worker":"editor","task":"Move the scene to the Quay."}]}';
+    workerSays = (user, sys) => (/THE EXPERT EYE/.test(sys) ? 'read back' : 'Moved.\n<edits>' + JSON.stringify([{ file: 'Plot Essential.md', find: 'WHERE: the Ribway', replace: 'WHERE: the Quay' }]) + '</edits>');
+    r = await runTurn({ house, project: world(), message: 'move the scene to the Quay' });
+    ok('a one-field edit lands without a full read-back after it', /WHERE: the Quay/.test(r.project.docs[0].text) && !calls.some((c) => c.who === 'eye'), calls.map((c) => c.who).join(','));
+  } catch (e) { ok('the chatting tests ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
+}
+
+/* ============================ connections: does it think? (Cozy Tavern M348, M350, M351) (v1.1.12) */
+{
+  const { testConnection, listModels } = await import('../js/agents/call.js');
+  const { familyStyle, buildRequest, readAnswer, modelsUrl, reportedIdentity } = await import('../js/providers.js');
+  eq('thinking on an unusual channel is still thinking', readAnswer('openai', { choices: [{ message: { content: 'ready', reasoning_details_text: 'hmm, one word' } }] }).thinking, 'hmm, one word');
+  eq('thinking tokens the answer reports are read', readAnswer('openai', { choices: [{ message: { content: 'ready' } }], usage: { completion_tokens_details: { reasoning_tokens: 312 } } }).thinkTokens, 312);
+  ok('a reasoning object is never taken for words', readAnswer('openai', { choices: [{ message: { content: 'x', reasoning: { effort: 'low' } } }] }).thinking === '');
+  eq('an alias is read by the weights its provider names', familyStyle({ url: 'https://api.synthetic.new/openai/v1', model: 'syn:large:vision', modelHf: 'moonshotai/Kimi-K3' }), 'kimi');
+  eq('a listing says what a model is', reportedIdentity({ id: 'syn:large:vision', hugging_face_id: 'moonshotai/Kimi-K3', reasoning_parameters: { efforts: ['LOW', 'high'] } }), { hf: 'moonshotai/Kimi-K3', efforts: ['low', 'high'] });
+  const fitted = buildRequest({ url: 'https://relay.example/v1', model: 'm', thinking: 'medium', modelEfforts: ['low', 'high'] }, { messages: [] }).body.reasoning_effort;
+  ok('a level the model does not take is fitted to one it does, from its provider\'s list', ['low', 'high'].includes(fitted), fitted);
+  eq('the list lives beside the chat address', modelsUrl({ url: 'https://api.deepseek.com' }), 'https://api.deepseek.com/v1/models');
+  eq('and beside a /v1 address', modelsUrl({ url: 'https://openrouter.ai/api/v1/chat/completions' }), 'https://openrouter.ai/api/v1/models');
+
+  const realFetch = globalThis.fetch;
+  const bodies = [];
+  let script = [];
+  globalThis.fetch = async (url, init) => {
+    const spec = JSON.parse(init.body);
+    bodies.push(spec);
+    const next = script.shift();
+    return { json: async () => next };
+  };
+  const answer = (content, extra = {}) => ({ choices: [{ message: { content, ...extra }, finish_reason: 'stop' }] });
+  try {
+    script = [answer('ready', { reasoning_content: 'one word, so: ready' })];
+    let r = await testConnection({ id: 'x', url: 'https://api.deepseek.com', model: 'deepseek-chat', key: 'k', thinking: 'high' });
+    ok('thinking that comes back is confirmed, at the level he set', r.ok && r.thinks && /Thinking works on this connection/.test(r.words) && /\u201chigh\u201d/.test(r.words), r.words);
+
+    bodies.length = 0;
+    script = [answer('ready'), answer('ready', { reasoning_content: 'at the top it thinks' })];
+    r = await testConnection({ id: 'x', url: 'https://api.deepseek.com', model: 'deepseek-chat', key: 'k', thinking: 'low' });
+    ok('none at his level but some at the top: it says the LEVEL is the reason', r.ok && r.levelTooLow && /this LEVEL that gives none/.test(r.words), r.words);
+    ok('and the second ask really went at the top level', bodies.length === 2 && JSON.stringify(bodies[1].body).includes('max'), JSON.stringify(bodies.map((b) => b.body.reasoning_effort || b.body.thinking)));
+
+    script = [answer('ready'), answer('ready')];
+    r = await testConnection({ id: 'x', url: 'https://api.deepseek.com', model: 'deepseek-chat', key: 'k', thinking: 'low' });
+    ok('none at any level: it says the ADDRESS gives none', r.ok && !r.thinks && /at any level/.test(r.words), r.words);
+
+    script = [{ choices: [{ message: { content: 'ready' } }], usage: { reasoning_tokens: 90 } }];
+    r = await testConnection({ id: 'x', url: 'https://relay.example/v1', model: 'm', key: 'k', thinking: 'medium' });
+    ok('thinking tokens with no words: it thought, and the address keeps the words', r.ok && r.thinks && r.hidden && /keeps the words to itself/.test(r.words), r.words);
+
+    const conn = { id: 'x', url: 'https://api.deepseek.com', model: 'deepseek-chat', key: 'k', thinking: 'high' };
+    script = [{ error: 'provider', status: 400, detail: 'unknown parameter: reasoning_effort' }, answer('ready', { reasoning_content: 'thought anyway' })];
+    r = await testConnection(conn);
+    ok('a refused level is learned from and asked again on the way (the fallback)', r.ok && conn.learned && conn.learned.drop.includes('reasoning_effort'), JSON.stringify(conn.learned));
+
+    script = [{ error: 'provider', status: 401, detail: 'invalid api key' }];
+    r = await testConnection({ id: 'x', url: 'https://api.deepseek.com', model: 'deepseek-chat', key: 'bad' });
+    ok('a bad key says so, plainly', !r.ok && /invalid api key/.test(r.words), r.words);
+
+    bodies.length = 0;
+    script = [{ data: [{ id: 'syn:large:vision', hugging_face_id: 'moonshotai/Kimi-K3', reasoning_parameters: { efforts: ['low', 'high'] } }, { id: 'a-model' }] }];
+    const lm = await listModels({ url: 'https://api.synthetic.new/openai/v1', key: 'k' });
+    ok('the models on offer come back A to Z, each with what it is', lm.ok && lm.models[0].id === 'a-model' && lm.models[1].hf === 'moonshotai/Kimi-K3' && lm.models[1].efforts.join() === 'low,high', JSON.stringify(lm));
+    ok('asked with a GET to the list address, key and all', bodies[0].method === 'GET' && bodies[0].url === 'https://api.synthetic.new/openai/v1/models' && bodies[0].headers.Authorization === 'Bearer k', JSON.stringify(bodies[0]).slice(0, 160));
+  } finally { globalThis.fetch = realFetch; }
 }
 
 /* ================================================================ done */
