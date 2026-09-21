@@ -705,6 +705,16 @@ async function send(text, forceWorker, opts = {}) {
 
 /* ---------------------------------------------------------------- pieces */
 
+/* A LONG JOB SHOWS IT IS STILL GOING. A whole plot essential takes minutes on
+ * a real provider; past a few seconds the line says how long it has run, so a
+ * job that is working never looks like one that froze. */
+let statusLabel = '';
+let statusSince = 0;
+let statusTick = null;
+function statusWords() {
+  const s = Math.floor((Date.now() - statusSince) / 1000);
+  return s >= 15 ? `${statusLabel} \u00b7 ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` : statusLabel;
+}
 function setStatus(label) {
   if (!label) return clearStatus();
   if (!statusEl) {
@@ -712,13 +722,19 @@ function setStatus(label) {
     statusEl.append(el('span', 'ember'));
     statusEl.append(el('span', 'label'));
   }
+  if (label !== statusLabel) { statusLabel = label; statusSince = Date.now(); }
+  if (!statusTick) statusTick = setInterval(() => { if (statusEl) keepPlace(() => { statusEl.querySelector('.label').textContent = statusWords(); }); }, 1000);
   const p = store.getProject(), chat = store.openChat();
   keepPlace(() => {
-    statusEl.querySelector('.label').textContent = label;
+    statusEl.querySelector('.label').textContent = statusWords();
     if (running && p && chat && running.worldId === p.id && running.chatId === chat.id && !statusEl.isConnected) stream.append(statusEl);
   });
 }
-function clearStatus() { if (statusEl) { statusEl.remove(); statusEl = null; } }
+function clearStatus() {
+  if (statusEl) { statusEl.remove(); statusEl = null; }
+  if (statusTick) { clearInterval(statusTick); statusTick = null; }
+  statusLabel = '';
+}
 
 boot().catch((e) => {
   document.body.innerHTML =

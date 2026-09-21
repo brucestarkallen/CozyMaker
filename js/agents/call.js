@@ -71,7 +71,15 @@ function noticeOff(conn, thinking) {
 
 export const MAX_RETRIES = 4;
 export const BACKOFF_MS = [2000, 4000, 8000, 16000];
-export const CALL_TIMEOUT_MS = 180000;
+/* A HANG GUARD, NOT A CLOCK ON THE WORK. A worker writing a whole plot
+ * essential on a real provider works for minutes; 180 seconds killed that work
+ * and it was reported as "stopped" — never seen here because every test ran
+ * against a stand-in that answers at once. The device's relay already gives
+ * each call ten minutes of silence before it gives up (serve.py); this only
+ * catches a job that never comes back at all, and says so in those words. */
+export let CALL_TIMEOUT_MS = 30 * 60 * 1000;
+export const TIMED_OUT = 'it ran for thirty minutes without finishing, so it was let go';
+export function setCallTimeoutForTests(ms) { CALL_TIMEOUT_MS = ms; }
 
 /* ---------------------------------------------------------------- calling */
 
@@ -303,15 +311,18 @@ async function drain(projectId) {
   const ctl = new AbortController();
   running.set(projectId, ctl);
   announce({ busy: true, label: job.label });
-  const timer = setTimeout(() => ctl.abort(), CALL_TIMEOUT_MS);
+  let timedOut = false;
+  const timer = setTimeout(() => { timedOut = true; ctl.abort(); }, CALL_TIMEOUT_MS);
   try {
     const out = await job.run({
       signal: ctl.signal,
       stale: () => job.epoch !== epoch,
     });
-    job.settle(out && typeof out === 'object' ? out : { ok: true, value: out });
+    const result = out && typeof out === 'object' ? out : { ok: true, value: out };
+    /* the ceiling is not his Stop: say which it was */
+    job.settle(timedOut && result.ok === false ? { ...result, error: TIMED_OUT } : result);
   } catch (e) {
-    job.settle({ ok: false, error: (e && e.message) || String(e) });
+    job.settle({ ok: false, error: timedOut ? TIMED_OUT : ((e && e.message) || String(e)) });
   } finally {
     clearTimeout(timer);
     running.delete(projectId);

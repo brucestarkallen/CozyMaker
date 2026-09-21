@@ -456,13 +456,26 @@ front can receive inside that harness.
   the message right after it. The walk proves the whole round trip in a real browser.
 - **`#prune` reached no one.** It is the showrunner's, like `*cleanup`.
 
+### Found auditing long work (v1.1.6)
+
+- **Every backstage job was killed at 180 seconds** and reported as "stopped". A worker writing a whole plot
+  essential on a real provider works for minutes; the device's relay already allows ten minutes of silence
+  per call. The channel's ceiling is now a hang guard — thirty minutes — and a job that reaches it says so
+  (`TIMED_OUT`, "it took far too long"), never "stopped", which is only ever his Stop. The status line shows
+  how long a job has run once it passes fifteen seconds. Never seen before because every suite answers from a
+  stand-in in milliseconds.
+- **An answer cut at its length limit was asked for again from the start**, meeting the same limit: the
+  worker's own floor is 8,000 tokens, the craft calls a mature plot essential 8,000 (7.4), and `*import` writes
+  several files in one answer. A cut answer (`length` / `max_tokens`) is now carried on — the worker is shown
+  what it wrote and asked for the rest, up to four times — and joined where the pieces meet (`joinSeam`).
+
 ## Testing
 
 ```
 bash tests/all.sh           all seven, exit code intact
 ```
 
-    node tests/units.mjs         560 checks — the real modules on a real document, and what the persona hears
+    node tests/units.mjs         570 checks — the real modules on a real document, and what the persona hears
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       31 checks — the real serve.py, real files on disk, streams timed
@@ -474,7 +487,7 @@ bash tests/all.sh           all seven, exit code intact
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-858 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
+868 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

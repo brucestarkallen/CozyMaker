@@ -1408,6 +1408,62 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
   } finally { globalThis.fetch = realFetch; }
 }
 
+/* ============================ long work: a hang guard, and cut answers (v1.1.6) */
+
+{
+  const { joinSeam, CARRY_ON, runTurn, plainFailure } = await import('../js/agents/run.js');
+  const call = await import('../js/agents/call.js');
+
+  eq('a seam where the carry-on starts a little way back is joined once', joinSeam('the harbour wall was built by the guild', 'built by the guild in the flood year'), 'the harbour wall was built by the guild in the flood year');
+  eq('a clean seam is joined as it is', joinSeam('{"find":"WHERE: the Rib', 'way"}'), '{"find":"WHERE: the Ribway"}');
+  eq('a tiny accidental overlap is not taken for a restart', joinSeam('abc the', 'the end'), 'abc thethe end');
+
+  /* a worker's answer cut at its limit is carried on, and the change lands whole */
+  const bodies = [];
+  const realFetch = globalThis.fetch;
+  let n = 0;
+  globalThis.fetch = async (url, init) => {
+    const req = JSON.parse(init.body);
+    if (req.stream) {
+      const sse = 'data: ' + JSON.stringify({ choices: [{ delta: { content: 'Mm.' } }] }) + '\n\ndata: [DONE]\n\n';
+      return new Response(new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(sse)); c.close(); } }), { status: 200 });
+    }
+    const sys = (req.body.messages.find((m) => m.role === 'system') || {}).content || '';
+    let content = 'Read it all back.';
+    let finish = 'stop';
+    if (/Edit Mode Discipline/.test(sys)) {
+      bodies.push(req.body);
+      n++;
+      if (n === 1) { content = 'Moved it.\n<edits>[{"file":"Plot Essential.md","find":"WHERE: the Rib'; finish = 'length'; }
+      else content = 'way","replace":"WHERE: the Quay","reason":"he asked"}]</edits>';
+    }
+    return { ok: true, json: async () => ({ choices: [{ message: { content }, finish_reason: finish }] }) };
+  };
+  try {
+    const house = { connections: [{ id: 'c1', url: 'https://one.example/v1', model: 'm', key: 'k' }], agentConnections: {}, settings: { yourName: 'Bruce' }, personaFrame: '' };
+    const world = { id: 'pc', docs: [{ id: 'd1', name: 'Plot Essential.md', kind: 'pe', text: '# PE\n\n## SCENE\nWHERE: the Ribway\n' }], chats: [], recentSections: [] };
+    const r = await runTurn({ house, project: world, message: '*edit move the scene to the Quay' });
+    ok('an answer cut at its limit is carried on, and the change lands whole', /WHERE: the Quay/.test(r.project.docs[0].text) && !r.cards.some((c) => c.status === 'refused'), r.project.docs[0].text + JSON.stringify(r.cards));
+    const second = bodies[1] && bodies[1].messages.filter((m) => m.role !== 'system');
+    ok('the worker is shown what it wrote and asked only for the rest', second && second.length === 3 && second[1].role === 'assistant' &&
+      second[1].content.endsWith('WHERE: the Rib') && second[2].content === CARRY_ON, JSON.stringify(second && second.map((m) => m.role)));
+    ok('the same job is not asked for again from the start', bodies.length === 2, `${bodies.length} calls`);
+  } finally { globalThis.fetch = realFetch; }
+
+  /* the ceiling is a hang guard, and says it was one */
+  ok('the ceiling is no longer three minutes', call.CALL_TIMEOUT_MS >= 20 * 60 * 1000, String(call.CALL_TIMEOUT_MS));
+  call.setCallTimeoutForTests(60);
+  try {
+    const out = await call.enqueue('ceiling', 'x', ({ signal }) => new Promise((resolve) => {
+      signal.addEventListener('abort', () => resolve({ ok: false, error: 'stopped' }), { once: true });
+    }));
+    eq('a job that never comes back is let go, and says why — not "stopped"', out.error, call.TIMED_OUT);
+    eq('and the persona is told it plainly', plainFailure(out.error), 'it took far too long and was let go');
+    const quick = await call.enqueue('ceiling', 'y', async () => ({ ok: true, value: 1 }));
+    ok('a job that finishes in time is untouched', quick.ok === true && quick.value === 1);
+  } finally { call.setCallTimeoutForTests(30 * 60 * 1000); }
+}
+
 /* ================================================================ done */
 
 console.log(`\n${pass} passed, ${fail} failed`);

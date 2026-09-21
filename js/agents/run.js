@@ -233,6 +233,27 @@ export function claimsAChange(notes) {
 export const TOO_LONG = /(maximum context|context length|context window|context_length|too many tokens|prompt is too long|input is too long|reduce the length|exceeds? (?:the )?(?:model'?s? )?(?:maximum|max|context)|token limit)/i;
 export const TALK_WHEN_SMALL = 6000;
 
+/* AN ANSWER CUT AT ITS LENGTH LIMIT IS CARRIED ON, NOT ASKED FOR AGAIN. The
+ * old way asked for the same block again, which met the same limit: with no
+ * "Longest reply" set a worker gets 8,000 tokens, the craft calls a mature
+ * plot essential 8,000 tokens (7.4), and *import writes several files at once.
+ * Some providers cannot give more in one answer however much is asked. So the
+ * worker is shown what it wrote and asked for the rest, and the pieces are
+ * joined where they meet. */
+export const MAX_CARRY_ON = 4;
+export const CARRY_ON = 'You were cut off by the length limit partway through that answer. Carry on from the exact character where it stopped \u2014 no repeating, no starting over, nothing before it.';
+const CUT_FINISH = /^(?:length|max_tokens)$/i;
+export function joinSeam(a, b) {
+  const head = String(a || '');
+  const tail = String(b || '');
+  if (!tail) return head;
+  /* a model carrying on often starts a little way back: the overlap goes once */
+  for (let k = Math.min(400, head.length, tail.length); k >= 12; k--) {
+    if (head.endsWith(tail.slice(0, k))) return head + tail.slice(k);
+  }
+  return head + tail;
+}
+
 async function runWorker({ worker, sections, conn, project, message, talk, fromHouse = false, onStatus, signal, stale, craft = null }) {
   /* a worker with a craft of its own reads that; the rest read their slice */
   const own = craft || sliceFor(sections, worker).text;
@@ -264,7 +285,16 @@ async function runWorker({ worker, sections, conn, project, message, talk, fromH
       nudge ? `\n${nudge}` : '',
     ].filter(Boolean).join('\n');
 
-    const out = await callModel(conn, { system, messages: [{ role: 'user', content: user }], maxTokens: 8000, signal, stale });
+    let out = await callModel(conn, { system, messages: [{ role: 'user', content: user }], maxTokens: 8000, signal, stale });
+    for (let more = 0; out.ok && CUT_FINISH.test(out.finish || '') && (out.text || '').trim() && more < MAX_CARRY_ON; more++) {
+      if ((stale && stale()) || (signal && signal.aborted)) break;
+      onStatus && onStatus(`the ${worker}'s answer ran long \u2014 asking for the rest`);
+      const rest = await callModel(conn, { system, messages: [
+        { role: 'user', content: user }, { role: 'assistant', content: out.text }, { role: 'user', content: CARRY_ON },
+      ], maxTokens: 8000, signal, stale });
+      if (!rest.ok) break;
+      out = { ...rest, text: joinSeam(out.text, rest.text), thinking: [out.thinking, rest.thinking].filter(Boolean).join('\n\n') };
+    }
     if (!out.ok) {
       if (!small && TOO_LONG.test(out.error || '')) {
         small = true;
@@ -774,6 +804,7 @@ export function capUndo(project, keep = UNDO_KEPT) {
  * codes, no provider's text. The exact reason goes on a card for him. */
 export function plainFailure(error) {
   const e = String(error || '');
+  if (/without finishing/i.test(e)) return 'it took far too long and was let go';
   if (/^stopped$|let go/i.test(e)) return 'it was stopped';
   if (TOO_LONG.test(e)) return "the documents were too long for this connection's model";
   if (/\b(?:401|403)\b|api.?key|unauthori[sz]ed|forbidden|permission/i.test(e)) return 'the connection turned the key away';
