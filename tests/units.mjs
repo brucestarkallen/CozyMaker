@@ -17,7 +17,7 @@ const ROOT = join(HERE, '..');
 
 import { cutSections, sliceFor, sliceReport, SLICES, SPINE, setEngineForTests } from '../js/engine/slices.js';
 import { parseDoc, indexLines, inPlay, brief, readNeed, stripNeed, resolveNeed, estimateTokens } from '../js/doc/index.js';
-import { parseEdits, stripEdits, tolerantJson, locate, applyEdit, applyRun, undoBatch, hash, salvageEdits, setFuzzyPruneForTests } from '../js/doc/edits.js';
+import { parseEdits, stripEdits, tolerantJson, locate, applyEdit, applyRun, undoBatch, hash, salvageEdits, stripTrailingCommasOutsideStrings, escapeRawControlsInStrings, stripThinking } from '../js/doc/edits.js';
 import { lint, countOf, lostSomething, readEvents, namedPersonGate } from '../js/doc/lint.js';
 import { route } from '../js/agents/router.js';
 import { buildRequest, readAnswer, readChunk, houseOf, alwaysThinks, thinkingFields, thinkingStyle, withoutThinking } from '../js/providers.js';
@@ -27,7 +27,7 @@ import { worldbookToST, guessKind } from '../js/ui/docs.js';
 import { when } from '../js/ui/kit.js';
 import { callModel } from '../js/agents/call.js';
 import { pickConnection } from '../js/agents/roster.js';
-import { naturalize, commit, sweep, backstageBrief, capUndo, UNDO_KEPT, frontBody, landTurn, oneVoice, conversationFor, claimsAChange, endAtControlToken, docBriefs, either } from '../js/agents/run.js';
+import { naturalize, commit, sweep, backstageBrief, capUndo, UNDO_KEPT, frontBody, landTurn, oneVoice, conversationFor, claimsAChange, endAtControlToken, docBriefs, either, WHOLE_LIMIT } from '../js/agents/run.js';
 
 let pass = 0, fail = 0;
 const failures = [];
@@ -197,7 +197,9 @@ ok('the spacing match covers the right words',
   spaced.ok && PE.slice(spaced.from, spaced.to) === 'CORE: Measures every sentence before it leaves her.',
   spaced.ok ? JSON.stringify(PE.slice(spaced.from, spaced.to)) : '');
 const close = locate(PE, 'ID: Small, freckled, always ink on her fingertips.');
-ok('a near miss still lands when it is clearly the one', close.ok && close.how === 'close', JSON.stringify(close));
+/* This line once asserted a near miss LANDS. The Plot Essential Maker learned the hard way that a near
+ * miss is a misquote, and landing it writes over real words (v0.11.10-v0.11.13). */
+ok('a near miss is refused, never guessed', !close.ok);
 const nowhere = locate(PE, 'this sentence is not in the document anywhere at all');
 ok('words that are not there are refused', !nowhere.ok);
 
@@ -556,7 +558,15 @@ eq('GLM 5.3 always thinks — off is its low', TW('https://api.z.ai/api/paas/v4'
 eq('Qwen is a switch', TW('https://dashscope.aliyuncs.com/v1', 'qwen-max', 'off'), { enable_thinking: false });
 eq('nothing set, nothing sent', TW('https://api.deepseek.com', 'deepseek-chat', ''), {});
 eq('a word no house takes is never sent', TW('https://api.deepseek.com', 'deepseek-chat', 'minimal'), {});
-ok('Kimi K3 is recognised through a relay by its model name', thinkingStyle({ url: 'https://openrouter.ai/api/v1', model: 'moonshotai/kimi-k3' }) === 'kimi');
+/* Through OpenRouter, OpenRouter maps a model's levels itself: Kimi K3 there
+ * is spoken to in OpenRouter's words, not K3's (Cozy Tavern familyStyle). The
+ * first version of this line asserted the opposite, and was wrong. */
+ok('Kimi K3 through OpenRouter is spoken to in OpenRouter\'s words', thinkingStyle({ url: 'https://openrouter.ai/api/v1', model: 'moonshotai/kimi-k3' }) === 'openrouter');
+ok('Kimi K3 through any other relay is known by its name', thinkingStyle({ url: 'https://api.synthetic.new/openai/v1', model: 'hf:moonshotai/Kimi-K3' }) === 'kimi');
+eq('an Anthropic-shaped address on another house is Anthropic-shaped', houseOf('https://api.deepseek.com/anthropic'), 'anthropic');
+eq('and its messages go where that shape expects', buildRequest({ url: 'https://api.deepseek.com/anthropic', model: 'deepseek-chat', key: 'k' }, { messages: [] }).url, 'https://api.deepseek.com/anthropic/v1/messages');
+eq('a Claude address typed with /v1 is not sent to /v1/v1', buildRequest({ url: 'https://api.anthropic.com/v1', model: 'claude-sonnet-4-5', key: 'k' }, { messages: [] }).url, 'https://api.anthropic.com/v1/messages');
+eq('and typed without it, the same place', buildRequest({ url: 'https://api.anthropic.com', model: 'claude-sonnet-4-5', key: 'k' }, { messages: [] }).url, 'https://api.anthropic.com/v1/messages');
 eq('a refused level steps down to nothing',
   Object.keys(withoutThinking({ model: 'm', thinking: { type: 'enabled' }, reasoning_effort: 'high', reasoning: {}, enable_thinking: true, temperature: 0.5 })).sort(),
   ['model', 'temperature']);
@@ -582,7 +592,13 @@ ok('thinking off leaves the room alone',
   let t0 = Date.now();
   let r = await callModel(conn, { user: 'x' });
   ok('a refused thinking field steps down and the answer still comes', r.ok && r.text === 'done', JSON.stringify(r));
-  ok('the second try carried no thinking at all', !('reasoning_effort' in bodies[1]) && !('thinking' in bodies[1]), JSON.stringify(bodies[1]));
+  ok('the second try left out exactly the field it refused', !('reasoning_effort' in bodies[1]), JSON.stringify(bodies[1]));
+  ok('the lesson is kept on the connection', conn.learned && conn.learned.drop.includes('reasoning_effort'), JSON.stringify(conn.learned));
+  bodies.length = 0;
+  script = [answer];
+  await callModel(conn, { user: 'x' });
+  ok('the next call is right the first time', bodies.length === 1 && !('reasoning_effort' in bodies[0]), JSON.stringify(bodies));
+  delete conn.learned;
   ok('stepping down costs no waiting', Date.now() - t0 < 1000, `${Date.now() - t0}ms`);
 
   bodies.length = 0;
@@ -630,28 +646,210 @@ ok('a block in the thinking channel is still a block', (() => {
   return r.edits.length === 1;
 })());
 
-/* --- the bounded close search gives exactly the unbounded answer --- */
+/* --- the transplant check is the extension's own, answer for answer --- */
 {
-  let seed = 7;
-  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-  const vocab = 'the council argued about directive nobody moved rain over harbour lamps guild spire old salt'.split(' ');
-  const line = (n) => Array.from({ length: n }, () => vocab[Math.floor(rnd() * vocab.length)]).join(' ');
-  let same = 0, total = 0;
-  for (let t = 0; t < 60; t++) {
-    const doc = Array.from({ length: 30 + Math.floor(rnd() * 40) }, () => line(6 + Math.floor(rnd() * 14))).join('\n');
-    const lines = doc.split('\n');
-    const pick = lines[Math.floor(rnd() * lines.length)].split(' ');
-    if (rnd() < 0.7) pick[Math.floor(rnd() * pick.length)] = vocab[Math.floor(rnd() * vocab.length)];
-    const needle = rnd() < 0.2 ? line(10) : pick.join(' ');
-    setFuzzyPruneForTests(true);
-    const a = locate(doc, needle);
-    setFuzzyPruneForTests(false);
-    const b = locate(doc, needle);
-    setFuzzyPruneForTests(true);
-    total++;
-    if (JSON.stringify(a) === JSON.stringify(b)) same++;
-  }
-  eq('the bounds never change an answer (60 random documents)', same, total);
+  const { lintTransplant, looksLikeTransplant } = await import('../js/doc/transplant.js');
+  const fx = JSON.parse((await import('node:fs')).readFileSync(new URL('./fixtures/transplant-lint.json', import.meta.url), 'utf8'));
+  const differ = fx.cases.filter((c) => JSON.stringify(lintTransplant(c.text)) !== JSON.stringify(c.want)).map((c) => c.name);
+  ok(`the transplant check answers all ${fx.cases.length} cases as the extension does`, !differ.length, differ.join(', '));
+  ok('a transplant is known by its markers', looksLikeTransplant(fx.cases[0].text) && !looksLikeTransplant('# PLOT ESSENTIAL'));
+  const vandal = ('<!-- SC-SNIPPET ' + 'x'.repeat(40) + ' -- > <!-- sc-pin\n').repeat(20000);
+  const t0 = performance.now(); lintTransplant(vandal); const ms = performance.now() - t0;
+  ok(`a ${Math.round(vandal.length / 1024)}KB vandalised paste is checked in linear time (${ms.toFixed(0)}ms)`, ms < 1500, ms.toFixed(0));
+
+  const { lostSomething } = await import('../js/doc/lint.js');
+  const sound = fx.cases[0].text;
+  ok('an edit that breaks a transplant marker is a loss', /could no longer read/.test(lostSomething(sound, sound.replace('<!-- SC-PIN -->', '<!-- sc-pin -->'), 'transplant') || ''));
+  ok('removing a whole block cleanly is not', lostSomething(sound, sound.replace('<!-- SC-PIN -->\nThe promise at the lighthouse.\n<!-- /SC-PIN -->', ''), 'transplant') === null);
+  ok('instructions and notes have nothing code can count', lostSomething('a\nb', '', 'instructions') === null && lostSomething('a', '', 'notes') === null);
+}
+
+/* --- each document goes to the one who knows it --- */
+{
+  const pick = (m) => route(m).map((r) => r.worker).join(',');
+  eq('*audit is the memory auditor', pick('*audit'), 'auditor');
+  eq('*cleanup aimed at the transplant is the auditor, not the showrunner', pick('*cleanup the transplant'), 'auditor');
+  eq('*cleanup aimed at the worldbook is the worldbook keeper', pick('*cleanup the worldbook'), 'worldbook');
+  eq('*cleanup on its own is still the showrunner', pick('*cleanup'), 'showrunner');
+  eq('asking for a worldbook entry sends the worldbook keeper', pick('add an entry for Aldric to the worldbook'), 'worldbook');
+  eq('a question about the worldbook is talk', pick('what is in the worldbook?'), '');
+  const { craftFor, DEFAULT_INSTRUCTIONS_CRAFT, setCraftForTests } = await import('../js/engine/crafts.js');
+  eq('the instructions writer works his way when he has set one', await craftFor('instructions', { instructionsCraft: 'Mine.' }), 'Mine.');
+  eq('and by the default when he has not', await craftFor('instructions', {}), DEFAULT_INSTRUCTIONS_CRAFT);
+  const fetched = [];
+  const fakeFetch = async (u) => { fetched.push(u); return { ok: true, text: async () => 'WORLDBOOK CRAFT' }; };
+  eq('the worldbook keeper reads its craft file', await craftFor('worldbook', {}, fakeFetch), 'WORLDBOOK CRAFT');
+  eq('from the engine folder', fetched[0], '/engine/worldbook-maker.md');
+  eq('a worker with no craft of its own reads its slice', await craftFor('editor', {}), null);
+  const wb = (await import('node:fs')).readFileSync(new URL('../engine/worldbook-maker.md', import.meta.url), 'utf8');
+  ok('the worldbook craft is the extension\'s, with its block called by this house\'s name', wb.includes('YOU OWN EVERY FIELD') && wb.includes('edits block') && !wb.includes('docedits'));
+  const d = parseEdits('<docedits>[{"find":"a","replace":"b"}]</docedits>');
+  ok('a block written in the extension\'s name is read all the same', d.edits.length === 1, JSON.stringify(d));
+}
+
+/* --- another answer lands as a version; landing it twice is once --- */
+{
+  const w0 = { docs: [], chats: [{ id: 'c1', title: 't', turns: [{ role: 'writer', text: 'hi', at: 1 }, { role: 'maker', text: 'first', at: 2, cards: [], batches: [], edits: [] }] }] };
+  const r2 = { project: w0, reply: 'second', cards: [], batches: [], edits: [] };
+  const t2 = { role: 'maker', text: 'second', at: 3, cards: [], batches: [], edits: [] };
+  const a = landTurn(w0, { chatId: 'c1', snapshot: new Map(), result: r2, makerTurn: t2, replaceAt: 1 });
+  const turn = a.world.chats[0].turns[1];
+  ok('another answer keeps the first as a version and shows the new one', a.world.chats[0].turns.length === 2 && turn.versions.length === 2 && turn.shown === 1 && turn.text === 'second' && turn.versions[0].text === 'first', JSON.stringify(turn));
+  const b = landTurn(a.world, { chatId: 'c1', snapshot: new Map(), result: r2, makerTurn: t2, replaceAt: 1 });
+  ok('landing the same answer twice changes nothing', b.already && b.world.chats[0].turns[1].versions.length === 2);
+}
+
+/* --- the Plot Essential Maker's matching law: spacing may differ, words may not --- */
+{
+  const doc = 'Claire is sixteen and ‘quiet’ — mostly.\n\n\nThe  harbour   wall stands.\nCase Matters Here.';
+  const hit = (find) => { const r = locate(doc, find); return r.ok ? doc.slice(r.from, r.to) : 'REFUSED: ' + r.why; };
+  eq('extra spaces and blank lines may differ', hit('The harbour wall stands.'), 'The  harbour   wall stands.');
+  eq('straight quotes and a hyphen find curly quotes and a dash', hit("Claire is sixteen and 'quiet' - mostly."), 'Claire is sixteen and ‘quiet’ — mostly.');
+  eq('a line break may be spaces in the quote only as a break', hit('mostly.\nThe harbour'), 'mostly.\n\n\nThe  harbour');
+  ok('one word misquoted is refused, never written over the real one', !locate(doc, 'Claire is fifteen and ‘quiet’ — mostly.').ok);
+  ok('a missing word is refused', !locate(doc, 'Claire is and ‘quiet’ — mostly.').ok);
+  ok('case is a difference', !locate(doc, 'case matters here.').ok);
+  const twice = 'a  b\na   b';
+  ok('two places that match only after spacing are ambiguous and refused', /2 times/.test(locate(twice, 'a b').why || ''), JSON.stringify(locate(twice, 'a b')));
+  const big = Array.from({ length: 3000 }, (_, i) => `line ${i} of the council record, where nothing moved`).join('\n');
+  const t0 = performance.now();
+  for (let i = 0; i < 20; i++) locate(big, 'a sentence that is not in the document at all, anywhere, in any form');
+  const ms = (performance.now() - t0) / 20;
+  ok(`a miss on a ${Math.round(big.length / 1000)}k-character document is quick (${ms.toFixed(1)}ms)`, ms < 30, ms.toFixed(1));
+}
+
+/* --- a change that changes nothing is not reported as done --- */
+{
+  const same = applyEdit('WHERE: the Ribway\n', { find: 'WHERE: the Ribway', replace: 'WHERE: the Ribway' });
+  ok('a replacement identical to what it found is refused with the reason', !same.ok && /exactly as they were/.test(same.why), JSON.stringify(same));
+  const allSame = applyEdit('a b a', { find: 'a', replace: 'a', all: true });
+  ok('and so is replacing everywhere with the same words', !allSame.ok);
+  const real = applyEdit('WHERE: the Ribway\n', { find: 'WHERE: the Ribway', replace: 'WHERE: the Lighthouse' });
+  ok('a real change still lands', real.ok && real.text === 'WHERE: the Lighthouse\n');
+  ok('an append of nothing is refused', !applyEdit('a\n', { append: true, replace: '  ' }).ok);
+  ok('and so is putting nothing under a line', !applyEdit('a\nb\n', { insert_after: 'a', replace: '' }).ok);
+}
+
+/* --- the worldbook is read and exported exactly as the extension does --- */
+{
+  const wbm = await import('../js/doc/worldbook.js');
+  const fx = JSON.parse((await import('node:fs')).readFileSync(new URL('./fixtures/worldbook-export.json', import.meta.url), 'utf8'));
+  const differ = fx.cases.filter((c) => {
+    const p = wbm.parseWorldbook(c.text);
+    return JSON.stringify(p) !== JSON.stringify(c.parsed) || JSON.stringify(p.error ? null : wbm.worldbookToST(p.entries)) !== JSON.stringify(c.st);
+  }).map((c) => c.name);
+  ok(`every worldbook reads and exports as the extension's does (${fx.cases.length} cases)`, !differ.length, differ.join(', '));
+  const { lint } = await import('../js/doc/lint.js');
+  const stMap = fx.cases.find((c) => c.name === "SillyTavern's own numbered map");
+  const got = JSON.parse(lint(stMap.text, { kind: 'worldbook' }).text);
+  ok('a SillyTavern worldbook brought in is read for what its fields mean', got.length === 3 && got[1].strategy === 'blue' && got[0].keys.join() === 'Brin,the smith'
+     && got[0].name === 'Brin' && got[2].strategy === 'chain' && got[1].position === 'before_char' && got[2].depth === 6, JSON.stringify(got).slice(0, 200));
+}
+
+/* --- his crafts; a transplant's one certain repair; spacing seen by code --- */
+{
+  const { craftFor, originalCraft, ownCraft, DEFAULT_INSTRUCTIONS_CRAFT, setCraftForTests } = await import('../js/engine/crafts.js');
+  setCraftForTests('auditor', 'THE AUDITOR ORIGINAL');
+  eq('with nothing set, a keeper reads the original', await craftFor('auditor', {}), 'THE AUDITOR ORIGINAL');
+  eq('with his own set, it reads his', await craftFor('auditor', { crafts: { auditor: 'His auditor.' } }), 'His auditor.');
+  eq('an empty one is the original, not nothing', await craftFor('auditor', { crafts: { auditor: '   ' } }), 'THE AUDITOR ORIGINAL');
+  eq('the instructions writer set the old way is still his', ownCraft({ instructionsCraft: 'Old way.' }, 'instructions'), 'Old way.');
+  eq('and the new way wins over the old', ownCraft({ instructionsCraft: 'Old way.', crafts: { instructions: 'New way.' } }, 'instructions'), 'New way.');
+  eq('the original instructions craft is the default', await originalCraft('instructions'), DEFAULT_INSTRUCTIONS_CRAFT);
+
+  const { lint } = await import('../js/doc/lint.js');
+  const { lintTransplant } = await import('../js/doc/transplant.js');
+  const fx = JSON.parse((await import('node:fs')).readFileSync(new URL('./fixtures/transplant-lint.json', import.meta.url), 'utf8'));
+  const wrong = fx.cases.find((c) => c.name === 'a marker in the wrong case').text;
+  const fixed = lint(wrong, { kind: 'transplant' });
+  ok('a transplant marker in the wrong case is put in the case the importer reads', fixed.changed && fixed.text.includes('<!-- SC-LEDGER {"name":"Aldric"} -->'));
+  ok('after which the importer loses nothing to it', !lintTransplant(fixed.text).issues.some((x) => /case-mismatched/.test(x.msg)), JSON.stringify(lintTransplant(fixed.text).issues));
+  const sound = fx.cases.find((c) => c.name === 'a sound transplant').text;
+  ok('a sound transplant is not touched by a single character', lint(sound, { kind: 'transplant' }).changed === false);
+  ok('nothing else in a transplant is touched by code', lint(fx.cases.find((c) => c.name === 'a snippet with no closer').text, { kind: 'transplant' }).changed === false);
+  eq('a pasted transplant is known by its markers', guessKind('pasted.md', sound), 'transplant');
+
+  const { spacingReport } = await import('../js/ui/docs.js');
+  eq('spacing a model cannot see is found by code, line by line', spacingReport('fine line\nthis  has  doubled\n    indented is fine\ntrailing \n\ttabbed'),
+     'doubled spaces inside a line on line 2; spaces at the end of a line on line 4; tabs on line 5');
+  eq('and clean text has nothing to report', spacingReport('one\ntwo'), '');
+}
+
+/* --- a worldbook is repaired by code where code can read it --- */
+{
+  const { lint, readWorldbook } = await import('../js/doc/lint.js');
+  const good = { name: 'Aldric', keys: ['Aldric'], content: 'a general', strategy: 'green' };
+  const commas = '[' + JSON.stringify(good).slice(0, -1) + ',},]';
+  const r1 = lint(commas, { kind: 'worldbook' });
+  ok('a worldbook with trailing commas is put right by code', JSON.parse(r1.text).length === 1 && r1.found.some((f) => /put right/.test(f.check)), JSON.stringify(r1.found));
+  ok('and a data repair is not reported as settings put back in range', !r1.found.some((f) => /set up wrong/.test(f.check)), JSON.stringify(r1.found));
+  const raw = '[{"name":"Aldric","keys":["Aldric"],"content":"line one\nline two","strategy":"green"}]';
+  eq('a raw line break inside a value is put right', JSON.parse(lint(raw, { kind: 'worldbook' }).text)[0].content, 'line one\nline two');
+  const wrapped = JSON.stringify({ entries: { 0: good, 1: { ...good, name: 'Brin', keys: ['Brin'] } } });
+  const r3 = lint(wrapped, { kind: 'worldbook' });
+  ok('SillyTavern\'s numbered map is made one list', Array.isArray(JSON.parse(r3.text)) && JSON.parse(r3.text).length === 2, r3.text.slice(0, 80));
+  const r4 = lint('[{"name": "A" "keys": []}]', { kind: 'worldbook' });
+  ok('what no rule can read goes to the worldbook keeper, not the editor', r4.found.length === 1 && r4.found[0].worker === 'worldbook', JSON.stringify(r4.found));
+  const r5 = lint(JSON.stringify([good, { ...good }]), { kind: 'worldbook' });
+  ok('two entries with one name go to the worldbook keeper', r5.found.some((f) => /same name/.test(f.check) && f.worker === 'worldbook'), JSON.stringify(r5.found));
+  ok('a sound worldbook is left exactly as it is', lint(JSON.stringify([good]), { kind: 'worldbook' }).changed === false);
+  ok('readWorldbook says why when it cannot read', readWorldbook('{"x":1}').ok === false && /one list/.test(readWorldbook('{"x":1}').why));
+}
+
+/* --- everything in one file; bringing it back only adds --- */
+{
+  const store = await import('../js/store.js');
+  const put = [];
+  const worlds = { pA: { id: 'pA', title: 'Harbour', docs: [{ id: 'd1', name: 'PE.md', kind: 'pe', text: 'x' }], chats: [] } };
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts = {}) => {
+    const u = String(url);
+    const json = (v) => ({ ok: true, status: 200, json: async () => v });
+    if (u === '/api/projects') return json({ projects: Object.values(worlds).map((w) => ({ id: w.id, title: w.title })) });
+    if (u.startsWith('/api/project/') && (!opts.method || opts.method === 'GET')) return json(worlds[u.split('/').pop()]);
+    if (u.startsWith('/api/project/') && opts.method === 'PUT') { const w = JSON.parse(opts.body); put.push(w); worlds[w.id] = w; return json({ ok: true }); }
+    return json({});
+  };
+  try {
+    const b = await store.exportEverything();
+    ok('a backup holds every world whole', b.format === store.BACKUP_FORMAT && b.worlds.length === 1 && b.worlds[0].docs[0].text === 'x');
+    ok('and no connections or keys', !('connections' in (b.house || {})) && !JSON.stringify(b).includes('"key"'));
+    ok('a file that is not a backup is refused with the reason', !store.readBackup('{"a":1}').ok && !store.readBackup('not json').ok);
+    const r = await store.restoreEverything(b);
+    ok('bringing it back adds a new world beside the old one', r.added === 1 && Object.keys(worlds).length === 2);
+    ok('under a fresh id, so nothing is replaced', put.length === 1 && put[0].id !== 'pA' && worlds.pA.title === 'Harbour');
+    ok('and a title already in use says it was restored', put[0].title === 'Harbour (restored)', put[0].title);
+    await store.restoreEverything(b);
+    ok('a second restore gets its own title too', put[1].title === 'Harbour (restored 2)', put[1] && put[1].title);
+  } finally { globalThis.fetch = realFetch; }
+}
+
+/* --- the extension's JSON repairs: never inside a string --- */
+eq('a trailing comma outside strings is dropped', stripTrailingCommasOutsideStrings('[{"a":1,},]'), '[{"a":1}]');
+eq('a comma inside a string value is never touched', stripTrailingCommasOutsideStrings('[{"replace":"Options: [a, b, ]"}]'), '[{"replace":"Options: [a, b, ]"}]');
+ok('a raw line break inside a string is repaired', JSON.parse(escapeRawControlsInStrings('[{"replace":"one\ntwo"}]'))[0].replace === 'one\ntwo');
+ok('structure outside strings is left alone', escapeRawControlsInStrings('[\n {"a":"b"}\n]') === '[\n {"a":"b"}\n]');
+{
+  const raw = '<edits>\n[\n  {"file":"a.md","find":"one","replace":"line one\nline two","reason":"x"},\n]\n</edits>';
+  const r = parseEdits(raw);
+  ok('a block with raw line breaks and a trailing comma still reads', r.edits.length === 1 && r.edits[0].replace === 'line one\nline two' && !r.warn, JSON.stringify(r));
+  const keepsComma = parseEdits('<edits>[{"find":"x","replace":"list: [a, b, ]"}]</edits>');
+  eq('and a value holding ", ]" survives every repair', keepsComma.edits[0].replace, 'list: [a, b, ]');
+}
+
+/* --- the last block is the answer; drafts are set aside --- */
+{
+  const drafted = 'Plan: <edits>[{"find":"Claire","replace":"Claire Reynolds"}]</edits> let me check. Final:\n<edits>[{"find":"Claire","replace":"Claire Reynolds"},{"find":"x","replace":"y"}]</edits>';
+  const r = parseEdits(drafted);
+  eq('only the last block is used', r.edits.length, 2);
+  ok('and the draft is said to have been set aside', /set aside as a draft/.test(r.warn), r.warn);
+  const same = parseEdits('<edits>[{"find":"a","replace":"b"}]</edits> <edits>[{"find":"a","replace":"b"}]</edits>');
+  ok('the same block twice is one block and no note', same.edits.length === 1 && !same.warn, JSON.stringify(same));
+  const cutFinal = parseEdits('<edits>[{"find":"old","replace":"draft"}]</edits> Final: <edits>[{"find":"a","replace":"b"},{"find":"c","rep');
+  ok('a cut-off final block wins over an earlier complete draft', cutFinal.edits.length === 1 && cutFinal.edits[0].find === 'a', JSON.stringify(cutFinal));
+  const prose = parseEdits('<edits>[{"find":"a","replace":"b"}]</edits> (I used an <edits> block above.)');
+  ok('a prose mention after the block is not a cut-off block', prose.edits.length === 1 && !prose.cut, JSON.stringify(prose));
+  eq('thinking written on the page is taken out of the notes', stripThinking('<think>plan <edits>[]</edits></think>I tidied the timeline.'), 'I tidied the timeline.');
 }
 
 /* --- a turn lands in the world as it stands NOW (Cozy Tavern M59, M185, M263) --- */
@@ -740,12 +938,19 @@ ok('the house can point at an unfilled macro', unfilledMacros(personaOf({ settin
 
 /* --- the front reads the book without the workers' tools (Cozy Tavern M335) --- */
 {
-  const bigWorld = { docs: [{ name: 'Plot Essential.md', kind: 'pe', text: many }] };
+  /* the worker's tools only matter when the world is too big to send whole */
+  const bigWorld = { docs: [{ name: 'Plot Essential.md', kind: 'pe', text: many },
+    { name: 'Continuity File 1.md', kind: 'continuity', text: '# PLOT ESSENTIAL CONTINUITY — FILE 1\n\n## NOTES\n' + 'x'.repeat(WHOLE_LIMIT) }] };
   const forFront = docBriefs(bigWorld, { message: 'TIMELINE', forFront: true });
   const forWorker = docBriefs(bigWorld, { message: 'TIMELINE' });
   ok('the front is never taught to ask for pages', !forFront.includes('<need>'), forFront.slice(-200));
   ok('the front is never told what it may not rewrite', !/do not rewrite/i.test(forFront));
-  ok('a worker still is', forWorker.includes('<need>') && /do not rewrite/i.test(forWorker));
+  ok('a worker still is, when the world is too big to send whole', forWorker.includes('<need>') && /do not rewrite/i.test(forWorker));
+  const smallWorld = { docs: [{ name: 'Plot Essential.md', kind: 'pe', text: many }] };
+  const wholeBrief = docBriefs(smallWorld, { message: 'nothing in particular' });
+  const parsedMany = parseDoc(many, 'pe');
+  ok('a world that fits reaches a worker whole — every section in full',
+    parsedMany.sections.every((s) => wholeBrief.includes(s.text.trim().split('\n').slice(-1)[0])) && !wholeBrief.includes('<need>'));
 }
 
 /* --- either reason to stop stops it --- */

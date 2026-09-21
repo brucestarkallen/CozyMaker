@@ -395,10 +395,14 @@ def main():
             page.click("#settingsBtn")
             page.wait_for_timeout(400)
 
-            page.locator("#houseBody details summary", has_text="what each of them reads").click()
-            page.wait_for_timeout(800)
-            slices = page.locator("#houseBody details", has_text="what each of them reads").inner_text()
+            # a fold is a plain button now: <details> did not open on his phone (the extension's v0.4.1)
+            page.locator("#houseBody .fold-head", has_text="what each of them reads").click()
+            page.wait_for_timeout(1200)
+            slices = page.locator("#houseBody .fold", has_text="what each of them reads").inner_text()
             ok("the house shows what each worker reads", "the whole craft" in slices, slices[:120])
+            ok("including the three with a craft of their own",
+               all(w in slices for w in ("worldbook", "auditor", "instructions")) and slices.count("its own craft") == 3, slices[-260:])
+            ok("no native <details> is left anywhere in the house", page.locator("#houseBody details").count() == 0)
             page.click("#houseSheet [data-close]")
 
             # -- nothing threw the whole way through ----------------------------

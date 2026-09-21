@@ -43,7 +43,6 @@ export function names(p) {
  * person it reads as the maker's own thought. With no names set it simply
  * says nothing rather than inventing a placeholder. */
 export function greeting(p) {
-  const n = names(p);
   if (!p.maker && !p.you) return '';
   if (p.person === 'first') {
     if (p.maker && p.you) return `I'm ${p.maker}. ${p.you} is here, and we're building this together.`;

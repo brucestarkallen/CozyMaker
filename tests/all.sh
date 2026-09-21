@@ -7,6 +7,7 @@ set -u
 cd "$(cd "$(dirname "$0")/.." && pwd)" || exit 1
 fail=0
 echo "— the modules —"; node tests/units.mjs   || fail=1
+echo; echo "— thinking, held to Cozy Tavern's own output —"; node tests/thinking.mjs || fail=1
 echo; echo "— saves, through an outage —"; node tests/saves.mjs || fail=1
 echo; echo "— the server —"; python3 tests/server.py  || fail=1
 echo; echo "— the browser —"; python3 tests/browser.py || fail=1

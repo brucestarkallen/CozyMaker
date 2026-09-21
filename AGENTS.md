@@ -91,9 +91,14 @@ js/agents/run.js       the turn: workers backstage, one voice at the front
 js/doc/index.js        the whole shape always, full text only where it matters
 js/doc/edits.js        find, apply, undo, with a drift guard
 js/doc/lint.js         the checks that need no model
-js/store.js            the open world, its conversations, and the one save line
+js/doc/worldbook.js    the extension's worldbook reading and SillyTavern export, verbatim
+js/doc/transplant.js   the extension's Summaryception transplant check, verbatim
+js/engine/crafts.js    the three keepers with a craft of their own; his version, else the original
+engine/*.md            generalist (his engine), worldbook-maker, sc-auditor (the extension's)
+engine/crafts.json     where each carried craft came from, its hash, and the only words changed
+js/store.js            the open world, its conversations, backups, and the one save line
 js/ui/                 kit, app (the room), drawer, docs, settings
-docs/lineage.md        every version of Cozy Tavern and Cozy Chat, held against this
+docs/lineage.md        every version of Cozy Tavern, Cozy Chat and the Plot Essential Maker
 ```
 
 ### Why the index is built the way it is
@@ -174,6 +179,35 @@ Landing twice is landing once. For a world not on screen, only "not found"
 means deleted; any other failure is waited out and tried again.
 
 ---
+
+## What was carried over from the Plot Essential and Instructions Maker
+
+His SillyTavern extension (read-only from here: the whole source, all 165 functions, and its AGENTS.md).
+Its laws hold here too:
+
+- **A quote lands exactly, or where only spacing, quote marks and dashes differ — nothing else.** One
+  word different is a misquote, and applying it writes over real words (its v0.11.10 → v0.11.13).
+  `locate` is exact, then one linear folded pass; there is no similarity score anywhere. A miss goes
+  back to the worker that wrote it, once, with exactly what it quoted and why it missed.
+- **JSON repairs never touch the inside of a string.** `stripTrailingCommasOutsideStrings` and
+  `escapeRawControlsInStrings` are state machines; a blind `,\s*]` regex is banned.
+- **The last block is the answer.** Models draft on the page; applying every block applies a change
+  twice or nests a replacement inside itself. Earlier blocks are set aside and that is said. `<docedits>`
+  (the extension's name) is read as `<edits>`.
+- **Documents go whole, last.** A worker reads every document in full when the world fits in
+  `WHOLE_LIMIT` characters, placed after the talk and just before the job.
+- **Native widgets failed on his phone.** No `<details>` anywhere: every fold is `kit.fold`, a button.
+- **What code can check, code checks.** Transplant markers (its `lintTransplant`, held to 16 recorded
+  answers), worldbook JSON (repaired on leaving), spacing in an instructions document (reported with
+  Check it). A change that breaks a transplant marker is refused.
+- **The worldbook is read and exported by its own code** (`js/doc/worldbook.js`), held to 10 recorded
+  answers in `tests/fixtures/worldbook-export.json`.
+- **Restoring only adds.** Every world comes back as a new one beside what is here.
+
+Not carried over, on purpose: its approve-first staging area. He is a passive user — changes land,
+each card shows before and after, and one tap puts it back — and every staging fault it fixed
+(v0.11.5, v0.12.2, v0.12.3, July 29) belongs to that area. Its per-entry worldbook form: the craft's own
+rule is that the keeper owns every field.
 
 ## What was carried over from Cozy Tavern and Cozy Chat
 
@@ -313,22 +347,46 @@ out; the rest were found here and fixed. Each has a test.
 
 ---
 
+### Found in the extension port (v1.1.0)
+
+- **Word-level near misses were applied at 78% similarity.** Now exact or spacing only.
+- **A blind trailing-comma regex** changed commas inside values. String-aware repairs only.
+- **Every edits block was applied**, drafts included. The last block wins.
+- **A global regex's `.test()` carried `lastIndex`** into the next character, so a quote mark after a
+  quote mark failed to fold. One `foldChar`, no global regex tested per character.
+- **A variable removed while its use stayed** (`slice` in `runWorker`) made every finished worker throw.
+  Before pushing, run a no-undef check over `js/` (ESLint 8, `no-undef`): tests never reach every line.
+- **A change that changed nothing was reported as done**, and an append or insert of nothing too.
+- **The thinking layer differed from Cozy Tavern's in seven ways** (unknown relays, XHigh/Max, GLM on any
+  host, K3 through OpenRouter, Claude's temperature, Hermes, K2.7-code). `tests/thinking.mjs` holds it to
+  198 answers produced by Tavern's own `requestBody`. A refusal is learned from, repeatedly: one naming
+  one field can hide another.
+- **Anthropic-shaped addresses on other houses** (`/anthropic`) were sent OpenAI bodies, and a Claude
+  address typed with `/v1` went to `/v1/v1/messages`.
+- **The worldbook export used the copy on screen** when the sheet opened; it reads the document at the tap.
+- **A Go on that failed vanished**; it says why. **A remade version kept its old cards** when some of its
+  changes no longer fit; its cards now say what is in the documents.
+- **Leaving a document waited 0.9s to save**; leaving is a save point.
+
 ## Testing
 
 ```
-bash tests/all.sh           all six, exit code intact
+bash tests/all.sh           all seven, exit code intact
 ```
 
-    node tests/units.mjs         330 checks — the real modules on a real document
+    node tests/units.mjs         413 checks — the real modules on a real document
+    node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
-    python3 tests/server.py       29 checks — the real serve.py, real files on disk
-    python3 tests/browser.py      64 checks — real Chromium at 390x844, end to end
-    python3 tests/walk_worlds.py  82 checks — the drawer, conversations, named jobs, Stop,
-                                              landing, refusals, a real server killed mid-edit
+    python3 tests/server.py       30 checks — the real serve.py, real files on disk
+    python3 tests/browser.py      66 checks — real Chromium at 390x844, end to end
+    python3 tests/walk_worlds.py 125 checks — the drawer, conversations, swipes and versions, edit and
+                                              send again, delete, branch, go on, re-quoting, crafts,
+                                              backup and restore, a real server killed mid-edit
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-546 checks. All six must be green before a push. Never pipe a gate through
+688 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
+real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.
 

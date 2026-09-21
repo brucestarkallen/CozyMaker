@@ -1,0 +1,804 @@
+{
+ "source": "Produced by running the Plot Essential and Instructions Maker's own parseWorldbook and worldbookToST (index.js v0.14.2). CozyMaker must read and export every case the same.",
+ "cases": [
+  {
+   "name": "its own list, every kind of entry",
+   "text": "[{\"name\":\"Aldric\",\"keys\":[\"Aldric\",\"the general\"],\"content\":\"A general of the Iron Legion.\",\"strategy\":\"green\",\"order\":200,\"position\":\"after_char\"},{\"name\":\"The War\",\"keys\":[],\"content\":\"The ninth year of the war.\",\"strategy\":\"blue\",\"order\":300,\"position\":\"before_char\"},{\"name\":\"Rumour\",\"keys\":[\"rumour\"],\"content\":\"Some say the tide stopped once.\",\"strategy\":\"green\",\"probability\":40,\"position\":\"at_depth\",\"depth\":7},{\"name\":\"Old songs\",\"keys\":[],\"content\":\"Only found by meaning.\",\"strategy\":\"chain\"}]",
+   "parsed": {
+    "entries": [
+     {
+      "name": "Aldric",
+      "keys": [
+       "Aldric",
+       "the general"
+      ],
+      "content": "A general of the Iron Legion.",
+      "strategy": "green",
+      "order": 200,
+      "position": "after_char",
+      "depth": 4,
+      "probability": 100,
+      "comment": ""
+     },
+     {
+      "name": "The War",
+      "keys": [],
+      "content": "The ninth year of the war.",
+      "strategy": "blue",
+      "order": 300,
+      "position": "before_char",
+      "depth": 4,
+      "probability": 100,
+      "comment": ""
+     },
+     {
+      "name": "Rumour",
+      "keys": [
+       "rumour"
+      ],
+      "content": "Some say the tide stopped once.",
+      "strategy": "green",
+      "order": 100,
+      "position": "at_depth",
+      "depth": 7,
+      "probability": 40,
+      "comment": ""
+     },
+     {
+      "name": "Old songs",
+      "keys": [],
+      "content": "Only found by meaning.",
+      "strategy": "chain",
+      "order": 100,
+      "position": "after_char",
+      "depth": 4,
+      "probability": 100,
+      "comment": ""
+     }
+    ]
+   },
+   "st": {
+    "entries": {
+     "0": {
+      "uid": 0,
+      "key": [
+       "Aldric",
+       "the general"
+      ],
+      "keysecondary": [],
+      "comment": "Aldric",
+      "content": "A general of the Iron Legion.",
+      "constant": false,
+      "vectorized": true,
+      "selective": true,
+      "selectiveLogic": 0,
+      "addMemo": true,
+      "order": 200,
+      "position": 1,
+      "disable": false,
+      "excludeRecursion": false,
+      "preventRecursion": false,
+      "delayUntilRecursion": false,
+      "probability": 100,
+      "useProbability": false,
+      "depth": 4,
+      "group": "",
+      "groupOverride": false,
+      "groupWeight": 100,
+      "scanDepth": null,
+      "caseSensitive": null,
+      "matchWholeWords": null,
+      "useGroupScoring": null,
+      "automationId": "",
+      "role": null,
+      "sticky": 0,
+      "cooldown": 0,
+      "delay": 0,
+      "displayIndex": 0
+     },
+     "1": {
+      "uid": 1,
+      "key": [],
+      "keysecondary": [],
+      "comment": "The War",
+      "content": "The ninth year of the war.",
+      "constant": true,
+      "vectorized": false,
+      "selective": false,
+      "selectiveLogic": 0,
+      "addMemo": true,
+      "order": 300,
+      "position": 0,
+      "disable": false,
+      "excludeRecursion": false,
+      "preventRecursion": false,
+      "delayUntilRecursion": false,
+      "probability": 100,
+      "useProbability": false,
+      "depth": 4,
+      "group": "",
+      "groupOverride": false,
+      "groupWeight": 100,
+      "scanDepth": null,
+      "caseSensitive": null,
+      "matchWholeWords": null,
+      "useGroupScoring": null,
+      "automationId": "",
+      "role": null,
+      "sticky": 0,
+      "cooldown": 0,
+      "delay": 0,
+      "displayIndex": 1
+     },
+     "2": {
+      "uid": 2,
+      "key": [
+       "rumour"
+      ],
+      "keysecondary": [],
+      "comment": "Rumour",
+      "content": "Some say the tide stopped once.",
+      "constant": false,
+      "vectorized": true,
+      "selective": true,
+      "selectiveLogic": 0,
+      "addMemo": true,
+      "order": 100,
+      "position": 4,
+      "disable": false,
+      "excludeRecursion": false,
+      "preventRecursion": false,
+      "delayUntilRecursion": false,
+      "probability": 40,
+      "useProbability": true,
+      "depth": 7,
+      "group": "",
+      "groupOverride": false,
+      "groupWeight": 100,
+      "scanDepth": null,
+      "caseSensitive": null,
+      "matchWholeWords": null,
+      "useGroupScoring": null,
+      "automationId": "",
+      "role": null,
+      "sticky": 0,
+      "cooldown": 0,
+      "delay": 0,
+      "displayIndex": 2
+     },
+     "3": {
+      "uid": 3,
+      "key": [],
+      "keysecondary": [],
+      "comment": "Old songs",
+      "content": "Only found by meaning.",
+      "constant": false,
+      "vectorized": true,
+      "selective": false,
+      "selectiveLogic": 0,
+      "addMemo": true,
+      "order": 100,
+      "position": 1,
+      "disable": false,
+      "excludeRecursion": false,
+      "preventRecursion": false,
+      "delayUntilRecursion": false,
+      "probability": 100,
+      "useProbability": false,
+      "depth": 4,
+      "group": "",
+      "groupOverride": false,
+      "groupWeight": 100,
+      "scanDepth": null,
+      "caseSensitive": null,
+      "matchWholeWords": null,
+      "useGroupScoring": null,
+      "automationId": "",
+      "role": null,
+      "sticky": 0,
+      "cooldown": 0,
+      "delay": 0,
+      "displayIndex": 3
+     }
+    }
+   }
+  },
+  {
+   "name": "wrapped as {entries:[…]}",
+   "text": "{\"entries\":[{\"name\":\"Aldric\",\"keys\":[\"Aldric\",\"the general\"],\"content\":\"A general of the Iron Legion.\",\"strategy\":\"green\",\"order\":200,\"position\":\"after_char\"},{\"name\":\"Rumour\",\"keys\":[\"rumour\"],\"content\":\"Some say the tide stopped once.\",\"strategy\":\"green\",\"probability\":40,\"position\":\"at_depth\",\"depth\":7}]}",
+   "parsed": {
+    "entries": [
+     {
+      "name": "Aldric",
+      "keys": [
+       "Aldric",
+       "the general"
+      ],
+      "content": "A general of the Iron Legion.",
+      "strategy": "green",
+      "order": 200,
+      "position": "after_char",
+      "depth": 4,
+      "probability": 100,
+      "comment": ""
+     },
+     {
+      "name": "Rumour",
+      "keys": [
+       "rumour"
+      ],
+      "content": "Some say the tide stopped once.",
+      "strategy": "green",
+      "order": 100,
+      "position": "at_depth",
+      "depth": 7,
+      "probability": 40,
+      "comment": ""
+     }
+    ]
+   },
+   "st": {
+    "entries": {
+     "0": {
+      "uid": 0,
+      "key": [
+       "Aldric",
+       "the general"
+      ],
+      "keysecondary": [],
+      "comment": "Aldric",
+      "content": "A general of the Iron Legion.",
+      "constant": false,
+      "vectorized": true,
+      "selective": true,
+      "selectiveLogic": 0,
+      "addMemo": true,
+      "order": 200,
+      "position": 1,
+      "disable": false,
+      "excludeRecursion": false,
+      "preventRecursion": false,
+      "delayUntilRecursion": false,
+      "probability": 100,
+      "useProbability": false,
+      "depth": 4,
+      "group": "",
+      "groupOverride": false,
+      "groupWeight": 100,
+      "scanDepth": null,
+      "caseSensitive": null,
+      "matchWholeWords": null,
+      "useGroupScoring": null,
+      "automationId": "",
+      "role": null,
+      "sticky": 0,
+      "cooldown": 0,
+      "delay": 0,
+      "displayIndex": 0
+     },
+     "1": {
+      "uid": 1,
+      "key": [
+       "rumour"
+      ],
+      "keysecondary": [],
+      "comment": "Rumour",
+      "content": "Some say the tide stopped once.",
+      "constant": false,
+      "vectorized": true,
+      "selective": true,
+      "selectiveLogic": 0,
+      "addMemo": true,
+      "order": 100,
+      "position": 4,
+      "disable": false,
+      "excludeRecursion": false,
+      "preventRecursion": false,
+      "delayUntilRecursion": false,
+      "probability": 40,
+      "useProbability": true,
+      "depth": 7,
+      "group": "",
+      "groupOverride": false,
+      "groupWeight": 100,
+      "scanDepth": null,
+      "caseSensitive": null,
+      "matchWholeWords": null,
+      "useGroupScoring": null,
+      "automationId": "",
+      "role": null,
+      "sticky": 0,
+      "cooldown": 0,
+      "delay": 0,
+      "displayIndex": 1
+     }
+    }
+   }
+  },
+  {
+   "name": "SillyTavern's own numbered map",
+   "text": "{\"entries\":{\"0\":{\"uid\":0,\"key\":[\"Brin\",\"the smith\"],\"comment\":\"Brin\",\"content\":\"A smith.\",\"constant\":false,\"order\":150,\"position\":1,\"depth\":4,\"probability\":100},\"1\":{\"uid\":1,\"key\":[],\"comment\":\"Spine\",\"content\":\"The city is inside a leviathan.\",\"constant\":true,\"order\":350,\"position\":0},\"2\":{\"uid\":2,\"key\":[],\"comment\":\"Echoes\",\"content\":\"Semantic only.\",\"vectorized\":true,\"position\":4,\"depth\":\"6\"}}}",
+   "parsed": {
+    "entries": [
+     {
+      "name": "Brin",
+      "keys": [
+       "Brin",
+       "the smith"
+      ],
+      "content": "A smith.",
+      "strategy": "green",
+      "order": 150,
+      "position": "after_char",
+      "depth": 4,
+      "probability": 100,
+      "comment": "Brin"
+     },
+     {
+      "name": "Spine",
+      "keys": [],
+      "content": "The city is inside a leviathan.",
+      "strategy": "blue",
+      "order": 350,
+      "position": "before_char",
+      "depth": 4,
+      "probability": 100,
+      "comment": "Spine"
+     },
+     {
+      "name": "Echoes",
+      "keys": [],
+      "content": "Semantic only.",
+      "strategy": "chain",
+      "order": 100,
+      "position": "at_depth",
+      "depth": 6,
+      "probability": 100,
+      "comment": "Echoes"
+     }
+    ]
+   },
+   "st": {
+    "entries": {
+     "0": {
+      "uid": 0,
+      "key": [
+       "Brin",
+       "the smith"
+      ],
+      "keysecondary": [],
+      "comment": "Brin",
+      "content": "A smith.",
+      "constant": false,
+      "vectorized": true,
+      "selective": true,
+      "selectiveLogic": 0,
+      "addMemo": true,
+      "order": 150,
+      "position": 1,
+      "disable": false,
+      "excludeRecursion": false,
+      "preventRecursion": false,
+      "delayUntilRecursion": false,
+      "probability": 100,
+      "useProbability": false,
+      "depth": 4,
+      "group": "",
+      "groupOverride": false,
+      "groupWeight": 100,
+      "scanDepth": null,
+      "caseSensitive": null,
+      "matchWholeWords": null,
+      "useGroupScoring": null,
+      "automationId": "",
+      "role": null,
+      "sticky": 0,
+      "cooldown": 0,
+      "delay": 0,
+      "displayIndex": 0
+     },
+     "1": {
+      "uid": 1,
+      "key": [],
+      "keysecondary": [],
+      "comment": "Spine",
+      "content": "The city is inside a leviathan.",
+      "constant": true,
+      "vectorized": false,
+      "selective": false,
+      "selectiveLogic": 0,
+      "addMemo": true,
+      "order": 350,
+      "position": 0,
+      "disable": false,
+      "excludeRecursion": false,
+      "preventRecursion": false,
+      "delayUntilRecursion": false,
+      "probability": 100,
+      "useProbability": false,
+      "depth": 4,
+      "group": "",
+      "groupOverride": false,
+      "groupWeight": 100,
+      "scanDepth": null,
+      "caseSensitive": null,
+      "matchWholeWords": null,
+      "useGroupScoring": null,
+      "automationId": "",
+      "role": null,
+      "sticky": 0,
+      "cooldown": 0,
+      "delay": 0,
+      "displayIndex": 1
+     },
+     "2": {
+      "uid": 2,
+      "key": [],
+      "keysecondary": [],
+      "comment": "Echoes",
+      "content": "Semantic only.",
+      "constant": false,
+      "vectorized": true,
+      "selective": false,
+      "selectiveLogic": 0,
+      "addMemo": true,
+      "order": 100,
+      "position": 4,
+      "disable": false,
+      "excludeRecursion": false,
+      "preventRecursion": false,
+      "delayUntilRecursion": false,
+      "probability": 100,
+      "useProbability": false,
+      "depth": 6,
+      "group": "",
+      "groupOverride": false,
+      "groupWeight": 100,
+      "scanDepth": null,
+      "caseSensitive": null,
+      "matchWholeWords": null,
+      "useGroupScoring": null,
+      "automationId": "",
+      "role": null,
+      "sticky": 0,
+      "cooldown": 0,
+      "delay": 0,
+      "displayIndex": 2
+     }
+    }
+   }
+  },
+  {
+   "name": "numbers written as strings",
+   "text": "[{\"name\":\"Aldric\",\"keys\":[\"Aldric\",\"the general\"],\"content\":\"A general of the Iron Legion.\",\"strategy\":\"green\",\"order\":\"120\",\"position\":\"at depth\",\"depth\":\"5\",\"probability\":\"75\"}]",
+   "parsed": {
+    "entries": [
+     {
+      "name": "Aldric",
+      "keys": [
+       "Aldric",
+       "the general"
+      ],
+      "content": "A general of the Iron Legion.",
+      "strategy": "green",
+      "order": 120,
+      "position": "at_depth",
+      "depth": 5,
+      "probability": 75,
+      "comment": ""
+     }
+    ]
+   },
+   "st": {
+    "entries": {
+     "0": {
+      "uid": 0,
+      "key": [
+       "Aldric",
+       "the general"
+      ],
+      "keysecondary": [],
+      "comment": "Aldric",
+      "content": "A general of the Iron Legion.",
+      "constant": false,
+      "vectorized": true,
+      "selective": true,
+      "selectiveLogic": 0,
+      "addMemo": true,
+      "order": 120,
+      "position": 4,
+      "disable": false,
+      "excludeRecursion": false,
+      "preventRecursion": false,
+      "delayUntilRecursion": false,
+      "probability": 75,
+      "useProbability": true,
+      "depth": 5,
+      "group": "",
+      "groupOverride": false,
+      "groupWeight": 100,
+      "scanDepth": null,
+      "caseSensitive": null,
+      "matchWholeWords": null,
+      "useGroupScoring": null,
+      "automationId": "",
+      "role": null,
+      "sticky": 0,
+      "cooldown": 0,
+      "delay": 0,
+      "displayIndex": 0
+     }
+    }
+   }
+  },
+  {
+   "name": "keys as one comma string",
+   "text": "[{\"name\":\"Tess\",\"keys\":\"Tess, the ferrywoman ,  ferry\",\"content\":\"x\",\"strategy\":\"green\"}]",
+   "parsed": {
+    "entries": [
+     {
+      "name": "Tess",
+      "keys": [
+       "Tess",
+       "the ferrywoman",
+       "ferry"
+      ],
+      "content": "x",
+      "strategy": "green",
+      "order": 100,
+      "position": "after_char",
+      "depth": 4,
+      "probability": 100,
+      "comment": ""
+     }
+    ]
+   },
+   "st": {
+    "entries": {
+     "0": {
+      "uid": 0,
+      "key": [
+       "Tess",
+       "the ferrywoman",
+       "ferry"
+      ],
+      "keysecondary": [],
+      "comment": "Tess",
+      "content": "x",
+      "constant": false,
+      "vectorized": true,
+      "selective": true,
+      "selectiveLogic": 0,
+      "addMemo": true,
+      "order": 100,
+      "position": 1,
+      "disable": false,
+      "excludeRecursion": false,
+      "preventRecursion": false,
+      "delayUntilRecursion": false,
+      "probability": 100,
+      "useProbability": false,
+      "depth": 4,
+      "group": "",
+      "groupOverride": false,
+      "groupWeight": 100,
+      "scanDepth": null,
+      "caseSensitive": null,
+      "matchWholeWords": null,
+      "useGroupScoring": null,
+      "automationId": "",
+      "role": null,
+      "sticky": 0,
+      "cooldown": 0,
+      "delay": 0,
+      "displayIndex": 0
+     }
+    }
+   }
+  },
+  {
+   "name": "a trailing comma",
+   "text": "[{\"name\":\"Aldric\",\"keys\":[\"Aldric\",\"the general\"],\"content\":\"A general of the Iron Legion.\",\"strategy\":\"green\",\"order\":200,\"position\":\"after_char\"},]",
+   "parsed": {
+    "entries": [
+     {
+      "name": "Aldric",
+      "keys": [
+       "Aldric",
+       "the general"
+      ],
+      "content": "A general of the Iron Legion.",
+      "strategy": "green",
+      "order": 200,
+      "position": "after_char",
+      "depth": 4,
+      "probability": 100,
+      "comment": ""
+     }
+    ]
+   },
+   "st": {
+    "entries": {
+     "0": {
+      "uid": 0,
+      "key": [
+       "Aldric",
+       "the general"
+      ],
+      "keysecondary": [],
+      "comment": "Aldric",
+      "content": "A general of the Iron Legion.",
+      "constant": false,
+      "vectorized": true,
+      "selective": true,
+      "selectiveLogic": 0,
+      "addMemo": true,
+      "order": 200,
+      "position": 1,
+      "disable": false,
+      "excludeRecursion": false,
+      "preventRecursion": false,
+      "delayUntilRecursion": false,
+      "probability": 100,
+      "useProbability": false,
+      "depth": 4,
+      "group": "",
+      "groupOverride": false,
+      "groupWeight": 100,
+      "scanDepth": null,
+      "caseSensitive": null,
+      "matchWholeWords": null,
+      "useGroupScoring": null,
+      "automationId": "",
+      "role": null,
+      "sticky": 0,
+      "cooldown": 0,
+      "delay": 0,
+      "displayIndex": 0
+     }
+    }
+   }
+  },
+  {
+   "name": "an unnamed entry with a comment",
+   "text": "[{\"comment\":\"From the old file\",\"key\":[\"old\"],\"content\":\"y\"}]",
+   "parsed": {
+    "entries": [
+     {
+      "name": "From the old file",
+      "keys": [
+       "old"
+      ],
+      "content": "y",
+      "strategy": "green",
+      "order": 100,
+      "position": "after_char",
+      "depth": 4,
+      "probability": 100,
+      "comment": "From the old file"
+     }
+    ]
+   },
+   "st": {
+    "entries": {
+     "0": {
+      "uid": 0,
+      "key": [
+       "old"
+      ],
+      "keysecondary": [],
+      "comment": "From the old file",
+      "content": "y",
+      "constant": false,
+      "vectorized": true,
+      "selective": true,
+      "selectiveLogic": 0,
+      "addMemo": true,
+      "order": 100,
+      "position": 1,
+      "disable": false,
+      "excludeRecursion": false,
+      "preventRecursion": false,
+      "delayUntilRecursion": false,
+      "probability": 100,
+      "useProbability": false,
+      "depth": 4,
+      "group": "",
+      "groupOverride": false,
+      "groupWeight": 100,
+      "scanDepth": null,
+      "caseSensitive": null,
+      "matchWholeWords": null,
+      "useGroupScoring": null,
+      "automationId": "",
+      "role": null,
+      "sticky": 0,
+      "cooldown": 0,
+      "delay": 0,
+      "displayIndex": 0
+     }
+    }
+   }
+  },
+  {
+   "name": "probability out of range",
+   "text": "[{\"name\":\"Rumour\",\"keys\":[\"rumour\"],\"content\":\"Some say the tide stopped once.\",\"strategy\":\"green\",\"probability\":180,\"position\":\"at_depth\",\"depth\":7}]",
+   "parsed": {
+    "entries": [
+     {
+      "name": "Rumour",
+      "keys": [
+       "rumour"
+      ],
+      "content": "Some say the tide stopped once.",
+      "strategy": "green",
+      "order": 100,
+      "position": "at_depth",
+      "depth": 7,
+      "probability": 100,
+      "comment": ""
+     }
+    ]
+   },
+   "st": {
+    "entries": {
+     "0": {
+      "uid": 0,
+      "key": [
+       "rumour"
+      ],
+      "keysecondary": [],
+      "comment": "Rumour",
+      "content": "Some say the tide stopped once.",
+      "constant": false,
+      "vectorized": true,
+      "selective": true,
+      "selectiveLogic": 0,
+      "addMemo": true,
+      "order": 100,
+      "position": 4,
+      "disable": false,
+      "excludeRecursion": false,
+      "preventRecursion": false,
+      "delayUntilRecursion": false,
+      "probability": 100,
+      "useProbability": false,
+      "depth": 7,
+      "group": "",
+      "groupOverride": false,
+      "groupWeight": 100,
+      "scanDepth": null,
+      "caseSensitive": null,
+      "matchWholeWords": null,
+      "useGroupScoring": null,
+      "automationId": "",
+      "role": null,
+      "sticky": 0,
+      "cooldown": 0,
+      "delay": 0,
+      "displayIndex": 0
+     }
+    }
+   }
+  },
+  {
+   "name": "nothing at all",
+   "text": "",
+   "parsed": {
+    "entries": []
+   },
+   "st": {
+    "entries": {}
+   }
+  },
+  {
+   "name": "not a worldbook",
+   "text": "{\"hello\":1}",
+   "parsed": {
+    "entries": [],
+    "error": "expected a JSON array of entries"
+   },
+   "st": null
+  }
+ ]
+}

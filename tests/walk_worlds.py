@@ -41,8 +41,17 @@ def ok(name, cond, detail=""):
         failed.append(f"{name}{' — ' + str(detail)[:300] if detail else ''}")
 
 
+def until(check, timeout=6.0):
+    end = time.time() + timeout
+    while time.time() < end:
+        if check():
+            return True
+        time.sleep(0.2)
+    return check()
+
+
 def which(system):
-    for marker, name in (("PROACTIVE CO-WRITER", "builder"), ("THE CLEANUP WORKFLOW", "showrunner"),
+    for marker, name in (("worldbook architect for SillyTavern", "worldbook"), ("PROACTIVE CO-WRITER", "builder"), ("THE CLEANUP WORKFLOW", "showrunner"),
                          ("THE EXPERT EYE", "eye"), ("Edit Mode Discipline", "editor"),
                          ("SMART COMPRESSION SYSTEM", "compressor")):
         if marker in system:
@@ -94,7 +103,8 @@ class Model(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/event-stream")
             self.end_headers()
             try:
-                for piece in ["All ", "right — ", "done ", "and ", "done. "] + ["More words so the reply is long. "] * 30:
+                FRONT_N[0] += 1
+                for piece in ["All ", "right — ", "done ", "and ", "done. "] + ["More words so the reply is long. "] * 30 + [f"[reply {FRONT_N[0]}]"]:
                     self.wfile.write(("data: " + json.dumps({"choices": [{"delta": {"content": piece}}]}) + "\n\n").encode())
                     self.wfile.flush()
                     time.sleep(0.01)
@@ -114,8 +124,26 @@ class Model(http.server.BaseHTTPRequestHandler):
             body = ('I tidied it: the rule now says what it means.\n\n<edits>\n'
                     '[{"file":"Plot Essential.md","find":"- The city lives inside a dormant leviathan.",'
                     '"replace":"- The city lives inside a leviathan that is dormant, not dead.","reason":"clearer"}]\n</edits>')
+        elif who == "worldbook":
+            # a worldbook keeper: the whole list again, with the entry it was asked for
+            wb = [{"name": "The War", "keys": [], "content": "The long war is in its ninth year and every city feels it.", "strategy": "blue"},
+                  {"name": "Aldric", "keys": ["Aldric"], "content": "A general of the Iron Legion.", "strategy": "green"},
+                  {"name": "Brin", "keys": ["Brin", "the smith"], "content": "The smith of the Ribway.", "strategy": "green", "order": 120}]
+            body = ('Added Brin.\n\n<edits>\n' + json.dumps([{"file": "Standing Lore.json", "replace_all": True,
+                    "replace": json.dumps(wb, indent=2), "reason": "a new entry"}]) + '\n</edits>')
         elif who == "compressor":
             body = "<need>SCENE</need>"      # a worker that only ever asks to read more
+        elif who == "editor" and "misquote test" in rest[0]["content"] and "could not be placed" not in rest[0]["content"]:
+            # a model that misquotes: one word the document does not have
+            body = ('I moved it.\n\n<edits>\n' + json.dumps([{"file": "Plot Essential.md", "find": "WHERE: the Ribwayy",
+                    "replace": "WHERE: the Lighthouse", "reason": "moved the scene"}]) + '\n</edits>')
+        elif who == "editor" and "could not be placed" in rest[0]["content"]:
+            # asked to quote again: the SAME change it meant, now quoting the document as it is
+            docs_part = rest[0]["content"].split("The documents as they stand:")[-1]
+            m = re.search(r"(?m)^WHERE[^:\n]*: [^\n/]*", docs_part)
+            body = ('Quoted exactly this time.\n\n<edits>\n' + json.dumps([{"file": "Plot Essential.md",
+                    "find": m.group(0).rstrip() if m else "WHERE: the Ribway", "replace": "WHERE: the Lighthouse",
+                    "reason": "moved the scene"}]) + '\n</edits>')
         elif who == "editor":
             # like a real model: quote the line that is actually in the document it was shown
             shown = rest[0]["content"] if rest else ""
@@ -127,6 +155,7 @@ class Model(http.server.BaseHTTPRequestHandler):
                     "replace": "WHERE: the " + place, "reason": "moved the scene"}]) + '\n</edits>')
         else:
             body = "Read it all back; nothing else needed changing."
+        calls[-1]["reply"] = body
         raw = json.dumps({"choices": [{"message": {"content": body}, "finish_reason": "stop"}]}).encode()
         try:
             self.send_response(200)
@@ -136,6 +165,9 @@ class Model(http.server.BaseHTTPRequestHandler):
             self.wfile.write(raw)
         except (BrokenPipeError, ConnectionResetError):
             pass
+
+
+FRONT_N = [0]
 
 
 class Threaded(socketserver.ThreadingMixIn, http.server.HTTPServer):
@@ -484,10 +516,25 @@ def main():
             page.wait_for_function("() => !document.querySelector('#sendBtn.stop')", timeout=30000)
             page.wait_for_timeout(1200)
             refused = [c for c in calls if c["who"] == "refuse"]
-            ok("a refused thinking level steps down and goes again", len(refused) == 2, len(refused))
-            ok("the second try carried no thinking", len(refused) == 2 and "reasoning_effort" not in refused[1]["body"])
+            # This stand-in refuses EVERY thinking field but names only reasoning_effort. The house learns
+            # what each refusal names (Cozy Tavern M350): the first try names reasoning_effort, the second
+            # teaches nothing new, so thinking is silenced for the day (M319), and the third goes through.
+            # (Before the port this was 2 tries, because the first refusal threw every field away at once.)
+            ok("a refused thinking level is learned from and goes again", len(refused) == 3, len(refused))
+            ok("the second try left out the field that was named", len(refused) == 3 and "reasoning_effort" not in refused[1]["body"])
+            ok("the third carried no thinking at all", len(refused) == 3 and not any(k in refused[2]["body"] for k in ("thinking", "reasoning_effort", "reasoning", "enable_thinking")))
+            learned = [c for c in api("/api/house")["connections"] if c["id"] == "c2"][0].get("learned") or {}
+            ok("what it learned is kept on the connection", "reasoning_effort" in (learned.get("drop") or []) and learned.get("downAt"), learned)
             last = page.locator(".turn.maker .bubble").last.inner_text()
             ok("and the reply arrives instead of an empty bubble", "done" in last, last[:120])
+            calls.clear()
+            page.fill("#say", "and one more on the same connection")
+            page.click("#sendBtn")
+            page.wait_for_function("() => !document.querySelector('#sendBtn.stop')", timeout=30000)
+            page.wait_for_timeout(900)
+            again = [c for c in calls if c["who"] == "refuse"]
+            ok("the next turn goes right the first time", len(again) == 1 and not any(
+                k in again[0]["body"] for k in ("thinking", "reasoning_effort", "reasoning", "enable_thinking")), len(again))
 
             h["agentConnections"]["keeper"] = "c3"
             api("/api/house", "PUT", h)
@@ -588,6 +635,280 @@ def main():
             ok("and the name is saved to the house", api("/api/house")["settings"]["yourName"] == "Bruce")
             page.click("#houseSheet [data-close]")
             page.wait_for_timeout(300)
+
+            # ---------------------------------------- the essentials: versions, edit, delete, branch, go on
+            page.on("dialog", lambda d: d.accept())
+            page.reload(wait_until="networkidle")
+            page.wait_for_timeout(700)
+
+            def settle():
+                page.wait_for_function("() => !document.querySelector('#sendBtn.stop')", timeout=30000)
+                page.wait_for_timeout(1000)
+
+            def last_maker():
+                return page.locator(".turn.maker").last
+
+            def pe_text():
+                return [d for d in world("p_new")["docs"] if d["name"] == "Plot Essential.md"][0]["text"]
+
+            def tag(s):
+                m = re.search(r"\[reply \d+\]", s)
+                return m.group(0) if m else "(none)"
+
+            # another answer: kept beside the first, shown in its place, no message added
+            page.fill("#say", "just talking about the harbour tonight")
+            page.click("#sendBtn")
+            settle()
+            count = page.locator(".turn").count()
+            first = last_maker().locator(".bubble").inner_text()
+            last_maker().locator(".swipes .btn", has_text="Another answer").click()
+            settle()
+            second = last_maker().locator(".bubble").inner_text()
+            ok("another answer is written in the old one's place", page.locator(".turn").count() == count and tag(second) != tag(first), (tag(first), tag(second)))
+            ok("and the first is kept to go back to", last_maker().locator(".swipe-count").inner_text().strip() == "2 / 2")
+            last_maker().locator("button[aria-label='The answer before this one']").click()
+            page.wait_for_timeout(800)
+            ok("the answer before it comes back with one tap", tag(last_maker().locator(".bubble").inner_text()) == tag(first)
+               and last_maker().locator(".swipe-count").inner_text().strip() == "1 / 2")
+            calls.clear()
+            page.fill("#say", "and what comes next")
+            page.click("#sendBtn")
+            settle()
+            fronts = [c for c in calls if c["stream"]]
+            sent = json.dumps(fronts[0]["messages"]) if fronts else ""
+            ok("the model is sent the answer that is shown, not the newest", tag(first) in sent and tag(second) not in sent, (tag(first), tag(second)))
+
+            # a crew answer: another one puts its change back first; walking back makes the first one's again
+            wd = world("p_new")
+            for d in wd["docs"]:
+                if d["name"] == "Plot Essential.md":
+                    d["text"] = ("# PLOT ESSENTIAL — The Leviathan Quarter — V1.0\n\n## WORLD\n### Rules\n"
+                                 "- The city lives inside a dormant leviathan.\n\n## SCENE\nWHERE: the Ribway\n")
+            api("/api/project/p_new", "PUT", wd)
+            page.reload(wait_until="networkidle")
+            page.wait_for_timeout(700)
+            page.fill("#say", "*cleanup")
+            page.click("#sendBtn")
+            settle()
+            ok("the crew's answer changed the document", pe_text().count("dormant, not dead") == 1, pe_text()[:160])
+            last_maker().locator(".diff-fold .fold-head").first.click()
+            page.wait_for_timeout(300)
+            was = last_maker().locator(".diff .was").first.inner_text()
+            now = last_maker().locator(".diff .now").first.inner_text()
+            ok("its card opens to what was there and what is there now", "dormant leviathan." in was and "dormant, not dead" in now, (was[:60], now[:60]))
+            last_maker().locator(".swipes .btn", has_text="Another answer").click()
+            settle()
+            ok("another answer put the first one's change back before making its own — it is there once",
+               pe_text().count("dormant, not dead") == 1 and "dormant leviathan." not in pe_text(), pe_text()[:200])
+            last_maker().locator("button[aria-label='The answer before this one']").click()
+            page.wait_for_timeout(1500)
+            ok("walking back puts that change back and makes the first answer's again — still once",
+               pe_text().count("dormant, not dead") == 1 and last_maker().locator(".swipe-count").inner_text().strip() == "1 / 2", pe_text()[:200])
+
+            # a quote that missed goes back to the one who wrote it, once, with exactly what missed
+            calls.clear()
+            page.fill("#say", "*edit misquote test: move the scene to the Lighthouse")
+            page.click("#sendBtn")
+            settle()
+            eds = [c for c in calls if c["who"] == "editor"]
+            ok("a quote that missed is sent back once", len(eds) == 2, len(eds))
+            ok("with exactly what it quoted and why it missed", len(eds) == 2 and "WHERE: the Ribwayy" in eds[1]["messages"][0]["content"]
+               and "not in the document as written" in eds[1]["messages"][0]["content"])
+            where_line = lambda: (re.search(r"WHERE:[^\n]*", pe_text()) or re.search("", "")).group(0)
+            ok("and the quote made again lands, where he asked", where_line() == "WHERE: the Lighthouse",
+               {"where": where_line(), "second reply": (eds[1].get("reply") or "")[-240:] if len(eds) > 1 else None,
+                "second ask tail": eds[1]["messages"][0]["content"][-420:] if len(eds) > 1 else None,
+                "cards": last_maker().inner_text()[-300:]})
+            ok("the miss that was put right is not left on the card", "Ribwayy" not in last_maker().inner_text())
+
+            # his message, edited and sent again from there: the replies after it put their changes back first
+            writer = page.locator(".turn.writer").last
+            writer.locator(".bubble").click()
+            page.wait_for_timeout(250)
+            writer.locator(".turn-actions .btn", has_text="Edit").click()
+            page.wait_for_timeout(250)
+            writer.locator(".edit-area").fill("*edit move the scene to the Harbour")
+            turns_before = page.locator(".turn").count()
+            writer.locator(".btn", has_text="Send again from here").click()
+            settle()
+            ok("sending again from an edited message replaces what followed it", page.locator(".turn").count() == turns_before
+               and page.locator(".turn.writer .bubble").last.inner_text() == "*edit move the scene to the Harbour")
+            ok("and the change the old reply made was put back first", where_line() == "WHERE: the Harbour" and "Lighthouse" not in pe_text(), where_line())
+
+            # deleting a reply that changed the documents puts its change back
+            n = page.locator(".turn").count()
+            last_maker().locator(".bubble").click()
+            page.wait_for_timeout(250)
+            last_maker().locator(".turn-actions .btn", has_text="Delete").click()
+            page.wait_for_timeout(1200)
+            ok("deleting a reply that changed a document puts the change back", where_line() == "WHERE: the Ribway" and "Harbour" not in pe_text(), where_line())
+            ok("and the reply is gone", page.locator(".turn").count() == n - 1)
+
+            # branch here: the talk up to there, in a new conversation beside the old one
+            chats_before = len(world("p_new")["chats"])
+            page.locator(".turn.writer").first.locator(".bubble").click()
+            page.wait_for_timeout(250)
+            page.locator(".turn.writer").first.locator(".turn-actions .btn", has_text="Branch here").click()
+            page.wait_for_timeout(1200)
+            wb = world("p_new")
+            ok("Branch here opens a new conversation holding the talk up to there", page.locator(".turn").count() == 1
+               and len(wb["chats"]) == chats_before + 1 and any(c["title"].endswith("— branch") for c in wb["chats"]), page.locator(".turn").count())
+
+            # go on: the rest of a reply cut off at the limit joins the same reply
+            h = api("/api/house")
+            h["agentConnections"]["keeper"] = "c5"
+            api("/api/house", "PUT", h)
+            page.reload(wait_until="networkidle")
+            page.wait_for_timeout(600)
+            page.fill("#say", "tell me more about the harbour")
+            page.click("#sendBtn")
+            settle()
+            before_text = last_maker().locator(".bubble").inner_text()
+            n = page.locator(".turn").count()
+            last_maker().locator(".btn", has_text="Go on").click()
+            settle()
+            after_text = last_maker().locator(".bubble").inner_text()
+            ok("Go on adds the rest to the same reply", after_text.startswith(before_text) and len(after_text) > len(before_text)
+               and page.locator(".turn").count() == n, (len(before_text), len(after_text)))
+            h["agentConnections"]["keeper"] = "c3"
+            api("/api/house", "PUT", h)
+            page.reload(wait_until="networkidle")
+            page.wait_for_timeout(600)
+            kept = last_maker().locator(".bubble").inner_text()
+            last_maker().locator(".btn", has_text="Go on").click()
+            page.wait_for_function("() => !document.querySelector('#sendBtn.stop')", timeout=30000)
+            page.wait_for_timeout(300)
+            said = page.locator("#toast").inner_text()
+            ok("a Go on that fails says why, and the reply is left as it was", "did not go through" in said and last_maker().locator(".bubble").inner_text() == kept, said[:120])
+            h["agentConnections"]["keeper"] = "c1"
+            api("/api/house", "PUT", h)
+            page.reload(wait_until="networkidle")
+            page.wait_for_timeout(600)
+
+            # ---------------------------------------- everything in one file, and back by adding only
+            page.click("#settingsBtn")
+            page.wait_for_timeout(500)
+            worlds_before = api("/api/projects")["projects"]
+            with page.expect_download() as dl:
+                page.locator("#houseBody .btn", has_text="Save everything to a file").click()
+            saved_path = dl.value.path()
+            saved_text = Path(saved_path).read_text()
+            backup = json.loads(saved_text)
+            ok("everything goes into one file", backup.get("format") == "cozymaker-backup" and len(backup["worlds"]) == len(worlds_before),
+               (backup.get("format"), len(backup.get("worlds", [])), len(worlds_before)))
+            ok("with none of the connection keys in it", '"key": "k"' not in saved_text and '"key":"k"' not in saved_text and '"key":"nope"' not in saved_text)
+            page.locator("#houseBody input[type=file]").set_input_files(saved_path)
+            page.wait_for_timeout(2500)
+            after = api("/api/projects")["projects"]
+            restored = [x for x in after if "(restored" in x["title"]]
+            ok("bringing it back adds every world beside the ones here", len(after) == 2 * len(worlds_before) and len(restored) == len(worlds_before),
+               (len(worlds_before), len(after), len(restored)))
+            ok("and every world already here is exactly as it was", all(any(x["id"] == o["id"] and x["title"] == o["title"] for x in after) for o in worlds_before))
+            page.click("#houseSheet [data-close]")
+            page.wait_for_timeout(300)
+            for x in restored:
+                api(f"/api/project/{x['id']}", "DELETE")
+
+            # ---------------------------------------- a worldbook's always-on cost, and side by side
+            wd = world("p_new")
+            wd["docs"].append({"id": "dwb", "name": "Standing Lore.json", "kind": "worldbook", "text": json.dumps([
+                {"name": "The War", "keys": [], "content": "The long war is in its ninth year and every city feels it.", "strategy": "blue"},
+                {"name": "Aldric", "keys": ["Aldric"], "content": "A general of the Iron Legion.", "strategy": "green"}])})
+            api("/api/project/p_new", "PUT", wd)
+            page.reload(wait_until="networkidle")
+            page.wait_for_timeout(600)
+            page.click("#docsBtn")
+            page.wait_for_timeout(400)
+            wb_row = page.locator("#docsBody .row", has_text="Standing Lore.json").inner_text()
+            ok("a worldbook shows what its always-on entries cost on every message", "always on:" in wb_row and "tokens" in wb_row, wb_row)
+            page.locator("#docsBody .btn", has_text="Side by side").click()
+            page.wait_for_timeout(300)
+            ok("side by side puts two documents next to each other", page.locator("#docsBody .compare .pane").count() == 2)
+            ok("each with its own Copy", page.locator("#docsBody .compare .pane .btn", has_text="Copy").count() == 2)
+            page.locator("#docsBody .btnrow .btn.small:not(.quiet)").first.click()
+            page.wait_for_timeout(300)
+            ok("a tap on a shown name puts it away", page.locator("#docsBody .compare .pane").count() == 1)
+            page.locator("#docsBody .btn", has_text="Back to the documents").click()
+            page.wait_for_timeout(300)
+            ok("and Back returns to the documents", page.locator("#docsBody .btn", has_text="Side by side").count() == 1)
+
+            # his own version of the worldbook keeper's craft reaches the keeper, and the original is one tap away
+            page.locator("#docsBody .row .grow", has_text="Standing Lore.json").click()
+            page.wait_for_timeout(400)
+            page.locator("#docsBody .fold-head", has_text="how the worldbook keeper works").click()
+            page.wait_for_timeout(700)
+            craft_box = page.locator("#docsBody .fold", has_text="how the worldbook keeper works").locator("textarea")
+            ok("the worldbook keeper's craft is shown, the extension's own", "YOU OWN EVERY FIELD" in craft_box.input_value())
+            craft_box.fill(craft_box.input_value() + "\nWRITE EVERY ENTRY IN BRITISH ENGLISH.")
+            page.locator("#docsBody .fold", has_text="how the worldbook keeper works").locator(".btn", has_text="Save").click()
+            page.wait_for_timeout(500)
+            ok("his version is kept", "BRITISH ENGLISH" in ((api("/api/house").get("crafts") or {}).get("worldbook") or ""))
+            page.click("#docsSheet [data-close]")
+            page.wait_for_timeout(300)
+
+            # the export reads the worldbook as it is at the tap, even with the sheet opened before the change landed
+            DELAY["worker"] = 2.0
+            calls.clear()
+            page.fill("#say", "add Brin the smith to the worldbook")
+            page.click("#sendBtn")
+            page.wait_for_timeout(400)
+            page.click("#docsBtn")
+            page.wait_for_timeout(400)
+            page.locator("#docsBody .row .grow", has_text="Standing Lore.json").click()
+            page.wait_for_timeout(300)
+            page.wait_for_function("() => !document.querySelector('#sendBtn.stop')", timeout=30000)
+            page.wait_for_timeout(900)
+            DELAY["worker"] = 0.0
+            with page.expect_download() as dl:
+                page.locator("#docsBody .btn", has_text="Export for SillyTavern").click()
+            st = json.loads(Path(dl.value.path()).read_text())
+            names = [e.get("comment") for e in st.get("entries", {}).values()]
+            ok("the export holds what landed while the sheet was open", len(names) == 3 and "Brin" in names, names)
+            ok("and it is SillyTavern's shape, the extension's mapping", st["entries"]["0"]["constant"] is True and st["entries"]["2"]["key"] == ["Brin", "the smith"])
+            wbc = [c for c in calls if c["who"] == "worldbook"]
+            ok("asking for a worldbook entry sends the worldbook keeper", len(wbc) == 1, [c["who"] for c in calls])
+            ok("who reads his version of its craft", wbc and "WRITE EVERY ENTRY IN BRITISH ENGLISH." in wbc[0]["system"])
+            page.locator("#docsBody .fold-head", has_text="how the worldbook keeper works").click()
+            page.wait_for_timeout(700)
+            page.locator("#docsBody .fold", has_text="how the worldbook keeper works").locator(".btn", has_text="Put back the original").click()
+            page.wait_for_timeout(500)
+            ok("and Put back the original puts the original back", "worldbook" not in (api("/api/house").get("crafts") or {}))
+            page.click("#docsSheet [data-close]")
+            page.wait_for_timeout(300)
+
+            # his own edits: kept when he leaves, and put back with one tap
+            pe_before = pe_text()
+            page.click("#docsBtn")
+            page.wait_for_timeout(400)
+            page.locator("#docsBody .row .grow", has_text="Plot Essential.md").click()
+            page.wait_for_timeout(300)
+            page.locator("#docsBody .docedit textarea").fill(pe_before + "\nA LINE HE ADDED BY HAND.")
+            page.wait_for_timeout(300)
+            page.click("#docsSheet [data-close]")
+            t0 = time.time()
+            reached = until(lambda: "A LINE HE ADDED BY HAND." in pe_text(), 3.0)
+            ok("his edit reaches the device as he leaves the document", reached and time.time() - t0 < 0.8, round(time.time() - t0, 2))
+            page.click("#docsBtn")
+            page.wait_for_timeout(400)
+            page.locator("#docsBody .row .grow", has_text="Plot Essential.md").click()
+            page.wait_for_timeout(300)
+            page.locator("#docsBody .btn", has_text="Put back my edits").click()
+            ok("Put back my edits returns the document to exactly how he found it", until(lambda: pe_text() == pe_before), pe_text()[-80:])
+            ok("and the button goes, with nothing left to put back", page.locator("#docsBody .btn", has_text="Put back my edits").count() == 0)
+            with page.expect_download() as dl:
+                page.locator("#docsBody .btn", has_text="Save as a file").click()
+            ok("Save as a file hands him the document exactly", Path(dl.value.path()).read_text() == pe_text() and dl.value.suggested_filename == "Plot Essential.md", dl.value.suggested_filename)
+            page.locator("#docsBody .btn", has_text="Duplicate").click()
+            page.wait_for_timeout(900)
+            copies = [d for d in world("p_new")["docs"] if d["name"] == "Plot Essential (copy).md"]
+            ok("Duplicate makes a copy beside it", len(copies) == 1 and copies[0]["text"] == pe_text() and copies[0]["kind"] == "pe")
+            page.click("#docsSheet [data-close]")
+            page.wait_for_timeout(300)
+            wd = world("p_new")
+            wd["docs"] = [d for d in wd["docs"] if d["id"] != "dwb" and d["name"] != "Plot Essential (copy).md"]
+            api("/api/project/p_new", "PUT", wd)
+            page.reload(wait_until="networkidle")
+            page.wait_for_timeout(600)
 
             # ---------------------------------------- the server dies mid-edit; nothing is lost
             h = api("/api/house")

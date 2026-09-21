@@ -48,6 +48,58 @@ export function findBlocks(text, tag) {
 
 /* Models are not JSON printers. Repair what is safely repairable, and say so
  * when it is not. */
+/* Drop trailing commas OUTSIDE string literals only — a blind ,\s*] regex
+ * also deletes the comma inside a value such as "Options: [a, b, ]" (the
+ * Plot Essential Maker's fix, carried over as it is). */
+export function stripTrailingCommasOutsideStrings(s) {
+  let out = '', inStr = false, escd = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (inStr) {
+      out += c;
+      if (escd) { escd = false; continue; }
+      if (c === '\\') { escd = true; continue; }
+      if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') { inStr = true; out += c; continue; }
+    if (c === ',') {
+      let j = i + 1;
+      while (j < s.length && /\s/.test(s[j])) j++;
+      if (j < s.length && (s[j] === ']' || s[j] === '}')) continue;
+    }
+    out += c;
+  }
+  return out;
+}
+
+/* Raw line breaks and other control characters INSIDE string literals, which
+ * models write constantly, escaped so the block still reads (the extension's
+ * v0.11.11). Structure outside strings is not touched. */
+export function escapeRawControlsInStrings(s) {
+  let out = '', inStr = false, esc = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (esc) { out += c; esc = false; continue; }
+    if (c === '\\') { out += c; esc = true; continue; }
+    if (c === '"') { inStr = !inStr; out += c; continue; }
+    if (inStr) {
+      if (c === '\n') { out += '\\n'; continue; }
+      if (c === '\r') { out += '\\r'; continue; }
+      if (c === '\t') { out += '\\t'; continue; }
+      const code = c.charCodeAt(0);
+      if (code < 0x20) { out += code === 8 ? '\\b' : code === 12 ? '\\f' : '\\u' + code.toString(16).padStart(4, '0'); continue; }
+    }
+    out += c;
+  }
+  return out;
+}
+
+function repairs(t) {
+  const e = escapeRawControlsInStrings(t);
+  return [t, stripTrailingCommasOutsideStrings(t), e, stripTrailingCommasOutsideStrings(e)];
+}
+
 export function tolerantJson(body) {
   const tries = [];
   const raw = String(body || '').trim();
@@ -61,7 +113,7 @@ export function tolerantJson(body) {
   }
   const seen = new Set();
   for (const t of tries) {
-    for (const candidate of [t, t.replace(/,\s*([}\]])/g, '$1')]) {
+    for (const candidate of repairs(t)) {
       if (seen.has(candidate)) continue;
       seen.add(candidate);
       try {
@@ -88,7 +140,7 @@ export function salvageEdits(body) {
    * two changes to one passage must still land in the order they were
    * written. */
   const keep = (chunk, at) => {
-    for (const c of [chunk, chunk.replace(/,\s*([}\]])/g, '$1')]) {
+    for (const c of repairs(chunk)) {
       try {
         const v = JSON.parse(c);
         if (v && typeof v === 'object' && !Array.isArray(v)) {
@@ -125,49 +177,69 @@ function changesMeant(body) {
   return (String(body || '').match(/"replace"\s*:/g) || []).length;
 }
 
+/* THE LAST BLOCK IS THE ANSWER (the Plot Essential Maker's findBlock: the LAST
+ * opening tag with a closer, preferring one that holds data). Models draft on
+ * the page — a plan, a block, "let me check", the block again — and applying
+ * every block applies the same change twice, or nests a replacement inside
+ * itself. Earlier blocks are set aside and that is said. A final block cut off
+ * by the reply limit is still the final one: what arrived of it whole is used,
+ * never an earlier draft in its place. */
+const LOOKS_LIKE_DATA = /^\s*(\[|\{|```)/;
+function readOne(body) {
+  const r = tolerantJson(body);
+  if (r.ok) return { edits: r.value.filter((e) => e && typeof e === 'object'), warn: '' };
+  const got = salvageEdits(body);
+  const lost = Math.max(changesMeant(body) - got.length, 0);
+  if (!got.length) return { edits: [], warn: r.error };
+  if (!lost) return { edits: got, warn: '' };
+  return {
+    edits: got,
+    warn: `${lost === 1 ? 'one of the changes' : `${lost} of the changes`} could not be read and ${lost === 1 ? 'was' : 'were'} left out; ` +
+      `${got.length === 1 ? 'the one that could be read was' : `the ${got.length} that could were`} used`,
+  };
+}
+function draftsNote(n) {
+  return n ? `${n === 1 ? 'an earlier block of changes' : `${n} earlier blocks of changes`} in the same answer ${n === 1 ? 'was' : 'were'} set aside as a draft — only the last one was used` : '';
+}
+
 export function parseEdits(text) {
-  const blocks = findBlocks(text, 'edits');
-  if (!blocks.length) {
-    /* AN UNCLOSED OPENER IS A TRUNCATION ONLY WHEN THE TAIL OPENS LIKE ONE.
-     * The word turns up in ordinary prose, and treating that as a cut-off
-     * block would throw away a reply that was never cut off. But a block that
-     * really was cut short by the reply limit must not pass as "no changes" —
-     * that is silence standing in for lost work. */
-    const src = String(text || '');
-    const at = src.toLowerCase().lastIndexOf('<edits>');
-    if (at !== -1) {
-      const tail = src.slice(at + 7).trim();
-      if (tail.startsWith('[') || tail.startsWith('{') || tail.startsWith('```')) {
-        /* A block cut short by the reply limit keeps every change that
-         * arrived whole, and says the rest did not. */
-        const got = salvageEdits(tail);
-        const cut = 'the list of changes was cut off before it finished';
-        return got.length
-          ? { edits: got, warn: `${cut} — ${got.length === 1 ? 'the one complete change that arrived was' : `the ${got.length} complete changes that arrived were`} used and the rest were not`, cut: true }
-          : { edits: [], warn: `${cut}, and none of it arrived whole`, cut: true };
-      }
-    }
-    return { edits: [], warn: '' };
-  }
-  const edits = [];
-  let warn = '';
-  for (const b of blocks) {
-    const r = tolerantJson(b.body);
-    if (r.ok) { for (const e of r.value) if (e && typeof e === 'object') edits.push(e); continue; }
-    const got = salvageEdits(b.body);
-    edits.push(...got);
-    const lost = Math.max(changesMeant(b.body) - got.length, 0);
-    if (!got.length) warn = r.error;
-    else if (lost) {
-      warn = `${lost === 1 ? 'one of the changes' : `${lost} of the changes`} could not be read and ${lost === 1 ? 'was' : 'were'} left out; ` +
-        `${got.length === 1 ? 'the one that could be read was' : `the ${got.length} that could were`} used`;
+  /* the extension's crafts name the block "docedits"; both are read */
+  const src = String(text || '').replace(/<(\/?)docedits>/gi, '<$1edits>');
+  const blocks = findBlocks(src, 'edits');
+  const lastOpen = src.toLowerCase().lastIndexOf('<edits>');
+  const cutAfter = lastOpen !== -1 && (!blocks.length || lastOpen >= blocks[blocks.length - 1].to);
+  if (cutAfter) {
+    const tail = src.slice(lastOpen + 7).trim();
+    if (LOOKS_LIKE_DATA.test(tail)) {
+      const got = salvageEdits(tail);
+      const cut = 'the list of changes was cut off before it finished';
+      const drafts = draftsNote(blocks.filter((b) => LOOKS_LIKE_DATA.test(b.body)).length);
+      const warn = got.length
+        ? `${cut} — ${got.length === 1 ? 'the one complete change that arrived was' : `the ${got.length} complete changes that arrived were`} used and the rest were not`
+        : `${cut}, and none of it arrived whole`;
+      return { edits: got, warn: [warn, drafts].filter(Boolean).join('; '), cut: true };
     }
   }
-  return { edits, warn };
+  if (!blocks.length) return { edits: [], warn: '' };
+  let chosen = null;
+  for (let k = blocks.length - 1; k >= 0; k--) if (LOOKS_LIKE_DATA.test(blocks[k].body)) { chosen = blocks[k]; break; }
+  if (!chosen) chosen = blocks[blocks.length - 1];
+  const one = readOne(chosen.body);
+  const set = blocks.filter((b) => b !== chosen && LOOKS_LIKE_DATA.test(b.body) && b.body.trim() !== chosen.body.trim()).length;
+  return { edits: one.edits, warn: [one.warn, draftsNote(set)].filter(Boolean).join('; ') };
+}
+
+/* Thinking written on the page, taken out of what is shown and passed on
+ * (<think>, <thinking>, <reasoning>; an unclosed one runs to the end). */
+export function stripThinking(text) {
+  let rest = String(text || '').replace(/<(think|thinking|reasoning)>[\s\S]*?<\/\1>/gi, '');
+  const open = rest.match(/<(think|thinking|reasoning)>/i);
+  if (open) rest = rest.slice(0, open.index);
+  return rest.replace(/<\/(think|thinking|reasoning)>/gi, '').trim();
 }
 
 export function stripEdits(text) {
-  let out = String(text || '');
+  let out = String(text || '').replace(/<(\/?)docedits>/gi, '<$1edits>');
   const blocks = findBlocks(out, 'edits');
   for (let i = blocks.length - 1; i >= 0; i--) out = out.slice(0, blocks[i].from) + out.slice(blocks[i].to);
   return out.replace(/\n{3,}/g, '\n\n').trim();
@@ -175,13 +247,44 @@ export function stripEdits(text) {
 
 /* ---------------------------------------------------------------- finding */
 
-const QUOTES = /[\u2018\u2019\u201a\u201b]/g;
-const DQUOTES = /[\u201c\u201d\u201e\u201f]/g;
-
-function normalize(s) {
-  return String(s).replace(QUOTES, "'").replace(DQUOTES, '"').replace(/[\u2013\u2014]/g, '-')
-    .replace(/[ \t]+/g, ' ').replace(/\s*\n\s*/g, '\n').trim();
+/* WHAT MAY DIFFER BETWEEN A QUOTE AND THE DOCUMENT: spacing, and the shape of
+ * quote marks and dashes — nothing else (the Plot Essential Maker's law,
+ * v0.11.10 → v0.11.13: "an ~83% match can silently overwrite real words in an
+ * instruction file"; every fuzzier rule it tried either refused good edits or
+ * wrote misquotes over real text). Case is a difference. A missing word is a
+ * difference. Those are refused, and the worker is asked to quote again. */
+function foldChar(c) {
+  if ('\u2018\u2019\u201a\u201b\u02bc'.includes(c)) return "'";
+  if ('\u201c\u201d\u201e\u201f'.includes(c)) return '"';
+  if ('\u2010\u2011\u2013\u2014'.includes(c)) return '-';
+  if (c === '\u00a0') return ' ';
+  return c;
 }
+
+/* One pass: fold each character, collapse runs of spaces to one space and any
+ * whitespace containing a line break to one line break, trim the ends — and
+ * remember, for every character kept, where it came from. The same pass
+ * serves the quote and the document, so the two can never disagree. */
+function foldWithMap(s) {
+  const src = String(s);
+  let out = '';
+  const at = [];
+  let space = -1, line = -1;
+  for (let i = 0; i < src.length; i++) {
+    const c = foldChar(src[i]);
+    if (c === ' ' || c === '\t' || c === '\r' || c === '\f' || c === '\v') { if (space < 0) space = i; continue; }
+    if (c === '\n') { if (line < 0) line = i; continue; }
+    if (out.length) {
+      if (line >= 0) { out += '\n'; at.push(line); }
+      else if (space >= 0) { out += ' '; at.push(space); }
+    }
+    space = -1; line = -1;
+    out += c; at.push(i);
+  }
+  return { text: out, at };
+}
+
+function normalize(s) { return foldWithMap(s).text; }
 
 function countOccurrences(hay, needle) {
   if (!needle) return 0;
@@ -190,32 +293,10 @@ function countOccurrences(hay, needle) {
   return n;
 }
 
-function words(s) { return normalize(s).split(/\s+/).filter(Boolean); }
-
-function similarity(a, b) {
-  const A = words(a), B = words(b);
-  if (!A.length || !B.length) return 0;
-  const n = A.length, m = B.length;
-  let prev = new Array(m + 1);
-  let cur = new Array(m + 1);
-  for (let j = 0; j <= m; j++) prev[j] = j;
-  for (let i = 1; i <= n; i++) {
-    cur[0] = i;
-    for (let j = 1; j <= m; j++) {
-      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (A[i - 1] === B[j - 1] ? 0 : 1));
-    }
-    const t = prev; prev = cur; cur = t;
-  }
-  return 1 - prev[m] / Math.max(n, m);
-}
-
-export const FUZZY_FLOOR = 0.78;
-export const FUZZY_GAP = 0.05;
-let PRUNE = true;
-/* For the equivalence test only: the same search with the bounds switched off. */
-export function setFuzzyPruneForTests(on) { PRUNE = on; }
-
-/* Where in the text does this belong? Returns {from,to} or a refusal. */
+/* FIND WHERE A CHANGE GOES. Exactly as quoted, once; else the same words with
+ * only spacing, quote marks or dashes different, once. Anything else is
+ * refused with the reason — never guessed at — and the worker is asked to
+ * quote the document again. Linear in the length of the document. */
 export function locate(text, find) {
   const src = String(text || '');
   const needle = String(find || '');
@@ -225,93 +306,16 @@ export function locate(text, find) {
   if (exact === 1) { const i = src.indexOf(needle); return { ok: true, from: i, to: i + needle.length, how: 'exact' }; }
   if (exact > 1) return { ok: false, why: `those words appear ${exact} times, so it is not clear which one was meant` };
 
-  /* Same words, different spacing or quote marks. */
-  const nSrc = normalize(src);
-  const nNeedle = normalize(needle);
-  const nCount = countOccurrences(nSrc, nNeedle);
-  if (nCount === 1) {
-    const span = spanFromNormalized(src, nNeedle);
-    if (span) return { ok: true, ...span, how: 'spacing' };
+  const F = foldWithMap(src);
+  const n = normalize(needle);
+  if (!n) return { ok: false, why: 'the change did not say what to replace' };
+  const count = countOccurrences(F.text, n);
+  if (count === 1) {
+    const k = F.text.indexOf(n);
+    return { ok: true, from: F.at[k], to: F.at[k + n.length - 1] + 1, how: 'spacing' };
   }
-  if (nCount > 1) return { ok: false, why: `those words appear ${nCount} times, so it is not clear which one was meant` };
-
-  /* A close match, over a window the size of what was asked for. */
-  const lines = src.split('\n');
-  const want = needle.split('\n').length;
-  let best = { score: 0, from: -1, to: -1 };
-  let second = 0;
-  let offset = 0;
-  const starts = [];
-  for (const l of lines) { starts.push(offset); offset += l.length + 1; }
-  /* THE CLOSE SEARCH MAY NOT FREEZE THE PAGE (Cozy Tavern M171: 974ms). It
-   * runs on the phone's one thread, once per change that missed. Two cheap
-   * upper bounds throw away windows that cannot possibly reach the floor
-   * BEFORE the expensive comparison. Both are exact — an edit distance is at
-   * least the difference in length, and at most the shared words can line up
-   * — so what this skips could never have been chosen. */
-  const needleWords = words(needle);
-  const needleBag = new Map();
-  for (const w of needleWords) needleBag.set(w, (needleBag.get(w) || 0) + 1);
-  const mightReach = (text) => {
-    const ws = words(text);
-    const n = needleWords.length, m = ws.length;
-    if (!n || !m) return false;
-    const longest = Math.max(n, m);
-    if (Math.min(n, m) / longest < FUZZY_FLOOR - FUZZY_GAP) return false;
-    const bag = new Map(needleBag);
-    let shared = 0;
-    for (const w of ws) { const k = bag.get(w); if (k) { shared++; bag.set(w, k - 1); } }
-    return shared / longest >= FUZZY_FLOOR - FUZZY_GAP;
-  };
-  for (let i = 0; i < lines.length; i++) {
-    for (const size of new Set([want, Math.max(1, want - 1), want + 1])) {
-      if (i + size > lines.length) continue;
-      const from = starts[i];
-      const to = Math.min(src.length, starts[i] + lines.slice(i, i + size).join('\n').length);
-      if (PRUNE && !mightReach(src.slice(from, to))) continue;
-      const score = similarity(src.slice(from, to), needle);
-      if (score > best.score) { second = best.score; best = { score, from, to }; }
-      else if (score > second) second = score;
-    }
-  }
-  if (best.score >= FUZZY_FLOOR && best.score - second >= FUZZY_GAP) {
-    return { ok: true, from: best.from, to: best.to, how: 'close', score: Number(best.score.toFixed(3)) };
-  }
-  if (best.score >= FUZZY_FLOOR) {
-    return { ok: false, why: 'two places in the document match those words about equally well' };
-  }
+  if (count > 1) return { ok: false, why: `those words appear ${count} times, so it is not clear which one was meant` };
   return { ok: false, why: 'those words are not in the document as written' };
-}
-
-/* Map a normalized match back onto the real characters. */
-function spanFromNormalized(src, nNeedle) {
-  const map = [];
-  let norm = '';
-  let lastWasSpace = true;
-  for (let i = 0; i < src.length; i++) {
-    let c = src[i];
-    if (QUOTES.test(c)) c = "'";
-    else if (DQUOTES.test(c)) c = '"';
-    else if (c === '\u2013' || c === '\u2014') c = '-';
-    QUOTES.lastIndex = 0; DQUOTES.lastIndex = 0;
-    if (c === ' ' || c === '\t') {
-      if (lastWasSpace) continue;
-      norm += ' '; map.push(i); lastWasSpace = true; continue;
-    }
-    if (c === '\n') {
-      while (norm.endsWith(' ')) { norm = norm.slice(0, -1); map.pop(); }
-      norm += '\n'; map.push(i); lastWasSpace = true; continue;
-    }
-    norm += c; map.push(i); lastWasSpace = false;
-  }
-  const lead = norm.length - norm.replace(/^\s+/, '').length;
-  const trimmed = norm.trim();
-  const at = trimmed.indexOf(nNeedle);
-  if (at === -1) return null;
-  const startIdx = at + lead;
-  const endIdx = startIdx + nNeedle.length - 1;
-  if (startIdx >= map.length || endIdx >= map.length) return null;
-  return { from: map[startIdx], to: map[endIdx] + 1 };
 }
 
 /* ---------------------------------------------------------------- applying */
@@ -334,34 +338,47 @@ export function applyEdit(text, edit) {
   const src = String(text || '');
   if (edit.replace_all === true) {
     if (typeof edit.replace !== 'string') return { ok: false, why: 'a full rewrite arrived with nothing to write' };
-    return { ok: true, text: edit.replace, how: 'rewrote the whole thing' };
+    return { ok: true, text: edit.replace, how: 'rewrote the whole thing', was: src, now: edit.replace };
   }
   if (edit.append === true) {
-    if (typeof edit.replace !== 'string') return { ok: false, why: 'nothing was given to add' };
+    if (typeof edit.replace !== 'string' || !edit.replace.trim()) return { ok: false, why: 'nothing was given to add' };
     if (alreadyHolds(src, edit.replace)) return { ok: false, why: 'those words are already in the document' };
     const joiner = src && !src.endsWith('\n') ? '\n' : '';
-    return { ok: true, text: src + joiner + edit.replace, how: 'added at the end' };
+    return { ok: true, text: src + joiner + edit.replace, how: 'added at the end', was: '', now: edit.replace };
   }
   if (typeof edit.insert_after === 'string' && edit.insert_after) {
     const at = locate(src, edit.insert_after);
     if (!at.ok) return { ok: false, why: at.why };
-    if (typeof edit.replace === 'string' && alreadyHolds(src, edit.replace)) return { ok: false, why: 'those words are already in the document' };
-    const add = typeof edit.replace === 'string' ? edit.replace : '';
+    if (typeof edit.replace !== 'string' || !edit.replace.trim()) return { ok: false, why: 'nothing was given to add' };
+    if (alreadyHolds(src, edit.replace)) return { ok: false, why: 'those words are already in the document' };
+    const add = edit.replace;
     const joiner = add.startsWith('\n') ? '' : '\n';
-    return { ok: true, text: src.slice(0, at.to) + joiner + add + src.slice(at.to), how: 'put it under ' + short(edit.insert_after) };
+    return { ok: true, text: src.slice(0, at.to) + joiner + add + src.slice(at.to), how: 'put it under ' + short(edit.insert_after), was: '', now: add };
   }
   if (typeof edit.find === 'string' && edit.find) {
     const to = typeof edit.replace === 'string' ? edit.replace : '';
     if (edit.all === true) {
       const n = countOccurrences(src, edit.find);
       if (!n) return { ok: false, why: 'those words are not in the document as written' };
-      return { ok: true, text: src.split(edit.find).join(to), how: `changed all ${n}` };
+      if (edit.find === to) return { ok: false, why: 'that change leaves the words exactly as they were' };
+      return { ok: true, text: src.split(edit.find).join(to), how: `changed all ${n}`, was: edit.find, now: to };
     }
     const at = locate(src, edit.find);
     if (!at.ok) return { ok: false, why: at.why };
-    return { ok: true, text: src.slice(0, at.from) + to + src.slice(at.to), how: at.how };
+    /* a change that puts back the very words it found changes nothing, and
+     * must not be reported as done */
+    if (src.slice(at.from, at.to) === to) return { ok: false, why: 'that change leaves the words exactly as they were' };
+    return { ok: true, text: src.slice(0, at.from) + to + src.slice(at.to), how: at.how, was: src.slice(at.from, at.to), now: to };
   }
   return { ok: false, why: 'that change did not say what to do' };
+}
+
+/* What a card keeps of before and after: enough to see the change, never a
+ * whole rebuilt document stored twice. */
+export const CARD_KEEP = 1200;
+function clip(s) {
+  const t = String(s == null ? '' : s);
+  return t.length > CARD_KEEP ? t.slice(0, CARD_KEEP) + `… (${(t.length - CARD_KEEP).toLocaleString()} more characters)` : t;
 }
 
 function short(s) {
@@ -387,7 +404,7 @@ export function applyRun(docs, edits, { label = 'a change' } = {}) {
       }
       texts.set(name, typeof e.replace === 'string' ? e.replace : '');
       created.push(name);
-      cards.push({ status: 'applied', name, reason: e.reason || '', how: 'started it' });
+      cards.push({ status: 'applied', name, reason: e.reason || '', how: 'started it', was: '', now: clip(String(e.replace || '')) });
       continue;
     }
     const name = e.file || (texts.size === 1 ? [...texts.keys()][0] : null);
@@ -396,7 +413,7 @@ export function applyRun(docs, edits, { label = 'a change' } = {}) {
     const out = applyEdit(texts.get(name), e);
     if (!out.ok) { cards.push({ status: 'refused', name, reason: e.reason || '', why: out.why, find: e.find || e.insert_after || '' }); continue; }
     texts.set(name, out.text);
-    cards.push({ status: 'applied', name, reason: e.reason || '', how: out.how, find: e.find || e.insert_after || '' });
+    cards.push({ status: 'applied', name, reason: e.reason || '', how: out.how, find: e.find || e.insert_after || '', was: clip(out.was), now: clip(out.now) });
   }
 
   const items = [];

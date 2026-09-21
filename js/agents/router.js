@@ -30,6 +30,8 @@ const COMMANDS = [
   [/(^|\s)#skip\b/i, 'novelist'],
   [/(^|\s)\*ooc\b/i, 'diagnostician'],
   [/(^|\s)\*(show_full_file|show_spoilers|hide_spoilers|regress|next)\b/i, 'eye'],
+  /* the Summaryception auditor's own commands (its brief, carried over) */
+  [/(^|\s)\*(audit|fix|brief)\b/i, 'auditor'],
 ];
 
 /* Plain words. Each worker has the shapes of sentence that mean its job.
@@ -49,6 +51,9 @@ const COMMANDS = [
  * A politeness opener ("can you", "could you", "please") is stripped first, so
  * "can you change Claire's age to fifteen" is still an instruction. */
 const PLAIN = [
+  ['worldbook', { always: [], statement: [/\b(worldbook|lorebook|world info)\b/i] }],
+  ['auditor', { always: [], statement: [/\b(transplant|summaryception)\b/i] }],
+  ['instructions', { always: [], statement: [/\b(system prompt|instruction set|ai instructions|instructions (document|doc|file)|(my|the|this) preset)\b/i] }],
   ['builder', { always: [], statement: [
     /\b(start|begin|create|build|make)\b.{0,24}\b(new|fresh)\b.{0,24}\b(story|world|plot essential|pe|setting|book)\b/i,
     /\bnew (story|world|plot essential|book|setting)\b/i,
@@ -158,6 +163,14 @@ export function route(message, { hasPlotEssential = true, hasDocs = true } = {})
   const text = String(message || '').trim();
   if (!text) return [];
   for (const re of JUST_TALKING) if (re.test(text)) return [];
+
+  /* A COMMAND AIMED AT A WORLDBOOK OR A TRANSPLANT IS ITS KEEPER'S. The plot
+   * essential's *cleanup knows nothing of a worldbook's fields or a
+   * transplant's markers, and would tidy them the wrong way. */
+  if (/(^|\s)\*(cleanup|optimi[sz]e|audit|fix|brief|edit|retcon|delete)\b/i.test(text)) {
+    if (/\b(transplant|summaryception)\b/i.test(text)) return [{ worker: 'auditor', why: 'a command aimed at the transplant', about: text, strong: true }];
+    if (/\b(worldbook|lorebook|world info)\b/i.test(text)) return [{ worker: 'worldbook', why: 'a command aimed at the worldbook', about: text, strong: true }];
+  }
 
   const found = [];
   const seen = new Set();

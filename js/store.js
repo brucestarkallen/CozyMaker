@@ -342,6 +342,58 @@ export function newChat(title) {
   return setProject(next, { now: true }).then(() => c);
 }
 
+/* EVERYTHING IN ONE FILE (the Plot Essential Maker's v0.13.0, "Backup all").
+ * Every world whole, with its documents and conversations, and how he set the
+ * house up to write. Not the connections: they belong to this device, and a
+ * file can travel where a key should not. */
+export const BACKUP_FORMAT = 'cozymaker-backup';
+export async function exportEverything() {
+  await flush();
+  const worlds = [];
+  for (const w of await listProjects()) {
+    const raw = pending.has(w.id) ? JSON.parse(pending.get(w.id)) : await api('/api/project/' + w.id);
+    worlds.push(upgradeWorld(raw));
+  }
+  const h = house || {};
+  return {
+    format: BACKUP_FORMAT, v: 1, at: Date.now(), worlds,
+    house: { settings: h.settings || {}, personaFrame: h.personaFrame || '', instructionsCraft: h.instructionsCraft || '' },
+  };
+}
+
+export function readBackup(text) {
+  let v;
+  try { v = JSON.parse(text); } catch (_) { return { ok: false, why: 'that file is not readable' }; }
+  if (!v || v.format !== BACKUP_FORMAT || !Array.isArray(v.worlds)) return { ok: false, why: 'that file is not a CozyMaker backup' };
+  return { ok: true, backup: v };
+}
+
+/* BRINGING IT BACK ONLY EVER ADDS (v0.13.0's guarantee). Every world returns
+ * as a new world beside what is here, under a fresh id; a title already in use
+ * gets "(restored)". Nothing here is replaced, so nothing here can be lost. */
+export async function restoreEverything(backup) {
+  const titles = new Set((await listProjects()).map((w) => w.title));
+  let added = 0;
+  for (const w0 of backup.worlds || []) {
+    if (!w0 || typeof w0 !== 'object') continue;
+    const w = upgradeWorld(JSON.parse(JSON.stringify(w0)));
+    const id = 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    const base = String(w.title || 'A restored world');
+    let title = base;
+    for (let n = 1; titles.has(title); n++) title = n === 1 ? `${base} (restored)` : `${base} (restored ${n})`;
+    titles.add(title);
+    await api('/api/project/' + id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...w, id, title }) });
+    added++;
+  }
+  return { added };
+}
+
+export function newChatWith(title, turns) {
+  const c = { id: chatId(), title: title || 'A new conversation', turns: turns || [], created: Date.now(), updated: Date.now() };
+  const next = { ...project, chats: [...project.chats, c], openChat: c.id };
+  return setProject(next, { now: true }).then(() => c);
+}
+
 export function switchChat(id) {
   if (!project.chats.some((c) => c.id === id)) return Promise.resolve();
   return setProject({ ...project, openChat: id }, { now: true });

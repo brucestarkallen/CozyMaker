@@ -1,4 +1,4 @@
-# Lineage — every version of Cozy Tavern and Cozy Chat, held against CozyMaker
+# Lineage — every version of Cozy Tavern, Cozy Chat and the Plot Essential and Instructions Maker, held against CozyMaker
 
 Every version record of both was read: 395 Cozy Tavern commits (M1 → M363) and 70 Cozy Chat commits
 (v1.0.0 → v5.26.1). Each is listed here once with what it means for CozyMaker:
@@ -12,11 +12,11 @@ Cozy Tavern and Cozy Chat are read-only from CozyMaker; nothing here was changed
 
 ## Count
 
-- ported: 63
-- held by design: 78
+- ported: 84
+- held by design: 94
 - not ported: 15
-- no such part: 309
-- total: 465
+- no such part: 323
+- total: 516 (465 of Cozy Tavern and Cozy Chat, 51 of the Plot Essential and Instructions Maker)
 
 ## Cozy Tavern
 
@@ -488,3 +488,69 @@ Cozy Tavern and Cozy Chat are read-only from CozyMaker; nothing here was changed
 - **v5.25.0** the phone keeps a copy: served from Termux, everything mirrors to cozy-vault.json on disk and a wiped browser is restored on open → **ported** — the device keeps the work; a save that fails is kept and retried — js/store.js
 - **v5.26.0** never-forget: standing instructions can ride a second time near the newest message, at a chosen depth, per set and per project → **no such part** — instruction sets
 - **v5.26.1** thinking blocks have a Copy button that copies exactly what the block shows, without folding it → **not ported** — no Copy button on the thinking fold
+
+## Plot Essential and Instructions Maker
+
+All 51 commits of the extension (v0.3.0 → v0.14.2), and its whole source: every one of its 165 functions
+was inventoried against CozyMaker. Its law file (AGENTS.md) was read in full. The extension is read-only
+from here.
+
+Count: ported 21 · held by design 16 · not ported 0 · no such part 14 · total 51
+
+- **3250d16** Add files via upload → **no such part** — the extension's first upload
+- **v0.3.0** reference documents + doc-targeted edits + batch undo → **ported** — every document in a world is in front of the crew (run.js docBriefs); every change names its file; each turn's changes are one batch put back with one tap (app.js putBackTurns)
+- **v0.3.1** Close button at the bottom of the settings drawer → **no such part** — SillyTavern's settings drawer
+- **v0.4.0** sessions per document + branch-at-message → **ported** — conversations in every world (store.js newChat) and Branch here (app.js branchHere)
+- **v0.4.1** native <details> dropdown failed to expand on Android; explicit JS toggle → **ported** — every fold is a plain button (kit.js fold); tests/browser.py asserts none is left
+- **v0.4.2** dragging on Android: window-level pointer tracking replaces setPointerCapture → **held by design** — nothing uses pointer capture; the drawer's edge swipe reads touch events (drawer.js)
+- **v0.5.0** deep audit + visual refresh + maintainer handoff → **no such part** — the extension's own audit and handoff
+- **v0.6.0** compact top bar; management behind a menu; tooltip fix → **no such part** — the extension's floating panel
+- **v0.7.0** proposals are a stable staging area (discuss-then-refine) → **held by design** — every change is applied at once, shown before and after on its card, and put back with one tap; the writer is a passive user who does not approve proposals (his standing rule), and the whole class of staging-area faults (v0.11.5, v0.12.2, v0.12.3, July 29) cannot occur
+- **v0.8.0** worldbooks: Worldbook Maker preset + SillyTavern World Info export → **ported** — the worldbook keeper reads engine/worldbook-maker.md; Export for SillyTavern runs the extension's own reading and mapping (js/doc/worldbook.js)
+- **v0.9.0** Worldbook Maker sets every SillyTavern field per entry → **ported** — the craft word for word; order, position, depth and probability exported exactly as the extension does (tests/fixtures/worldbook-export.json, 10 cases)
+- **v0.10.0** fullscreen toggle → **no such part** — CozyMaker is a full-screen page
+- **v0.10.1** fullscreen header hidden under the status bar → **no such part** — the extension's panel inside SillyTavern
+- **v0.10.2** fullscreen starts below the SillyTavern toolbar → **no such part** — SillyTavern's toolbar
+- **v0.10.3** fullscreen height as calc(100dvh - offset) → **no such part** — the extension's panel geometry
+- **v0.11.0** worldbook workbench + document compare → **ported** — Side by side (docs.js openCompare); a worldbook's always-on cost in the documents list; Validate & repair done by code on leaving (lint.js readWorldbook); the per-entry form is not built, because the craft's own rule is that the keeper owns every field
+- **v0.11.1** bridge the compare view to the agent → **held by design** — every document in a world is already in front of every worker; nothing needs attaching
+- **v0.11.2** live session context meter → **ported** — the documents sheet says what a worker reads, whole or in part, in tokens
+- **v0.11.3** deep audit pass (no behaviour changes) → **no such part** — the extension's own audit
+- **v0.11.4** rename to Plot Essential and Instructions Maker → **no such part** — the extension's name
+- **v0.11.5** pending-proposal awareness + supersede → **held by design** — no staging area, so nothing is pending to re-propose or supersede
+- **v0.11.6** proposal-card reason on its own line → **held by design** — a card is one line, document and reason, with its before and after in a fold beneath it
+- **v0.11.7** taller edit-cards area → **ported** — the before/after fold takes up to half the screen and scrolls (css .diff)
+- **v0.11.8** remove the nested-scroll trap in edit cards → **ported** — one scrolling box per before/after, none nested
+- **v0.11.9** feed apply-failures back to the agent; matching stays strict → **ported** — a quote that missed goes back to the worker that wrote it, once, with exactly what it quoted and why (run.js send; walk-tested)
+- **v0.11.10** never apply inexact matches (duplication, indentation reflow) → **ported** — with v0.11.13's final rule (edits.js locate)
+- **v0.11.11** repair raw line breaks inside JSON strings → **ported** — edits.js escapeRawControlsInStrings, every C0 control
+- **v0.11.12** edge-safe fuzzy apply → **held by design** — the extension withdrew this rule in v0.11.13 for writing ~83% misquotes over real words; only the final rule is here
+- **v0.11.13** fuzzy applies only on whitespace-only differences → **ported** — a quote lands exactly, or where only spacing, quote marks and dashes differ; the word-level tier is deleted (edits.js locate)
+- **v0.11.14** deterministic document linter → **ported** — lint.js runs after every crew change and on leaving a document; an instructions document's spacing is checked by code and handed over with Check it (docs.js spacingReport)
+- **29c1726** restore README truncated by a bad document write → **held by design** — every save is written whole to a temporary file, synced and renamed into place (serve.py)
+- **v0.11.15** Escape and fullscreen for the Check window → **no such part** — the extension's floating windows
+- **v0.11.16** global literal replace ("all": true) → **ported** — edits.js applyEdit, edit.all
+- **v0.11.17** deep final audit + label polish → **no such part** — the extension's own audit
+- **v0.12.0** deep root-cause audit: 11 fixes, 3 corruption-class → **ported** — the ones that apply here: thinking taken out only outside the block (edits.js stripThinking, last block wins); the documents always in the request (run.js docBriefs); a reply that finishes after a switch lands where it was asked (run.js landTurn); an unreadable block sent back (run.js runWorker); history surgery never loses an applied change (app.js putBackTurns). The rest belong to its staging area and floating windows
+- **v0.12.1** test-suite consolidation → **no such part** — the extension's tests
+- **v0.12.2** mechanical auto-supersede → **held by design** — no staging area
+- **v0.12.3** apply-time span-conflict pre-pass → **held by design** — no staging area; within a turn each change is placed against the text as it stands then, and one that no longer fits is refused and sent back
+- **v0.13.0** Backup all / Restore, additive only → **ported** — Save everything to a file and Bring everything back from a file (store.js exportEverything, restoreEverything); bringing back only adds; walk-tested
+- **v0.14.0** Summaryception transplant mode → **ported** — the memory auditor reads engine/sc-auditor.md word for word; the importer-mirroring check (js/doc/transplant.js, 16 cases); jobs per kind; a change that breaks a marker is refused (lint.js lostSomething); marker case put right by code
+- **v0.14.1** transplant lint hardening: linear scans → **ported** — the linear version; a 1.2MB vandalised paste is timed in tests/units.mjs
+- **1f9f607** fresh arrays in pre-init settings (shared references) → **held by design** — every world's defaults are built fresh (store.js upgradeWorld)
+- **3379fe9** persist the proposal staging area per document → **held by design** — no staging area
+- **78bae12** preserve the applied-edit record across history surgery → **ported** — deleting, sending again or answering again puts that turn's changes back first, or refuses with the reason; no way back is thrown away (app.js)
+- **5de06cb** surface the provider's error, not the wrapper → **held by design** — a failed call shows the provider's own words
+- **6c8c830** merge adjacent same-role messages → **held by design** — run.js oneVoice
+- **8e5c374** strip old edit blocks from resent history → **held by design** — the conversation keeps the front's words only; blocks never enter it
+- **ada32b5** extractText unwraps OpenAI-shaped replies; Undo when the log is not empty → **held by design** — providers.js readAnswer reads both shapes; put it back shows on every card that can be put back
+- **de92ab5** bind the worldbook export and lint fixes to their window's document → **ported** — Export for SillyTavern and the transplant Check read the document as it is at the tap (walk-tested)
+- **4eea9c3** the worldbook entry form detects drift before overwriting → **held by design** — his hand edits win over the crew's (run.js landTurn); putting back refuses when the document changed since (edits.js undoBatch)
+- **52b411b** v0.14.2 version bump + docs → **no such part** — the extension's release notes
+
+Found in the source rather than the version log, and ported: Duplicate a document; Save as a file; Copy all
+through the one copy helper; undo of his own hand edits (the extension's Undo covers manual saves — here,
+Put back my edits, eight kept per document); editing the Worldbook Maker and Summaryception Auditor crafts
+with the original one tap away (its presets' Edit and Reset default); SillyTavern's own worldbook fields read
+for what they mean on the way in (its parseWorldbook); a pasted transplant checked on the way in.

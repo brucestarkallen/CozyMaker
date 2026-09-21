@@ -10,18 +10,54 @@
  * a way to find the door, not a second door (Cozy Tavern M210, M220). */
 
 import * as store from '../store.js';
-import { $, el, openSheet, closeSheet, toast, redraw, field, select, group, ask } from './kit.js';
+import { $, el, openSheet, closeSheet, toast, redraw, field, select, group, ask, fold, downloadText, copyText } from './kit.js';
+import { looksLikeTransplant, lintTransplant } from '../doc/transplant.js';
+import { originalCraft, ownCraft } from '../engine/crafts.js';
 import { parseDoc, indexLines, estimateTokens } from '../doc/index.js';
-import { lint, readEvents } from '../doc/lint.js';
+import { lint, readEvents, readWorldbook } from '../doc/lint.js';
+import { parseWorldbook, worldbookToST } from '../doc/worldbook.js';
+import { WHOLE_LIMIT } from '../agents/run.js';
+export { worldbookToST };
 
 const KINDS = [
   ['pe', 'Plot essential'],
   ['continuity', 'Continuation file'],
   ['worldbook', 'Worldbook'],
+  ['transplant', 'Summaryception transplant'],
+  ['instructions', 'AI instructions'],
   ['notes', 'Notes to yourself'],
 ];
 
 let openDocIdValue = null;
+/* the document as it was when he opened it, to put his own edits back (the
+ * extension's Undo covers manual saves as well as the agent's) */
+let openedFor = null, openedText = null, typed = false;
+export const HAND_KEPT = 8;
+function forgetOpening() { openedFor = null; openedText = null; typed = false; }
+function recordHandEdit(id, name, before, after) {
+  const p = store.getProject();
+  const list = (p.undo || []).filter(Boolean);
+  const mine = list.filter((u) => u.docId === id).slice(-(HAND_KEPT - 1));
+  const others = list.filter((u) => u.docId !== id);
+  store.setProject({ ...p, undo: [...others, ...mine, { id: 'h' + Date.now().toString(36), docId: id, name, before, after, at: Date.now() }] });
+}
+export function lastHandEdit(id) {
+  const p = store.getProject() || {};
+  const doc = (p.docs || []).find((d) => d.id === id);
+  const last = (p.undo || []).filter((u) => u && u.docId === id).pop();
+  return doc && last && last.after === doc.text ? last : null;
+}
+async function putBackHandEdit(id) {
+  const last = lastHandEdit(id);
+  if (!last) return toast('The document has changed since, so there is nothing to put back.');
+  const p = store.getProject();
+  store.setProject({ ...p, undo: (p.undo || []).filter((u) => u !== last) });
+  store.writeDoc(id, last.before);
+  forgetOpening();
+  openOne(id);
+  redraw();
+  toast('Your edits are put back.');
+}
 
 /* Run the checks when he finishes with a document, not while he is typing in
  * it — mid-keystroke they would take away the empty heading he is about to
@@ -29,13 +65,22 @@ let openDocIdValue = null;
 export function tidyOnLeaving(id) {
   const p = store.getProject();
   const doc = (p.docs || []).find((d) => d.id === id);
-  if (!doc) return;
+  if (!doc) { forgetOpening(); return; }
   const r = lint(doc.text, { kind: doc.kind || 'pe', deliverable: (doc.kind || 'pe') !== 'notes' });
-  if (!r.changed) return;
-  store.writeDoc(id, r.text);
-  const fixed = r.found.filter((f) => f.repaired).map((f) => f.said);
-  if (fixed.length) toast(`In ${doc.name}, ${fixed.join('; ')}.`);
-  redraw();
+  let text = doc.text;
+  if (r.changed) {
+    store.writeDoc(id, r.text);
+    text = r.text;
+    const fixed = r.found.filter((f) => f.repaired).map((f) => f.said);
+    if (fixed.length) toast(`In ${doc.name}, ${fixed.join('; ')}.`);
+  }
+  const his = openedFor === id && typed && openedText !== null && openedText !== text;
+  if (his) recordHandEdit(id, doc.name, openedText, text);
+  if (openedFor === id) forgetOpening();
+  /* leaving a document is a save point: what he wrote goes to the device now,
+   * not a moment later, through the same line every save takes */
+  store.flush();
+  if (r.changed || his) redraw();
 }
 
 export function currentDocId() { return openDocIdValue; }
@@ -83,7 +128,15 @@ function drawList() {
     const parsed = parseDoc(d.text, d.kind);
     const ev = d.kind === 'worldbook' ? null : readEvents(d.text);
     const bits = [kindLabel(d.kind), `${estimateTokens(d.text).toLocaleString()} tokens`];
-    if (d.kind === 'worldbook') bits.push(`${parsed.sections.length} entries`);
+    if (d.kind === 'worldbook') {
+      bits.push(`${parsed.sections.length} entries`);
+      /* what the always-on (blue) entries cost on every single message */
+      const wb = readWorldbook(d.text);
+      if (wb.ok) {
+        const blue = wb.entries.filter((e) => e && (String(e.strategy || '').toLowerCase() === 'blue' || e.constant === true));
+        if (blue.length) bits.push(`always on: ${estimateTokens(blue.map((e) => String(e.content || '')).join('\n')).toLocaleString()} tokens`);
+      }
+    }
     else {
       bits.push(`${parsed.sections.length} sections`);
       if (ev && ev.ids.length) bits.push(`${ev.ids.length} events`);
@@ -100,6 +153,22 @@ function drawList() {
     bring.addEventListener('click', bringIn);
     row.append(bring);
     body.append(row);
+  }
+
+  if (docs.length > 1) {
+    const row = el('div', 'btnrow');
+    const side = el('button', 'btn quiet', 'Side by side');
+    side.addEventListener('click', () => openCompare());
+    row.append(side);
+    body.append(row);
+  }
+
+  if (docs.length) {
+    const size = docs.reduce((n, x) => n + (x.text || '').length, 0);
+    const tokens = estimateTokens(docs.map((x) => x.text || '').join('\n')).toLocaleString();
+    body.append(group('What a worker reads', size <= WHOLE_LIMIT
+      ? `Every document here, whole \u2014 about ${tokens} tokens \u2014 beside its own craft and the talk.`
+      : `These are too big to send whole (about ${tokens} tokens), so each worker reads the outline and the parts in play, and asks for more when it needs them.`));
   }
 
   body.append(group('A copy on the device',
@@ -147,10 +216,93 @@ function readsAsWorldbook(t) {
   } catch (_) { return false; }
 }
 
+/* EACH KIND OF DOCUMENT GOES TO THE ONE WHO KNOWS IT. The same three named
+ * jobs everywhere; the worker behind them follows what the document is. A
+ * transplant is checked by code first (the importer's own reading) and the
+ * auditor is handed exactly what the code found. */
+function jobsFor(doc) {
+  const n = doc.name;
+  if (doc.kind === 'worldbook') return [
+    ['Tidy it up', 'worldbook', `Tidy up the worldbook ${n}: every entry one topic, every field chosen for what the entry is.`],
+    ['Make it shorter', 'worldbook', `Make the entries in ${n} shorter without losing anything the story needs.`],
+    ['Check it', 'worldbook', `Check ${n}: valid JSON, one topic per entry, keys that will fire, settings that fit each entry. Put right what is wrong.`],
+  ];
+  if (doc.kind === 'transplant') {
+    /* the marker check runs when the button is pressed, on the document as it
+     * is then, never on the copy that was on screen when the sheet opened */
+    const check = () => {
+      const cur = ((store.getProject() || {}).docs || []).find((d) => d.id === doc.id) || doc;
+      const found = lintTransplant(cur.text || '');
+      const report = found.issues.length
+        ? '\n\nThe marker check (the importer\'s own reading, done by code) found:\n' + found.issues.slice(0, 40).map((x) => `- line ${x.line}: ${x.msg}`).join('\n')
+        : '\n\nThe marker check (the importer\'s own reading, done by code) found nothing wrong with the markers.';
+      return `*audit ${n}${report}`;
+    };
+    return [
+      ['Tidy it up', 'auditor', `*cleanup ${n}`],
+      ['Make it shorter', 'auditor', `*optimize ${n}`],
+      ['Check it', 'auditor', check],
+    ];
+  }
+  if (doc.kind === 'instructions') {
+    /* a model cannot see spacing; code can (the extension's deterministic
+     * check), so what code finds is handed over with the job, at the tap */
+    const check = () => {
+      const cur = ((store.getProject() || {}).docs || []).find((x) => x.id === doc.id) || doc;
+      const found = spacingReport(cur.text || '');
+      return `Check ${n} for contradictions, gaps, and rules a model could misread, and put them right.` +
+        (found ? `\n\nThe spacing check (done by code) found: ${found}.` : '');
+    };
+    return [
+      ['Tidy it up', 'instructions', `Tidy up ${n}: no rule said twice, none that contradict, nothing a model could misread.`],
+      ['Make it shorter', 'instructions', `Make ${n} shorter without losing a single instruction.`],
+      ['Check it', 'instructions', check],
+    ];
+  }
+  return [
+    ['Tidy it up', 'showrunner', `Tidy up ${n}.`],
+    ['Make it shorter', 'compressor', `Make ${n} shorter without losing anything that matters.`],
+    ['Check it', 'eye', `Check ${n} for anything wrong or contradictory, and put it right.`],
+  ];
+}
+
+/* HOW EACH KEEPER WORKS IS HIS TO CHANGE (the extension's presets: Edit, and
+ * Reset default for the seeded ones), found beside the document it works on.
+ * An empty or unchanged craft is the original; the original is one tap away. */
+export function craftNode(worker, label) {
+  const box = el('div', '');
+  const area = document.createElement('textarea');
+  area.className = 'edit-area';
+  area.value = 'reading\u2026';
+  const row = el('div', 'btnrow');
+  const save = el('button', 'btn small', 'Save');
+  const orig = el('button', 'btn quiet small', 'Put back the original');
+  row.append(save, orig);
+  box.append(area, row);
+  let original = '';
+  originalCraft(worker).then((o) => { original = o; area.value = ownCraft(store.getHouse(), worker) || o; })
+    .catch((e) => { area.value = ''; toast((e && e.message) || String(e)); });
+  const keep = async (text) => {
+    const h = store.getHouse();
+    h.crafts = { ...(h.crafts || {}) };
+    if (!text.trim() || text.trim() === original.trim()) delete h.crafts[worker];
+    else h.crafts[worker] = text;
+    if (worker === 'instructions') delete h.instructionsCraft;
+    await store.saveHouse(h);
+  };
+  save.addEventListener('click', async () => { await keep(area.value); toast('Saved. They work this way from now on.'); });
+  orig.addEventListener('click', async () => { await keep(''); area.value = original; toast('The original is back.'); });
+  const f = fold(label, box, { className: 'fold thinking' });
+  f.style.maxHeight = 'none';
+  return f;
+}
+
 export function guessKind(name, text = '') {
   const n = String(name).toLowerCase();
   const t = String(text).trim();
+  if (looksLikeTransplant(t) || n.includes('transplant')) return 'transplant';
   if (n.endsWith('.json') || n.includes('worldbook') || readsAsWorldbook(t)) return 'worldbook';
+  if (/instruction|system prompt|preset/.test(n)) return 'instructions';
   if (n.includes('continuity') || n.includes('brief') || /file\s*\d/.test(n) || /^#\s*PLOT ESSENTIAL CONTINUITY/i.test(t)) return 'continuity';
   if (n.includes('note')) return 'notes';
   return 'pe';
@@ -219,6 +371,10 @@ function openOne(id) {
   if (!doc) return;
   if (openDocIdValue && openDocIdValue !== id) tidyOnLeaving(openDocIdValue);
   openDocIdValue = id;
+  if (openedFor !== id) {
+    const opening = ((store.getProject() || {}).docs || []).find((d) => d.id === id);
+    openedFor = id; openedText = opening ? opening.text : null; typed = false;
+  }
 
   $('docsTitle').textContent = doc.name;
   const action = $('docsAction');
@@ -238,23 +394,26 @@ function openOne(id) {
       tidyOnLeaving(id);
       closeSheet('docsSheet');
       openDocIdValue = null;
-      ask(words, worker);
+      ask(typeof words === 'function' ? words() : words, worker);
     });
     return b;
   };
   if (doc.kind !== 'notes') {
     jobs.append(
-      job('Tidy it up', 'showrunner', `Tidy up ${doc.name}.`),
-      job('Make it shorter', 'compressor', `Make ${doc.name} shorter without losing anything that matters.`),
-      job('Check it', 'eye', `Check ${doc.name} for anything wrong or contradictory, and put it right.`),
+      ...jobsFor(doc).map(([label, worker, words]) => job(label, worker, words)),
     );
   }
   if (doc.kind === 'worldbook') {
     const ex = el('button', 'btn quiet small', 'Export for SillyTavern');
-    ex.addEventListener('click', () => exportForSillyTavern(doc));
+    /* the worldbook as it is when he taps, not as it was when this opened */
+    ex.addEventListener('click', () => exportForSillyTavern(((store.getProject() || {}).docs || []).find((d) => d.id === doc.id) || doc));
     jobs.append(ex);
   }
   body.append(jobs);
+  /* how the instructions writer works: his to set, found beside what it writes */
+  if (doc.kind === 'worldbook') body.append(craftNode('worldbook', 'how the worldbook keeper works'));
+  if (doc.kind === 'transplant') body.append(craftNode('auditor', 'how the memory auditor works'));
+  if (doc.kind === 'instructions') body.append(craftNode('instructions', 'how the instructions writer works'));
 
   const wrap = el('div', 'docedit');
   const area = document.createElement('textarea');
@@ -277,6 +436,7 @@ function openOne(id) {
 
   let redrawTimer = null;
   area.addEventListener('input', () => {
+    typed = true;
     refreshMeta();
     /* Straight into the store, every keystroke. The store holds the only
      * debounce, so the save on the way out always has the latest words. */
@@ -291,13 +451,9 @@ function openOne(id) {
   const tools = el('div', 'group');
   tools.style.padding = '0 16px 16px';
 
-  const shape = document.createElement('details');
-  shape.className = 'thinking';
-  shape.style.maxHeight = 'none';
-  const sum = document.createElement('summary');
-  sum.textContent = 'everything that is in it';
   const lines = indexLines(parseDoc(doc.text, doc.kind));
-  shape.append(sum, document.createTextNode('\n' + (lines.length ? lines.join('\n') : 'nothing yet')));
+  const shape = fold('everything that is in it', lines.length ? lines.join('\n') : 'nothing yet', { className: 'fold thinking' });
+  shape.style.maxHeight = 'none';
   tools.append(shape);
 
   const row = el('div', 'btnrow');
@@ -313,9 +469,25 @@ function openOne(id) {
     redraw();
   });
   const copy = el('button', 'btn quiet', 'Copy all');
-  copy.addEventListener('click', async () => {
-    try { await navigator.clipboard.writeText(area.value); toast('Copied.'); }
-    catch (_) { area.select(); toast('Select and copy.'); }
+  copy.addEventListener('click', () => copyText(area.value));
+  const nowDoc = () => ((store.getProject() || {}).docs || []).find((d) => d.id === id) || doc;
+  const save = el('button', 'btn quiet', 'Save as a file');
+  save.addEventListener('click', () => {
+    const d = nowDoc();
+    const name = /\.[a-z0-9]{1,5}$/i.test(d.name) ? d.name : d.name + (d.kind === 'worldbook' ? '.json' : '.md');
+    downloadText(name, d.text || '', /\.json$/i.test(name) ? 'application/json' : 'text/markdown');
+    toast(`Saved as ${name}.`);
+  });
+  const dup = el('button', 'btn quiet', 'Duplicate');
+  dup.addEventListener('click', async () => {
+    const d = nowDoc();
+    const taken = new Set(((store.getProject() || {}).docs || []).map((x) => x.name));
+    const m = /^(.*?)(\.[a-z0-9]{1,5})?$/i.exec(d.name);
+    let name = '';
+    for (let n = 1; !name || taken.has(name); n++) name = `${m[1]} (copy${n > 1 ? ' ' + n : ''})${m[2] || ''}`;
+    await store.addDoc(name, d.kind, d.text || '');
+    toast(`Duplicated as ${name}.`);
+    redraw();
   });
   const kind = select(KINDS, doc.kind || 'pe');
   kind.addEventListener('change', async () => {
@@ -333,7 +505,13 @@ function openOne(id) {
     openDocs();
     redraw();
   });
-  row.append(rename, copy, del);
+  row.append(rename, copy, save, dup);
+  if (lastHandEdit(id)) {
+    const back = el('button', 'btn quiet', 'Put back my edits');
+    back.addEventListener('click', () => putBackHandEdit(id));
+    row.append(back);
+  }
+  row.append(del);
   tools.append(field('What kind of document this is', kind), row);
   body.append(tools);
 }
@@ -344,51 +522,62 @@ function openOne(id) {
  * Cozy Chat's (v5.13.0), carried over exactly: blue → constant, green →
  * selective on its keys, chain → vectorized; position, order, depth and
  * probability carried across. */
-function positionToST(pos) {
-  const p = String(pos || '').toLowerCase();
-  if (p === 'before_char') return 0;
-  if (p === 'at_depth') return 4;
-  return 1;
-}
 
-export function worldbookToST(entries) {
-  const out = { entries: {} };
-  (entries || []).forEach((e, i) => {
-    const strat = String(e.strategy || 'green').toLowerCase();
-    const blue = strat === 'blue', chain = strat === 'chain';
-    const keys = (blue || chain) ? [] : (Array.isArray(e.keys) ? e.keys : String(e.keys || '').split(','))
-      .map((k) => String(k).trim()).filter(Boolean);
-    const pos = positionToST(e.position);
-    const prob = Number.isFinite(+e.probability) ? Math.max(0, Math.min(100, +e.probability)) : 100;
-    out.entries[String(i)] = {
-      uid: i, key: keys, keysecondary: [], comment: String(e.name || ''), content: String(e.content || ''),
-      constant: blue, vectorized: chain || !blue, selective: !blue && keys.length > 0,
-      selectiveLogic: 0, addMemo: true, order: Number.isFinite(+e.order) ? +e.order : 100,
-      position: pos, disable: false, excludeRecursion: false, preventRecursion: false,
-      delayUntilRecursion: false, probability: prob, useProbability: prob !== 100,
-      depth: pos === 4 ? (Number.isFinite(+e.depth) ? +e.depth : 4) : 4,
-      group: '', groupOverride: false, groupWeight: 100, scanDepth: null,
-      caseSensitive: null, matchWholeWords: null, useGroupScoring: null,
-      automationId: '', role: null, sticky: 0, cooldown: 0, delay: 0, displayIndex: i,
-    };
-  });
-  return out;
-}
 
 function exportForSillyTavern(doc) {
-  let entries;
-  try {
-    const v = JSON.parse(doc.text || '[]');
-    entries = Array.isArray(v) ? v : Array.isArray(v.entries) ? v.entries : Object.values(v.entries || {});
-  } catch (_) {
-    return toast('The worldbook is not readable data right now — ask the crew to check it, then export.');
+  /* the extension's own pipeline: read the worldbook tolerantly, then map it */
+  const p = parseWorldbook(doc.text || '');
+  if (p.error) return toast(`The worldbook cannot be read as data right now (${p.error}) \u2014 tap Check it, then export.`);
+  if (!p.entries.length) return toast('There are no entries in this worldbook yet.');
+  downloadText(doc.name.replace(/\.(md|json|txt)$/i, '') + ' - SillyTavern.json', JSON.stringify(worldbookToST(p.entries), null, 2));
+  const counts = p.entries.reduce((n, e) => { n[e.strategy] = (n[e.strategy] || 0) + 1; return n; }, {});
+  toast(`${p.entries.length} entr${p.entries.length === 1 ? 'y' : 'ies'} exported (${Object.entries(counts).map(([k, v]) => v + ' ' + k).join(', ')}) \u2014 in SillyTavern: World Info, then Import.`);
+}
+
+/* SIDE BY SIDE (the Plot Essential Maker's v0.11.0 compare view): two to four
+ * documents next to each other, read only, each with its own Copy. A tap on a
+ * name shows or hides it. Nothing here changes anything. */
+function openCompare(chosen = null) {
+  const docs = ((store.getProject() || {}).docs || []);
+  const pick = (chosen || docs.slice(0, 2).map((x) => x.id)).filter((id) => docs.some((x) => x.id === id));
+  const body = $('docsBody');
+  body.innerHTML = '';
+  const back = el('button', 'btn quiet small', 'Back to the documents');
+  back.addEventListener('click', () => drawList());
+  body.append(back, group('Side by side', 'Read only. Tap a name to show or hide it \u2014 up to four at once.'));
+  const names = el('div', 'btnrow');
+  for (const x of docs) {
+    const on = pick.includes(x.id);
+    const b = el('button', 'btn small' + (on ? '' : ' quiet'), x.name);
+    b.addEventListener('click', () => openCompare(on ? pick.filter((id) => id !== x.id) : [...pick, x.id].slice(-4)));
+    names.append(b);
   }
-  const blob = new Blob([JSON.stringify(worldbookToST(entries), null, 2)], { type: 'application/json' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = doc.name.replace(/\.(md|json|txt)$/i, '') + ' - SillyTavern.json';
-  document.body.append(a);
-  a.click();
-  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
-  toast(`${entries.length} entr${entries.length === 1 ? 'y' : 'ies'} exported — in SillyTavern: World Info, then Import.`);
+  body.append(names);
+  const panes = el('div', 'compare');
+  for (const id of pick) {
+    const x = docs.find((y) => y.id === id);
+    const pane = el('div', 'pane');
+    const head = el('div', 'pane-head');
+    head.append(el('b', '', x.name));
+    const cp = el('button', 'btn quiet small', 'Copy');
+    cp.addEventListener('click', () => copyText(x.text || ''));
+    head.append(cp);
+    pane.append(head, el('div', 'pane-text', x.text || '(empty)'));
+    panes.append(pane);
+  }
+  body.append(panes);
+}
+
+/* Spacing a model cannot see: doubled spaces inside a line (indentation is
+ * left alone), spaces at the end of a line, tabs. Line numbers, in words. */
+export function spacingReport(text) {
+  const doubled = [], trailing = [], tabs = [];
+  String(text || '').split('\n').forEach((line, i) => {
+    const body = line.replace(/^\s+/, '');
+    if (/\S {2,}\S/.test(body)) doubled.push(i + 1);
+    if (/[ \t]+$/.test(line)) trailing.push(i + 1);
+    if (line.includes('\t')) tabs.push(i + 1);
+  });
+  const say = (label, lines) => (lines.length ? `${label} on line${lines.length > 1 ? 's' : ''} ${lines.slice(0, 12).join(', ')}${lines.length > 12 ? ` and ${lines.length - 12} more` : ''}` : '');
+  return [say('doubled spaces inside a line', doubled), say('spaces at the end of a line', trailing), say('tabs', tabs)].filter(Boolean).join('; ');
 }

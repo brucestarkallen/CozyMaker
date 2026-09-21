@@ -3,11 +3,12 @@
  * place looks. */
 
 import * as store from '../store.js';
-import { $, el, openSheet, toast, applyTheme, redraw, field, input, select, group } from './kit.js';
+import { $, el, openSheet, toast, applyTheme, redraw, field, input, select, group, fold, downloadText } from './kit.js';
 import { WORKERS, FRONT } from '../agents/roster.js';
 import { personaOf, unfilledMacros } from '../agents/persona.js';
 import { callModel } from '../agents/call.js';
 import { loadEngine, sliceReport } from '../engine/slices.js';
+import { craftFor } from '../engine/crafts.js';
 
 const THEMES = [
   ['hearth', 'Hearth — warm and low'],
@@ -237,12 +238,9 @@ function crewSection(house) {
   });
   g.append(field('Everyone behind them, unless said otherwise', general));
 
-  const details = document.createElement('details');
-  details.className = 'thinking';
+  const detailsInner = el('div', '');
+  const details = fold('give someone their own connection', detailsInner, { className: 'fold thinking' });
   details.style.maxHeight = 'none';
-  const sum = document.createElement('summary');
-  sum.textContent = 'give someone their own connection';
-  details.append(sum);
   for (const [id, what] of WORKERS) {
     const s = select(options, house.agentConnections[id] || '');
     s.addEventListener('change', async () => {
@@ -250,7 +248,7 @@ function crewSection(house) {
       else delete house.agentConnections[id];
       await store.saveHouse(house);
     });
-    details.append(field(what, s));
+    detailsInner.append(field(what, s));
   }
   g.append(details);
   return g;
@@ -275,16 +273,13 @@ function lookSection(house) {
 function underTheFloorSection() {
   const g = group('Under the floor',
     'The whole craft lives in one file, engine/generalist.md. Nothing here restates it — each worker is handed only the parts of it their job needs.');
-  const details = document.createElement('details');
-  details.className = 'thinking';
+  const detailsInner = el('div', '');
+  const details = fold('what each of them reads', detailsInner, { className: 'fold thinking' });
   details.style.maxHeight = 'none';
-  const sum = document.createElement('summary');
-  sum.textContent = 'what each of them reads';
-  details.append(sum);
   const pre = el('div', '', 'reading…');
   pre.style.whiteSpace = 'pre';
   pre.className = 'scrollx';
-  details.append(pre);
+  detailsInner.append(pre);
   loadEngine().then((sections) => {
     const rows = sliceReport(sections);
     let whole = 0;
@@ -293,8 +288,45 @@ function underTheFloorSection() {
       .sort((a, b) => b.chars - a.chars)
       .map((r) => `${r.worker.padEnd(14)} ${String(r.chars).padStart(7)} chars  ${String(r.sections).padStart(3)} parts${r.missing.length ? '  MISSING ' + r.missing.join(',') : ''}`)
       .join('\n') + `\n\nthe whole craft ${whole} chars — nobody carries all of it`;
+    /* the three with a craft of their own, carried over from the Plot Essential Maker or set by him */
+    return Promise.all(['worldbook', 'auditor', 'instructions'].map((w) => craftFor(w, store.getHouse())
+      .then((t) => `${w.padEnd(14)} ${String(t.length).padStart(7)} chars  its own craft`)
+      .catch((e) => `${w.padEnd(14)} could not be read: ${e.message}`)))
+      .then((lines) => { pre.textContent += '\n\n' + lines.join('\n'); });
   }).catch((e) => { pre.textContent = 'could not read the craft file: ' + e.message; });
   g.append(details);
+
+  /* everything in one file, and back again by adding only */
+  const keep = group('Everything, in one file', 'Every world with its documents and conversations. Not your connections or keys \u2014 those stay on this device. Bringing a file back only ever adds: nothing here is replaced.');
+  const krow = el('div', 'btnrow');
+  const out = el('button', 'btn quiet', 'Save everything to a file');
+  out.addEventListener('click', async () => {
+    try {
+      const b = await store.exportEverything();
+      const day = new Date(b.at).toISOString().slice(0, 10);
+      downloadText(`CozyMaker backup ${day}.json`, JSON.stringify(b));
+      toast(`${b.worlds.length} world${b.worlds.length === 1 ? '' : 's'} saved to a file.`);
+    } catch (e) { toast('That could not be saved: ' + ((e && e.message) || e)); }
+  });
+  const inn = el('button', 'btn quiet', 'Bring everything back from a file');
+  const file = document.createElement('input');
+  file.type = 'file'; file.accept = '.json,application/json'; file.hidden = true;
+  inn.addEventListener('click', () => file.click());
+  file.addEventListener('change', async () => {
+    const f = file.files && file.files[0];
+    file.value = '';
+    if (!f) return;
+    const r = store.readBackup(await f.text());
+    if (!r.ok) return toast(r.why);
+    try {
+      const { added } = await store.restoreEverything(r.backup);
+      toast(`${added} world${added === 1 ? '' : 's'} brought back, beside the ones already here.`);
+      redraw();
+    } catch (e) { toast('That could not be brought back: ' + ((e && e.message) || e)); }
+  });
+  krow.append(out, inn, file);
+  keep.append(krow);
+  g.append(keep);
 
   const row = el('div', 'btnrow');
   const where = el('button', 'btn quiet', 'Where the work lives');

@@ -1,3 +1,6 @@
+import { lintTransplant } from './transplant.js';
+import { stripTrailingCommasOutsideStrings, escapeRawControlsInStrings } from './edits.js';
+import { parseWorldbook } from './worldbook.js';
 /* CozyMaker — js/doc/lint.js
  *
  * The checks that need no model at all: they are arithmetic and shape, they
@@ -69,6 +72,17 @@ export function countOf(text, kind = 'pe') {
 
 /* Did this write lose something it should not have? Returns null when fine. */
 export function lostSomething(beforeText, afterText, kind = 'pe') {
+  /* A TRANSPLANT LOSES DATA THROUGH ITS MARKERS. Its importer reads markers
+   * exactly and silently drops what a broken one holds, so a change that
+   * leaves more broken markers than it found is a loss, whatever it deleted
+   * on purpose. Removing a whole block cleanly is not. */
+  if (kind === 'transplant') {
+    const bad = (t) => lintTransplant(t).issues.filter((x) => x.sev === 'error').length;
+    const more = bad(afterText) - bad(beforeText);
+    return more > 0 ? `${more} marker${more === 1 ? '' : 's'} the importer could no longer read (it would drop what ${more === 1 ? 'it holds' : 'they hold'})` : null;
+  }
+  /* instructions and notes have no shape code can count */
+  if (kind === 'instructions' || kind === 'notes') return null;
   const a = countOf(beforeText, kind);
   const b = countOf(afterText, kind);
   const lost = [];
@@ -82,7 +96,32 @@ export function lostSomething(beforeText, afterText, kind = 'pe') {
 /* ------------------------------------------------------------------- pass */
 
 /* Run every check. Returns the repaired text and what happened. */
+/* Kinds this house does not reshape: a Summaryception transplant is a marker
+ * file its importer reads exactly (tidying it is how data gets dropped), and
+ * instructions and notes are his own words in his own shape. */
+export const UNTOUCHED_KINDS = ['instructions', 'notes'];
+
+/* A TRANSPLANT GETS THE ONE REPAIR THAT IS CERTAIN. Its importer reads marker
+ * names case-sensitively, so a marker written "sc-ledger" is silently skipped
+ * and what it holds is lost; written "SC-LEDGER" it is read. Nothing else in
+ * a transplant is touched by code: the rest needs the auditor's judgment. */
+function lintTransplantMarkers(text) {
+  const src = String(text || '');
+  let n = 0;
+  const out = src.replace(/<!--(\s*)(\/?)(sc-(?:transplant|notepad|ledger|snippet|pin))\b/gi, (m, sp, slash, name) => {
+    const want = name.toUpperCase();
+    if (name === want) return m;
+    n++;
+    return `<!--${sp}${slash}${want}`;
+  });
+  const found = n ? [finding('transplant markers in the wrong case', `${n} transplant marker${n > 1 ? 's' : ''} written in the wrong case ${n > 1 ? 'were' : 'was'} put in the case the importer reads`, { repaired: true, count: n })] : [];
+  return { text: out, found, changed: out !== src };
+}
+function lintNothing(text) { return { text: String(text || ''), found: [], changed: false }; }
+
 export function lint(text, { kind = 'pe', deliverable = true } = {}) {
+  if (kind === 'transplant') return lintTransplantMarkers(text);
+  if (UNTOUCHED_KINDS.includes(kind)) return lintNothing(text);
   let src = String(text || '');
   const found = [];
 
@@ -188,18 +227,44 @@ export function lint(text, { kind = 'pe', deliverable = true } = {}) {
   return { text: src, found, changed: src !== String(text || '') };
 }
 
+/* WHAT CODE CAN READ, CODE REPAIRS (the Plot Essential Maker's Validate &
+ * repair; his rule: the app repairs what it detects). A trailing comma or a raw
+ * line break inside a value is put right by the same string-aware repairs the
+ * edits use; a list wrapped as {entries:[…]} or SillyTavern's numbered map is
+ * made one list. Only what no rule can read goes to the worldbook keeper. */
+export function readWorldbook(src) {
+  const text = String(src || '').trim() || '[]';
+  let v, fixed = false;
+  try { v = JSON.parse(text); } catch (_) {
+    try { v = JSON.parse(escapeRawControlsInStrings(stripTrailingCommasOutsideStrings(text))); fixed = true; }
+    catch (e) { return { ok: false, why: 'it is not valid JSON right now' }; }
+  }
+  let list = null, wrapped = false;
+  if (Array.isArray(v)) list = v;
+  else if (v && Array.isArray(v.entries)) { list = v.entries; wrapped = true; }
+  else if (v && v.entries && typeof v.entries === 'object') { list = Object.values(v.entries); wrapped = true; }
+  if (!list) return { ok: false, why: 'it should be one list of entries' };
+  /* SillyTavern's own fields are read for what they mean, by the extension's
+   * own reading: constant is always-on, key is keys, comment is the name, a
+   * numeric position is a place, a number written as a string is a number */
+  const stFields = list.some((e) => e && typeof e === 'object' &&
+    ('key' in e || 'constant' in e || typeof e.position === 'number' || ('comment' in e && !('name' in e))));
+  if (stFields) return { ok: true, entries: parseWorldbook(JSON.stringify(list)).entries, fixed, reshaped: true };
+  return { ok: true, entries: list, fixed, reshaped: wrapped };
+}
+
 function lintWorldbook(src) {
   const found = [];
-  let entries;
-  try { entries = JSON.parse(src || '[]'); } catch (_) {
-    found.push(finding('the worldbook is not readable as data', 'it is not valid JSON right now', { worker: 'editor' }));
+  const read = readWorldbook(src);
+  if (!read.ok) {
+    found.push(finding('the worldbook is not readable as data', read.why, { worker: 'worldbook' }));
     return { text: src, found, changed: false };
   }
-  if (!Array.isArray(entries)) {
-    found.push(finding('the worldbook is the wrong shape', 'it should be one list of entries', { worker: 'editor' }));
-    return { text: src, found, changed: false };
-  }
+  const entries = read.entries;
   let repaired = 0;
+  let reread = 0;
+  if (read.fixed) { found.push(finding('the worldbook data was put right', 'a trailing comma or a raw line break inside a value', { repaired: true })); reread++; }
+  if (read.reshaped) { found.push(finding('the worldbook was made one list of entries', 'it was wrapped in another shape', { repaired: true })); reread++; }
   const seen = new Map();
   const dupes = [];
   const keyless = [];
@@ -220,9 +285,9 @@ function lintWorldbook(src) {
     }
   }
   if (repaired) found.push(finding('an entry set up wrong', `put ${repaired} setting${repaired > 1 ? 's' : ''} back in range`, { repaired: true, count: repaired }));
-  if (dupes.length) found.push(finding('two entries with the same name', dupes.join(', '), { worker: 'editor', count: dupes.length }));
-  if (keyless.length) found.push(finding('an entry that can never fire', `${keyless.join(', ')} ${keyless.length > 1 ? 'have' : 'has'} no words to trigger on`, { worker: 'editor', count: keyless.length }));
-  const text = repaired ? JSON.stringify(entries, null, 2) : src;
+  if (dupes.length) found.push(finding('two entries with the same name', dupes.join(', '), { worker: 'worldbook', count: dupes.length }));
+  if (keyless.length) found.push(finding('an entry that can never fire', `${keyless.join(', ')} ${keyless.length > 1 ? 'have' : 'has'} no words to trigger on`, { worker: 'worldbook', count: keyless.length }));
+  const text = repaired || reread ? JSON.stringify(entries, null, 2) : src;
   return { text, found, changed: text !== src };
 }
 

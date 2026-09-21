@@ -70,7 +70,14 @@ If you are just talking, nobody gets sent anywhere. It is meant to be a
 comfortable place, and a comfortable place lets you talk.
 
 Changes land in the documents themselves and show as small cards underneath the
-reply, each with **put it back** if you want it gone.
+reply, each with **put it back** if you want it gone. Tap **what changed** on a card
+to see what was there before and what is there now.
+
+**Tap any message** for **Copy**, **Edit**, **Branch here** and **Delete**. The last
+reply has **Another answer**; ◂ ▸ walks between the answers, and only the one shown
+is in the documents. Edit one of your messages and **Send again from here**: whatever
+the later replies changed is put back first. Deleting a reply that changed something
+puts that back too. A reply cut off at the limit offers **Go on**.
 
 **Your worlds and conversations** are on the left: tap ☰ at the top left, or
 swipe in from the left edge. Worlds are listed newest first. Inside the open
@@ -88,6 +95,17 @@ declutter), *Make it shorter*, *Check it*. A worldbook also has *Export for
 SillyTavern*, which saves it in SillyTavern's World Info format — import it
 there under World Info. Each job shows in the conversation in plain words, the
 same as if you had typed it.
+
+A document also has **Copy all**, **Save as a file**, **Duplicate**, and — after you
+have edited it by hand — **Put back my edits**. **Side by side** shows two to four
+documents next to each other. Under the cog, **Save everything to a file** keeps
+every world in one file (not your connections or keys), and **Bring everything back
+from a file** only ever adds: nothing already here is replaced.
+
+A connection's thinking level is said the way that provider understands it —
+the same words Cozy Tavern sends, checked against it. A level you have not set is
+not sent. If a provider refuses a thinking setting, the house learns what it takes
+and remembers it for that model.
 
 While the crew works, the send button becomes **Stop** and looks like it. A
 turn that failed and changed nothing offers **Try again**. If the server on the
@@ -115,8 +133,14 @@ it, measured rather than assumed.
 | **the compressor** | says the same thing in fewer words, losing nothing |
 | **the novelist** | works out whether the story can reach where you want it |
 | **the diagnostician** | works out why the storyteller went wrong |
+| **the worldbook keeper** | builds and keeps a SillyTavern worldbook, every field chosen per entry |
+| **the memory auditor** | audits and repairs a Summaryception transplant, markers intact |
+| **the instructions writer** | writes and keeps AI instruction sets and presets |
 
-The craft they work from lives in one file, `engine/generalist.md`. Each of them
+The last three work from the Plot Essential and Instructions Maker's own crafts
+(its Worldbook Maker and Summaryception Auditor, word for word) and your own for
+instructions; each can be changed from its document, with the original one tap
+away. The craft the rest work from lives in one file, `engine/generalist.md`. Each of them
 is handed only the parts of it their job needs — the biggest share is a third
 of the whole. The cog, under the floor, shows exactly who reads what.
 
@@ -125,7 +149,7 @@ of the whole. The cog, under the floor, shows exactly who reads what.
 Read `AGENTS.md` first.
 
 ```
-bash tests/all.sh    six suites, 546 checks
+bash tests/all.sh    seven suites, 688 checks
 ```
 
 `docs/lineage.md` lists every version of Cozy Tavern and Cozy Chat and what

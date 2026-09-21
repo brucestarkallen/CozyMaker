@@ -13,7 +13,61 @@
  * so work for a world the writer has left never lands in the one he opened.
  */
 
-import { buildRequest, readAnswer, readChunk, WORKER_ROOM, withoutThinking, THINKING_FIELDS, REASONING_REFUSAL } from '../providers.js';
+import { buildRequest, readAnswer, readChunk, WORKER_ROOM, withoutThinking, THINKING_FIELDS, REASONING_REFUSAL,
+  lessonFrom, learnedFacts, learnKey, familyStyle, cannotStopThinking } from '../providers.js';
+
+/* WHAT A MODEL TEACHES IS KEPT (Cozy Tavern M350). A refusal of a thinking
+ * field is read for what it offers — the levels it takes, or the one field it
+ * does not — and the same request goes again fitted to it. The lesson is kept
+ * on the connection, for that model at that address, so the next call is
+ * right the first time instead of paying the refusal again. A refusal that
+ * says nothing useful silences thinking for a day (M319), then heals. An Off
+ * the model ignored is noticed. The house hears each lesson and saves it. */
+const learners = new Set();
+export function onLearn(fn) { learners.add(fn); return () => learners.delete(fn); }
+export function learn(conn, fact) {
+  if (!conn) return null;
+  const was = learnedFacts(conn) ? conn.learned : null;
+  const next = {
+    for: learnKey(conn),
+    at: Date.now(),
+    efforts: fact.efforts || (was && was.efforts) || null,
+    drop: [...new Set([...((was && was.drop) || []), ...(fact.drop || [])])],
+    offThinks: fact.offThinks === true || Boolean(was && was.offThinks),
+    downAt: fact.downAt || (was && was.downAt) || null,
+  };
+  conn.learned = next;
+  for (const fn of learners) { try { fn(conn.id, next); } catch (_) {} }
+  return next;
+}
+/* A refusal that names one field can hide another (a house that takes no
+ * thinking at all may name only the first field it met). So a lesson is
+ * learned per refusal, as many as there are fields to learn about; a refusal
+ * that teaches nothing new silences thinking for the day (M319). It always
+ * ends: every lesson removes something, and silence removes the rest. */
+export const MAX_LESSONS = THINKING_FIELDS.length + 1;
+function thinkingPart(body) {
+  const b = body || {};
+  return JSON.stringify(THINKING_FIELDS.filter((f) => f in b).map((f) => [f, b[f]]));
+}
+function learnFromRefusal(conn, detail, body, rebuild) {
+  learn(conn, lessonFor(detail, body));
+  let next = rebuild();
+  if (thinkingPart(next) === thinkingPart(body)) { learn(conn, { downAt: Date.now() }); next = rebuild(); }
+  return next;
+}
+function lessonFor(detail, body) {
+  const l = lessonFrom(detail, body);
+  if (l.allowed) return { efforts: l.allowed };
+  if (l.badField) return { drop: [l.badField] };
+  return { downAt: Date.now() };
+}
+function noticeOff(conn, thinking) {
+  if (conn && conn.thinking === 'off' && String(thinking || '').trim() &&
+      familyStyle(conn) !== 'hermes' && !cannotStopThinking(conn) && !(learnedFacts(conn) || {}).offThinks) {
+    learn(conn, { offThinks: true });
+  }
+}
 
 export const MAX_RETRIES = 4;
 export const BACKOFF_MS = [2000, 4000, 8000, 16000];
@@ -39,16 +93,17 @@ export async function callModel(conn, opts = {}) {
     return { ok: false, text: '', thinking: '', error: 'no connection is set for this' };
   }
   const c = opts.asWorker === false ? conn : asWorkerConnection(conn, opts);
-  const req = buildRequest(c, {
+  const shape = {
     system: opts.system,
     messages: opts.messages || [{ role: 'user', content: opts.user || '' }],
     maxTokens: c.maxTokens,
     room: WORKER_ROOM,
     stream: false,
-  });
+  };
+  const req = buildRequest(c, shape);
 
   let lastError = 'the call did not go through';
-  let steppedDown = false;
+  let lessons = 0;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     if (opts.stale && opts.stale()) return { ok: false, text: '', thinking: '', error: 'let go' };
     try {
@@ -65,10 +120,11 @@ export async function callModel(conn, opts = {}) {
         const status = Number(data.status) || 0;
         /* A REFUSED THINKING FIELD STEPS DOWN AND GOES AGAIN, ONCE — the
          * message is not eaten because the model does not take a level. */
-        if (!steppedDown && status >= 400 && status < 500 && REASONING_REFUSAL.test(lastError) &&
+        if (lessons < MAX_LESSONS && status >= 400 && status < 500 && REASONING_REFUSAL.test(lastError) &&
             THINKING_FIELDS.some((f) => f in req.body)) {
-          req.body = withoutThinking(req.body);
-          steppedDown = true;
+          req.body = learnFromRefusal(c, lastError, req.body, () => buildRequest(c, shape).body);
+          if (conn !== c) conn.learned = c.learned;
+          lessons++;
           attempt--;
           continue;
         }
@@ -86,6 +142,8 @@ export async function callModel(conn, opts = {}) {
       }
       /* An empty answer is not a transport failure — it is the caller's to
        * judge, and the caller knows what it asked for. */
+      noticeOff(c, out.thinking);
+      if (conn !== c && c.learned) conn.learned = c.learned;
       return { ok: true, text: out.text || '', thinking: out.thinking || '', finish: out.finish };
     } catch (e) {
       if (e && e.name === 'AbortError') return { ok: false, text: '', thinking: '', error: 'stopped' };
@@ -98,12 +156,17 @@ export async function callModel(conn, opts = {}) {
 
 /* The front of the house streams, so the writer sees words arriving. */
 export async function streamModel(conn, opts = {}) {
-  try {
-    return await streamOnce(conn, opts, false);
-  } catch (e) {
-    if (e && e.refusedThinking && !(opts.signal && opts.signal.aborted)) return streamOnce(conn, opts, true);
-    throw e;
+  let out;
+  for (let lessons = 0; ; lessons++) {
+    try { out = await streamOnce(conn, opts, false); break; }
+    catch (e) {
+      if (!(e && e.refusedThinking) || (opts.signal && opts.signal.aborted) || lessons >= MAX_LESSONS) throw e;
+      /* the same lessons as a worker's; the next try is built with them */
+      learnFromRefusal(conn, e.message, e.body || {}, () => buildRequest(conn, { system: opts.system, messages: opts.messages || [], stream: true }).body);
+    }
   }
+  noticeOff(conn, out.thinking);
+  return out;
 }
 
 async function streamOnce(conn, opts, dropThinking) {
@@ -179,6 +242,7 @@ async function streamOnce(conn, opts, dropThinking) {
     const err = new Error(typeof failed === 'string' ? failed : JSON.stringify(failed));
     err.refusedThinking = !dropThinking && failedStatus >= 400 && failedStatus < 500 &&
       REASONING_REFUSAL.test(err.message) && THINKING_FIELDS.some((f) => f in req.body);
+    err.body = req.body;
     throw err;
   }
   return { text, thinking, cut };

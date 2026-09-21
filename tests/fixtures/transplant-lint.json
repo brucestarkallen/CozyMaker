@@ -1,0 +1,327 @@
+{
+ "source": "Produced by running the Plot Essential and Instructions Maker's own lintTransplant (index.js v0.14.2), which mirrors Summaryception's importer. CozyMaker's copy must answer every case the same.",
+ "cases": [
+  {
+   "name": "a sound transplant",
+   "text": "<!-- SC-TRANSPLANT {\"v\":1,\"story\":\"Harbour\"} -->\n<!-- SC-NOTEPAD -->\nKeep the rain in every harbour scene.\n<!-- /SC-NOTEPAD -->\n<!-- SC-LEDGER {\"name\":\"Claire\"} -->\nCORE: sixteen, quiet\nSTATE: at the harbour wall\n<!-- /SC-LEDGER -->\n<!-- SC-LEDGER {\"name\":\"Aldric\"} -->\nCORE: general of the Iron Legion\nARC: doubts the king\n<!-- /SC-LEDGER -->\n<!-- SC-SNIPPET -->\nThey met at the pier in the rain.\n<!-- SC-DETAIL -->\nHer coat was too thin.\n<!-- /SC-SNIPPET -->\n<!-- SC-PIN -->\nThe promise at the lighthouse.\n<!-- /SC-PIN -->",
+   "want": {
+    "ok": true,
+    "counts": {
+     "snippets": 1,
+     "ledger": 2,
+     "pins": 1,
+     "notepad": true,
+     "meta": true
+    },
+    "issues": []
+   }
+  },
+  {
+   "name": "a marker in the wrong case",
+   "text": "<!-- SC-TRANSPLANT {\"v\":1,\"story\":\"Harbour\"} -->\n<!-- SC-NOTEPAD -->\nKeep the rain in every harbour scene.\n<!-- /SC-NOTEPAD -->\n<!-- SC-LEDGER {\"name\":\"Claire\"} -->\nCORE: sixteen, quiet\nSTATE: at the harbour wall\n<!-- /SC-LEDGER -->\n<!-- sc-ledger {\"name\":\"Aldric\"} -->\nCORE: general of the Iron Legion\nARC: doubts the king\n<!-- /SC-LEDGER -->\n<!-- SC-SNIPPET -->\nThey met at the pier in the rain.\n<!-- SC-DETAIL -->\nHer coat was too thin.\n<!-- /SC-SNIPPET -->\n<!-- SC-PIN -->\nThe promise at the lighthouse.\n<!-- /SC-PIN -->",
+   "want": {
+    "ok": false,
+    "counts": {
+     "snippets": 1,
+     "ledger": 1,
+     "pins": 1,
+     "notepad": true,
+     "meta": true
+    },
+    "issues": [
+     {
+      "sev": "error",
+      "msg": "Marker sc-ledger is case-mismatched (importer is case-sensitive, expects SC-LEDGER) — it is ignored and its data is lost or swallowed",
+      "line": 9
+     },
+     {
+      "sev": "warn",
+      "msg": "Closer /SC-LEDGER with no matching open block — dead marker",
+      "line": 12
+     }
+    ]
+   }
+  },
+  {
+   "name": "a snippet with no closer",
+   "text": "<!-- SC-TRANSPLANT {\"v\":1,\"story\":\"Harbour\"} -->\n<!-- SC-NOTEPAD -->\nKeep the rain in every harbour scene.\n<!-- /SC-NOTEPAD -->\n<!-- SC-LEDGER {\"name\":\"Claire\"} -->\nCORE: sixteen, quiet\nSTATE: at the harbour wall\n<!-- /SC-LEDGER -->\n<!-- SC-LEDGER {\"name\":\"Aldric\"} -->\nCORE: general of the Iron Legion\nARC: doubts the king\n<!-- /SC-LEDGER -->\n<!-- SC-SNIPPET -->\nThey met at the pier in the rain.\n<!-- SC-DETAIL -->\nHer coat was too thin.\n\n<!-- SC-PIN -->\nThe promise at the lighthouse.\n<!-- /SC-PIN -->",
+   "want": {
+    "ok": true,
+    "counts": {
+     "snippets": 1,
+     "ledger": 2,
+     "pins": 1,
+     "notepad": true,
+     "meta": true
+    },
+    "issues": [
+     {
+      "sev": "warn",
+      "msg": "SC-SNIPPET has no closing marker — its body runs on to the next block (trailing headings/prose are swallowed into it)",
+      "line": 13
+     }
+    ]
+   }
+  },
+  {
+   "name": "a ledger with broken JSON",
+   "text": "<!-- SC-TRANSPLANT {\"v\":1,\"story\":\"Harbour\"} -->\n<!-- SC-NOTEPAD -->\nKeep the rain in every harbour scene.\n<!-- /SC-NOTEPAD -->\n<!-- SC-LEDGER {\"name\":\"Claire\",} -->\nCORE: sixteen, quiet\nSTATE: at the harbour wall\n<!-- /SC-LEDGER -->\n<!-- SC-LEDGER {\"name\":\"Aldric\"} -->\nCORE: general of the Iron Legion\nARC: doubts the king\n<!-- /SC-LEDGER -->\n<!-- SC-SNIPPET -->\nThey met at the pier in the rain.\n<!-- SC-DETAIL -->\nHer coat was too thin.\n<!-- /SC-SNIPPET -->\n<!-- SC-PIN -->\nThe promise at the lighthouse.\n<!-- /SC-PIN -->",
+   "want": {
+    "ok": false,
+    "counts": {
+     "snippets": 1,
+     "ledger": 1,
+     "pins": 1,
+     "notepad": true,
+     "meta": true
+    },
+    "issues": [
+     {
+      "sev": "error",
+      "msg": "SC-LEDGER payload JSON is broken — the importer DROPS this entire dossier",
+      "line": 5
+     }
+    ]
+   }
+  },
+  {
+   "name": "a nameless ledger",
+   "text": "<!-- SC-TRANSPLANT {\"v\":1,\"story\":\"Harbour\"} -->\n<!-- SC-NOTEPAD -->\nKeep the rain in every harbour scene.\n<!-- /SC-NOTEPAD -->\n<!-- SC-LEDGER {\"who\":\"Claire\"} -->\nCORE: sixteen, quiet\nSTATE: at the harbour wall\n<!-- /SC-LEDGER -->\n<!-- SC-LEDGER {\"name\":\"Aldric\"} -->\nCORE: general of the Iron Legion\nARC: doubts the king\n<!-- /SC-LEDGER -->\n<!-- SC-SNIPPET -->\nThey met at the pier in the rain.\n<!-- SC-DETAIL -->\nHer coat was too thin.\n<!-- /SC-SNIPPET -->\n<!-- SC-PIN -->\nThe promise at the lighthouse.\n<!-- /SC-PIN -->",
+   "want": {
+    "ok": false,
+    "counts": {
+     "snippets": 1,
+     "ledger": 1,
+     "pins": 1,
+     "notepad": true,
+     "meta": true
+    },
+    "issues": [
+     {
+      "sev": "error",
+      "msg": "SC-LEDGER has no \"name\" in its payload — the importer DROPS this entire dossier",
+      "line": 5
+     }
+    ]
+   }
+  },
+  {
+   "name": "a ledger with no fields",
+   "text": "<!-- SC-TRANSPLANT {\"v\":1,\"story\":\"Harbour\"} -->\n<!-- SC-NOTEPAD -->\nKeep the rain in every harbour scene.\n<!-- /SC-NOTEPAD -->\n<!-- SC-LEDGER {\"name\":\"Claire\"} -->\njust prose about her\n<!-- /SC-LEDGER -->\n<!-- SC-LEDGER {\"name\":\"Aldric\"} -->\nCORE: general of the Iron Legion\nARC: doubts the king\n<!-- /SC-LEDGER -->\n<!-- SC-SNIPPET -->\nThey met at the pier in the rain.\n<!-- SC-DETAIL -->\nHer coat was too thin.\n<!-- /SC-SNIPPET -->\n<!-- SC-PIN -->\nThe promise at the lighthouse.\n<!-- /SC-PIN -->",
+   "want": {
+    "ok": false,
+    "counts": {
+     "snippets": 1,
+     "ledger": 1,
+     "pins": 1,
+     "notepad": true,
+     "meta": true
+    },
+    "issues": [
+     {
+      "sev": "error",
+      "msg": "Ledger \"Claire\" has none of CORE:/STATE:/ARC:/THREADS: — the importer DROPS it",
+      "line": 5
+     }
+    ]
+   }
+  },
+  {
+   "name": "the same ledger name twice",
+   "text": "<!-- SC-TRANSPLANT {\"v\":1,\"story\":\"Harbour\"} -->\n<!-- SC-NOTEPAD -->\nKeep the rain in every harbour scene.\n<!-- /SC-NOTEPAD -->\n<!-- SC-LEDGER {\"name\":\"Claire\"} -->\nCORE: sixteen, quiet\nSTATE: at the harbour wall\n<!-- /SC-LEDGER -->\n<!-- SC-LEDGER {\"name\":\"Claire\"} -->\nCORE: general of the Iron Legion\nARC: doubts the king\n<!-- /SC-LEDGER -->\n<!-- SC-SNIPPET -->\nThey met at the pier in the rain.\n<!-- SC-DETAIL -->\nHer coat was too thin.\n<!-- /SC-SNIPPET -->\n<!-- SC-PIN -->\nThe promise at the lighthouse.\n<!-- /SC-PIN -->",
+   "want": {
+    "ok": false,
+    "counts": {
+     "snippets": 1,
+     "ledger": 2,
+     "pins": 1,
+     "notepad": true,
+     "meta": true
+    },
+    "issues": [
+     {
+      "sev": "error",
+      "msg": "Duplicate ledger name \"Claire\" — the later dossier silently OVERWRITES the earlier on import",
+      "line": 9
+     }
+    ]
+   }
+  },
+  {
+   "name": "an empty snippet",
+   "text": "<!-- SC-TRANSPLANT {\"v\":1,\"story\":\"Harbour\"} -->\n<!-- SC-NOTEPAD -->\nKeep the rain in every harbour scene.\n<!-- /SC-NOTEPAD -->\n<!-- SC-LEDGER {\"name\":\"Claire\"} -->\nCORE: sixteen, quiet\nSTATE: at the harbour wall\n<!-- /SC-LEDGER -->\n<!-- SC-LEDGER {\"name\":\"Aldric\"} -->\nCORE: general of the Iron Legion\nARC: doubts the king\n<!-- /SC-LEDGER -->\n<!-- SC-SNIPPET -->\n<!-- /SC-SNIPPET -->\n<!-- SC-PIN -->\nThe promise at the lighthouse.\n<!-- /SC-PIN -->",
+   "want": {
+    "ok": false,
+    "counts": {
+     "snippets": 0,
+     "ledger": 2,
+     "pins": 1,
+     "notepad": true,
+     "meta": true
+    },
+    "issues": [
+     {
+      "sev": "error",
+      "msg": "Empty SC-SNIPPET — the importer DROPS it",
+      "line": 13
+     }
+    ]
+   }
+  },
+  {
+   "name": "an empty pin",
+   "text": "<!-- SC-TRANSPLANT {\"v\":1,\"story\":\"Harbour\"} -->\n<!-- SC-NOTEPAD -->\nKeep the rain in every harbour scene.\n<!-- /SC-NOTEPAD -->\n<!-- SC-LEDGER {\"name\":\"Claire\"} -->\nCORE: sixteen, quiet\nSTATE: at the harbour wall\n<!-- /SC-LEDGER -->\n<!-- SC-LEDGER {\"name\":\"Aldric\"} -->\nCORE: general of the Iron Legion\nARC: doubts the king\n<!-- /SC-LEDGER -->\n<!-- SC-SNIPPET -->\nThey met at the pier in the rain.\n<!-- SC-DETAIL -->\nHer coat was too thin.\n<!-- /SC-SNIPPET -->\n<!-- SC-PIN -->\n<!-- /SC-PIN -->",
+   "want": {
+    "ok": false,
+    "counts": {
+     "snippets": 1,
+     "ledger": 2,
+     "pins": 0,
+     "notepad": true,
+     "meta": true
+    },
+    "issues": [
+     {
+      "sev": "error",
+      "msg": "Empty SC-PIN — the importer DROPS it",
+      "line": 18
+     }
+    ]
+   }
+  },
+  {
+   "name": "a stray closer",
+   "text": "<!-- SC-TRANSPLANT {\"v\":1,\"story\":\"Harbour\"} -->\n<!-- SC-NOTEPAD -->\nKeep the rain in every harbour scene.\n<!-- /SC-NOTEPAD -->\n<!-- SC-LEDGER {\"name\":\"Claire\"} -->\nCORE: sixteen, quiet\nSTATE: at the harbour wall\n<!-- /SC-LEDGER -->\n<!-- SC-LEDGER {\"name\":\"Aldric\"} -->\nCORE: general of the Iron Legion\nARC: doubts the king\n<!-- /SC-LEDGER -->\n<!-- SC-SNIPPET -->\nThey met at the pier in the rain.\n<!-- SC-DETAIL -->\nHer coat was too thin.\n<!-- /SC-SNIPPET -->\n<!-- SC-PIN -->\nThe promise at the lighthouse.\n<!-- /SC-PIN -->\n<!-- /SC-PIN -->",
+   "want": {
+    "ok": true,
+    "counts": {
+     "snippets": 1,
+     "ledger": 2,
+     "pins": 1,
+     "notepad": true,
+     "meta": true
+    },
+    "issues": [
+     {
+      "sev": "warn",
+      "msg": "Closer /SC-PIN with no matching open block — dead marker",
+      "line": 21
+     }
+    ]
+   }
+  },
+  {
+   "name": "a marker never closed as a comment",
+   "text": "<!-- SC-TRANSPLANT {\"v\":1,\"story\":\"Harbour\"} -->\n<!-- SC-NOTEPAD -->\nKeep the rain in every harbour scene.\n<!-- /SC-NOTEPAD -->\n<!-- SC-LEDGER {\"name\":\"Claire\"} -->\nCORE: sixteen, quiet\nSTATE: at the harbour wall\n<!-- /SC-LEDGER -->\n<!-- SC-LEDGER {\"name\":\"Aldric\"} -->\nCORE: general of the Iron Legion\nARC: doubts the king\n<!-- /SC-LEDGER -->\n<!-- SC-SNIPPET -->\nThey met at the pier in the rain.\n<!-- SC-DETAIL -->\nHer coat was too thin.\n<!-- /SC-SNIPPET -->\n<!-- SC-PIN\nThe promise at the lighthouse.\n<!-- /SC-PIN -->",
+   "want": {
+    "ok": false,
+    "counts": {
+     "snippets": 1,
+     "ledger": 2,
+     "pins": 0,
+     "notepad": true,
+     "meta": true
+    },
+    "issues": [
+     {
+      "sev": "error",
+      "msg": "Malformed SC marker — the importer will not recognize it, so no block opens/closes here: <!-- SC-PIN\nThe promise at the lighthouse.\n<!-- /SC-PIN -->",
+      "line": 18
+     },
+     {
+      "sev": "warn",
+      "msg": "Closer /SC-PIN with no matching open block — dead marker",
+      "line": 20
+     }
+    ]
+   }
+  },
+  {
+   "name": "Windows line endings",
+   "text": "<!-- SC-TRANSPLANT {\"v\":1,\"story\":\"Harbour\"} -->\r\n<!-- SC-NOTEPAD -->\r\nKeep the rain in every harbour scene.\r\n<!-- /SC-NOTEPAD -->\r\n<!-- SC-LEDGER {\"name\":\"Claire\"} -->\r\nCORE: sixteen, quiet\r\nSTATE: at the harbour wall\r\n<!-- /SC-LEDGER -->\r\n<!-- SC-LEDGER {\"name\":\"Aldric\"} -->\r\nCORE: general of the Iron Legion\r\nARC: doubts the king\r\n<!-- /SC-LEDGER -->\r\n<!-- SC-SNIPPET -->\r\nThey met at the pier in the rain.\r\n<!-- SC-DETAIL -->\r\nHer coat was too thin.\r\n<!-- /SC-SNIPPET -->\r\n<!-- SC-PIN -->\r\nThe promise at the lighthouse.\r\n<!-- /SC-PIN -->",
+   "want": {
+    "ok": true,
+    "counts": {
+     "snippets": 1,
+     "ledger": 2,
+     "pins": 1,
+     "notepad": true,
+     "meta": true
+    },
+    "issues": []
+   }
+  },
+  {
+   "name": "two notepads",
+   "text": "<!-- SC-TRANSPLANT {\"v\":1,\"story\":\"Harbour\"} -->\n<!-- SC-NOTEPAD -->\nKeep the rain in every harbour scene.\n<!-- /SC-NOTEPAD -->\n<!-- SC-NOTEPAD -->\nsecond\n<!-- /SC-NOTEPAD -->\n<!-- SC-LEDGER {\"name\":\"Claire\"} -->\nCORE: sixteen, quiet\nSTATE: at the harbour wall\n<!-- /SC-LEDGER -->\n<!-- SC-LEDGER {\"name\":\"Aldric\"} -->\nCORE: general of the Iron Legion\nARC: doubts the king\n<!-- /SC-LEDGER -->\n<!-- SC-SNIPPET -->\nThey met at the pier in the rain.\n<!-- SC-DETAIL -->\nHer coat was too thin.\n<!-- /SC-SNIPPET -->\n<!-- SC-PIN -->\nThe promise at the lighthouse.\n<!-- /SC-PIN -->",
+   "want": {
+    "ok": true,
+    "counts": {
+     "snippets": 1,
+     "ledger": 2,
+     "pins": 1,
+     "notepad": true,
+     "meta": true
+    },
+    "issues": [
+     {
+      "sev": "warn",
+      "msg": "Multiple SC-NOTEPAD blocks — the later one silently OVERWRITES the earlier on import",
+      "line": 5
+     }
+    ]
+   }
+  },
+  {
+   "name": "a payload that is not an object",
+   "text": "<!-- SC-TRANSPLANT [1,2] -->\n<!-- SC-NOTEPAD -->\nKeep the rain in every harbour scene.\n<!-- /SC-NOTEPAD -->\n<!-- SC-LEDGER {\"name\":\"Claire\"} -->\nCORE: sixteen, quiet\nSTATE: at the harbour wall\n<!-- /SC-LEDGER -->\n<!-- SC-LEDGER {\"name\":\"Aldric\"} -->\nCORE: general of the Iron Legion\nARC: doubts the king\n<!-- /SC-LEDGER -->\n<!-- SC-SNIPPET -->\nThey met at the pier in the rain.\n<!-- SC-DETAIL -->\nHer coat was too thin.\n<!-- /SC-SNIPPET -->\n<!-- SC-PIN -->\nThe promise at the lighthouse.\n<!-- /SC-PIN -->",
+   "want": {
+    "ok": false,
+    "counts": {
+     "snippets": 1,
+     "ledger": 2,
+     "pins": 1,
+     "notepad": true,
+     "meta": false
+    },
+    "issues": [
+     {
+      "sev": "error",
+      "msg": "Malformed SC marker — the importer will not recognize it, so no block opens/closes here: <!-- SC-TRANSPLANT [1,2] -->",
+      "line": 1
+     }
+    ]
+   }
+  },
+  {
+   "name": "nothing but prose",
+   "text": "Just a note, no markers at all.",
+   "want": {
+    "ok": true,
+    "counts": {
+     "snippets": 0,
+     "ledger": 0,
+     "pins": 0,
+     "notepad": false,
+     "meta": false
+    },
+    "issues": []
+   }
+  },
+  {
+   "name": "empty",
+   "text": "",
+   "want": {
+    "ok": true,
+    "counts": {
+     "snippets": 0,
+     "ledger": 0,
+     "pins": 0,
+     "notepad": false,
+     "meta": false
+    },
+    "issues": []
+   }
+  }
+ ]
+}

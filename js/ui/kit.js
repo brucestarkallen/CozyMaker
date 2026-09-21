@@ -95,3 +95,47 @@ export function when(ms) {
   if (d < 86400) return ago(Math.round(d / 3600), 'hour');
   return ago(Math.round(d / 86400), 'day');
 }
+
+/* A FOLD THAT OPENS ON THIS PHONE. Native <details> failed to expand on the
+ * writer's Android (the Plot Essential Maker's v0.4.1), so every fold here is
+ * a plain button that shows and hides what is under it. */
+export function fold(label, content, { open = false, className = 'fold' } = {}) {
+  const box = el('div', className);
+  const head = el('button', 'fold-head', (open ? '\u25be ' : '\u25b8 ') + label);
+  head.type = 'button';
+  const body = el('div', 'fold-body');
+  if (typeof content === 'string') body.textContent = content; else body.append(content);
+  body.hidden = !open;
+  head.addEventListener('click', (e) => {
+    e.stopPropagation();
+    body.hidden = !body.hidden;
+    head.textContent = (body.hidden ? '\u25b8 ' : '\u25be ') + label;
+  });
+  box.append(head, body);
+  return box;
+}
+
+export async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); toast('Copied.'); return true; }
+  catch (_) {
+    const t = document.createElement('textarea');
+    t.value = text; t.style.position = 'fixed'; t.style.opacity = '0';
+    document.body.append(t); t.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (__) {}
+    t.remove();
+    toast(ok ? 'Copied.' : 'Select and copy.');
+    return ok;
+  }
+}
+
+/* Hand him a file. */
+export function downloadText(name, text, type = 'application/json') {
+  const blob = new Blob([text], { type });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.append(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}

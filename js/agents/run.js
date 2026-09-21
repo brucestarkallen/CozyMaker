@@ -21,12 +21,13 @@
  */
 
 import { loadEngine, sliceFor } from '../engine/slices.js';
+import { craftFor } from '../engine/crafts.js';
 import { openingFor, personaOf, addressWriter } from './persona.js';
 import { pickConnection, FRONT } from './roster.js';
 import { callModel, streamModel, enqueue } from './call.js';
 import { parseDoc, brief, readNeed, stripNeed, resolveNeed } from '../doc/index.js';
 import { route } from './router.js';
-import { parseEdits, stripEdits, applyRun, hash } from '../doc/edits.js';
+import { parseEdits, stripEdits, stripThinking, applyRun, hash } from '../doc/edits.js';
 import { lint, lostSomething } from '../doc/lint.js';
 
 export const MAX_NEED_ROUNDS = 2;
@@ -104,10 +105,17 @@ function docsOf(project) {
   return (project.docs || []).map((d) => ({ id: d.id, name: d.name, kind: d.kind || 'pe', text: d.text || '' }));
 }
 
+/* A worker reads every document whole when the world fits in this many
+ * characters (about 30,000 tokens); past it, the index and the sections in
+ * play, with <need> for the rest. */
+export const WHOLE_LIMIT = 120000;
+
 export function docBriefs(project, opts) {
   const docs = docsOf(project);
   if (!docs.length) return 'Nothing has been written yet — there are no documents in this world so far.';
-  return docs.map((d) => brief(parseDoc(d.text, d.kind), d.name, opts)).join('\n\n----\n\n');
+  const size = docs.reduce((n, d) => n + (d.text || '').length, 0);
+  const whole = !opts.forFront && size <= WHOLE_LIMIT;
+  return docs.map((d) => brief(parseDoc(d.text, d.kind), d.name, { ...opts, whole })).join('\n\n----\n\n');
 }
 
 /* --------------------------------------------------------------- a worker */
@@ -151,9 +159,10 @@ export function claimsAChange(notes) {
   return CLAIMED.test(bare);
 }
 
-async function runWorker({ worker, sections, conn, project, message, talk, fromHouse = false, onStatus, signal, stale }) {
-  const slice = sliceFor(sections, worker);
-  const system = [CRAFT_FRAME, slice.text, RETURN_CONTRACT].join('\n\n---\n\n');
+async function runWorker({ worker, sections, conn, project, message, talk, fromHouse = false, onStatus, signal, stale, craft = null }) {
+  /* a worker with a craft of its own reads that; the rest read their slice */
+  const own = craft || sliceFor(sections, worker).text;
+  const system = [CRAFT_FRAME, own, RETURN_CONTRACT].join('\n\n---\n\n');
   let asked = [];
   let answer = null;
   let nudged = false;
@@ -162,10 +171,12 @@ async function runWorker({ worker, sections, conn, project, message, talk, fromH
   for (let round = 0; round <= MAX_NEED_ROUNDS + 1; round++) {
     if ((stale && stale()) || (signal && signal.aborted)) return { ok: false, error: 'stopped' };
     const context = docBriefs(project, { message, recent: project.recentSections || [], asked });
+    /* The documents go last before the job — nearest the answer, where
+     * copying from them word for word is surest. */
     const user = [
+      talk ? `The conversation so far, newest last:\n\n${talk}\n` : '',
       'The documents as they stand:',
       context,
-      talk ? `\nThe conversation so far, newest last:\n\n${talk}` : '',
       /* Whose job this is, said plainly: the author's own words, or the house
        * asking for a read-back or a repair. A house job presented as his
        * request is a note put in his mouth. */
@@ -194,7 +205,7 @@ async function runWorker({ worker, sections, conn, project, message, talk, fromH
     if (!parsed.edits.length && !parsed.warn && out.thinking && /<edits>/i.test(out.thinking)) {
       parsed = parseEdits(out.thinking);
     }
-    const notes = stripNeed(stripEdits(out.text));
+    const notes = stripThinking(stripNeed(stripEdits(out.text)));
 
     /* NOTHING LOST IN SILENCE — each of these earns exactly one more try, told
      * plainly what went wrong (Cozy Tavern M75, M75-003, M117):
@@ -221,7 +232,7 @@ async function runWorker({ worker, sections, conn, project, message, talk, fromH
   }
 
   if (!answer) return { ok: false, error: 'no answer came back' };
-  return { ok: true, worker, notes: answer.notes, edits: answer.parsed.edits, warn: answer.parsed.warn, sliceChars: slice.text.length };
+  return { ok: true, worker, notes: answer.notes, edits: answer.parsed.edits, warn: answer.parsed.warn, sliceChars: own.length };
 }
 
 /* ------------------------------------------------------------- the turn */
@@ -266,6 +277,9 @@ export function endAtControlToken(text) {
   return m ? t.slice(0, m.index).trimEnd() : t;
 }
 
+/* A turn for the front alone: "go on" after a reply that was cut off. */
+export const FRONT_ONLY = '__front__';
+
 export async function runTurn({
   house, project, history = [], message, forceWorker = null,
   onStatus = () => {}, onText = () => {}, onThinking = () => {},
@@ -285,7 +299,8 @@ export async function runTurn({
   const past = (history || []).filter((t) => !t.failed);
   const docs = docsOf(project);
   const hasPE = docs.some((d) => d.kind === 'pe' && (d.text || '').trim());
-  const intents = forceWorker
+  const intents = forceWorker === FRONT_ONLY ? []
+    : forceWorker
     ? [{ worker: forceWorker, about: message, why: 'asked for by name' }]
     : route(message, { hasPlotEssential: hasPE, hasDocs: docs.length > 0 });
   const talk = conversationFor(past.concat([{ role: 'writer', text: message }]), p);
@@ -293,18 +308,45 @@ export async function runTurn({
   const crew = [];
   const allCards = [];
   const batches = [];
+  /* every change the crew made this turn, in order, so another version of
+   * this answer can be put back and this one made again, exactly */
+  const turnEdits = [];
   let working = project;
 
-  const send = async (worker, about, label, fromHouse = false) => {
+  const send = async (worker, about, label, fromHouse = false, requoting = false) => {
+    let craft = null;
+    try { craft = await craftFor(worker, house); }
+    catch (e) { crew.push({ worker, failed: (e && e.message) || String(e) }); return []; }
     const res = await enqueue(project.id, worker, ({ signal: s, stale }) =>
-      runWorker({ worker, sections, conn: connFor(worker), project: working, message: about, talk, fromHouse, onStatus, signal: either(signal, s), stale }));
-    if (!res || !res.ok) { crew.push({ worker, failed: (res && res.error) || 'did not finish' }); return; }
+      runWorker({ worker, sections, conn: connFor(worker), project: working, message: about, talk, fromHouse, onStatus, signal: either(signal, s), stale, craft }));
+    if (!res || !res.ok) { crew.push({ worker, failed: (res && res.error) || 'did not finish' }); return []; }
     const applied = commit(working, res.edits, label);
     working = applied.project;
-    allCards.push(...applied.cards);
-    if (res.warn) allCards.push({ status: 'refused', name: '', reason: '', why: res.warn });
+    if (res.edits && res.edits.length) turnEdits.push({ label, edits: res.edits });
     if (applied.batch) batches.push(applied.batch);
     crew.push({ worker, notes: res.notes, cards: applied.cards, guard: applied.guard, warn: res.warn });
+    if (res.warn) allCards.push({ status: 'refused', name: '', reason: '', why: res.warn });
+
+    /* A QUOTE THAT MISSED GOES BACK ONCE (the Plot Essential Maker's v0.11.9:
+     * matching stays strict, and the failure is handed to the one who wrote
+     * it). Only spacing and quote marks may differ from the document; a
+     * change that quoted anything else is sent back with exactly what it
+     * quoted and why it missed, and the worker quotes again from the
+     * documents as they now stand. */
+    const missed = applied.cards.filter((c) => c.status === 'refused' && c.find &&
+      /not in the document as written|appear \d+ times/.test(c.why || ''));
+    const landed = applied.cards.filter((c) => !missed.includes(c));
+    allCards.push(...landed);
+    if (!missed.length || requoting || stopped()) { allCards.push(...missed); return applied.cards; }
+    onStatus(`asking the ${worker} to quote again`);
+    const list = missed.map((c, i) =>
+      `${i + 1}. In ${c.name}, the change quoted:\n"${c.find}"\n— ${c.why}.`).join('\n\n');
+    const again = await send(worker,
+      `Some of your changes could not be placed, because what they quote is not in the document word for word — only spacing and the shape of quote marks may differ:\n\n${list}\n\n` +
+      'The documents are shown as they stand now, with every change that did land. Send only these changes again, each quoting the document exactly: the shortest stretch that appears only once. Nothing else.',
+      `${label} (quoted again)`, true, true);
+    if (!again.length) allCards.push(...missed);
+    return applied.cards;
   };
 
   for (const intent of intents) {
@@ -338,7 +380,7 @@ export async function runTurn({
   }
 
   onStatus('');
-  if (stopped()) return { project: working, reply: '', cards: allCards, batches, crew, error: 'stopped', stopped: true };
+  if (stopped()) return { project: working, reply: '', cards: allCards, batches, crew, edits: turnEdits, error: 'stopped', stopped: true };
 
   /* Now the one voice the writer hears. */
   const system = openingFor(p, frontBody(p));
@@ -361,15 +403,15 @@ export async function runTurn({
       onThinking, signal,
     });
     reply = endAtControlToken(out.text || reply);
-    if (out.cut) return { project: working, reply, cards: allCards, batches, crew, error: null, cut: true };
+    if (out.cut) return { project: working, reply, cards: allCards, batches, crew, edits: turnEdits, error: null, cut: true };
   } catch (e) {
     const aborted = (e && e.name === 'AbortError') || stopped();
     return {
-      project: working, reply: endAtControlToken(reply), cards: allCards, batches, crew,
+      project: working, reply: endAtControlToken(reply), cards: allCards, batches, crew, edits: turnEdits,
       error: aborted ? 'stopped' : ((e && e.message) || String(e)), stopped: aborted,
     };
   }
-  return { project: working, reply, cards: allCards, batches, crew, error: null };
+  return { project: working, reply, cards: allCards, batches, crew, edits: turnEdits, error: null };
 }
 
 /* LANDING A TURN IN THE WORLD AS IT STANDS NOW (Cozy Tavern M59: overlapping
@@ -381,13 +423,21 @@ export async function runTurn({
  * The reply goes into the conversation that asked for it; if that
  * conversation was deleted meanwhile, the documents still land and the reply
  * is let go. */
-export function landTurn(world, { chatId, snapshot, result, makerTurn }) {
+/* One version of an answer, as kept while another is shown: its words, its
+ * cards and the changes it made, never its undo payload, because a version
+ * that is not shown has had its changes put back. */
+export function versionOf(t) {
+  return { text: t.text, thinking: t.thinking || '', cards: t.cards || [], edits: t.edits || [], cut: Boolean(t.cut), failed: Boolean(t.failed), at: t.at, batches: [] };
+}
+
+export function landTurn(world, { chatId, snapshot, result, makerTurn, replaceAt = null }) {
   /* Landing twice is landing once. A copy of the world opened in the moment
    * between this reply being saved elsewhere and the save finishing lacks the
    * reply; landing it again there must add it once, and on a copy that already
    * has it must change nothing at all. */
   const already = (world.chats || []).find((c) => c.id === chatId);
-  if (already && (already.turns || []).some((t) => t.role === 'maker' && t.at === makerTurn.at)) {
+  const hasIt = (t) => t.role === 'maker' && (t.at === makerTurn.at || (t.versions || []).some((v) => v.at === makerTurn.at));
+  if (already && (already.turns || []).some(hasIt)) {
     return { world, landed: true, conflicts: new Map(), already: true };
   }
   const next = { ...world, docs: (world.docs || []).map((d) => ({ ...d })), chats: (world.chats || []).map((c) => ({ ...c })) };
@@ -414,7 +464,20 @@ export function landTurn(world, { chatId, snapshot, result, makerTurn }) {
   const chat = next.chats.find((c) => c.id === chatId);
   if (result.project && result.project.recentSections) next.recentSections = result.project.recentSections;
   if (!chat) return { world: next, landed: false, conflicts };
-  chat.turns = [...(chat.turns || []), { ...makerTurn, cards, batches }];
+  const fresh = { ...makerTurn, cards, batches };
+  const old = replaceAt !== null ? (chat.turns || [])[replaceAt] : null;
+  if (old && old.role === 'maker') {
+    /* ANOTHER ANSWER: the old one is kept as a version (a failed one is not
+     * worth keeping), and the new one is shown. */
+    let versions = old.versions ? old.versions.map((v, i) => (i === old.shown ? versionOf(old) : v)) : [versionOf(old)];
+    if (old.failed) versions = versions.filter((v) => !v.failed);
+    versions = [...versions, versionOf(fresh)];
+    const turns = chat.turns.slice();
+    turns[replaceAt] = versions.length > 1 ? { ...fresh, versions, shown: versions.length - 1 } : fresh;
+    chat.turns = turns;
+  } else {
+    chat.turns = [...(chat.turns || []), fresh];
+  }
   chat.updated = Date.now();
   return { world: next, landed: true, conflicts };
 }

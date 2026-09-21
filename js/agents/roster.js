@@ -25,6 +25,9 @@ export const WORKERS = [
   ['compressor',    'The compressor — says the same thing in fewer words, losing nothing'],
   ['novelist',      'The novelist — works out whether the story can reach where you want it'],
   ['diagnostician', 'The diagnostician — works out why the storyteller went wrong'],
+  ['worldbook',     'The worldbook keeper — builds and keeps a SillyTavern worldbook, every field chosen per entry'],
+  ['auditor',       'The memory auditor — audits and repairs a Summaryception transplant, markers intact'],
+  ['instructions',  'The instructions writer — writes and keeps AI instruction sets and presets'],
 ];
 
 export const WORKER_IDS = WORKERS.map((r) => r[0]);

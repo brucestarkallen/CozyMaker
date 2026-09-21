@@ -1,0 +1,30 @@
+[
+ {
+  "file": "worldbook-maker.md",
+  "craft": "Worldbook Maker",
+  "source": "SillyTavern-Plot-Essential-and-Instructions-Maker index.js at v0.14.2",
+  "sha256_of_source_text": "2d72df29c8d9689b2f78892061776bb64cc23b141289f5752fe58a8161abc579",
+  "changes": [
+   [
+    "docedits protocol",
+    "edits block"
+   ],
+   [
+    "If a [REFERENCE DOCUMENT] with the PE is present, it is canon",
+    "If the plot essential is among the documents, it is canon"
+   ]
+  ]
+ },
+ {
+  "file": "sc-auditor.md",
+  "craft": "Summaryception Auditor",
+  "source": "SillyTavern-Plot-Essential-and-Instructions-Maker index.js at v0.14.2",
+  "sha256_of_source_text": "af5c349dd8ca6ac7284f89b8990710ebbc0949fe9642aa12105a0513af3ad037",
+  "changes": [
+   [
+    "docedits",
+    "edits"
+   ]
+  ]
+ }
+]

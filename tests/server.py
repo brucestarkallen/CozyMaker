@@ -10,6 +10,7 @@ tiny one started here). Nothing is mocked out of the path under test.
 """
 
 import json
+import re
 import os
 import shutil
 import subprocess
@@ -239,7 +240,11 @@ def main():
         _, v1 = call("/api/version")
         src = (ROOT / "serve.py")
         original = src.read_text()
-        src.write_text(original.replace('VERSION = "1.0.0"', 'VERSION = "1.0.0-relit"'))
+        # change whatever version is there (this line once named "1.0.0" and stopped
+        # changing anything when the version moved on) -- and never pass on an edit that did nothing
+        changed = re.sub(r'VERSION = "([^"]+)"', r'VERSION = "\1-relit"', original, count=1)
+        ok("the test really changes the server's file", changed != original)
+        src.write_text(changed)
         relit = False
         for _ in range(80):
             time.sleep(0.25)

@@ -374,3 +374,44 @@ textarea.plain { resize: vertical; min-height: 90px; font-family: var(--mono); f
 }
 :root[data-theme="tavern"] .sheet { background: rgba(10,6,20,.97); }
 :root[data-theme="tavern"] .docedit textarea { background: transparent; }
+
+/* ---- a message and what can be done with it ---------------------------- */
+/* Tap a message to show its actions; tap again to put them away. Nothing
+ * crowds a phone screen until it is asked for. */
+.turn .turn-actions { display: none; flex-wrap: wrap; gap: 6px; margin: 6px 2px 0; }
+.turn.acting .turn-actions { display: flex; }
+.turn.acting .bubble { outline: 1px solid var(--edge); outline-offset: 2px; }
+.turn .swipes { display: flex; align-items: center; gap: 6px; margin: 8px 2px 0; flex-wrap: wrap; }
+.turn .swipes .swipe-count { font-size: 13px; color: var(--ink-soft); min-width: 42px; text-align: center; font-variant-numeric: tabular-nums; }
+.turn .swipes .iconbtn.small[disabled], .turn .swipes .btn[disabled] { opacity: .4; }
+.turn .edit-area, .docedit .edit-area {
+  width: 100%; min-height: 120px; resize: vertical; box-sizing: border-box;
+  background: var(--panel); color: var(--ink); border: 1px solid var(--edge);
+  border-radius: var(--radius-sm); padding: 10px 12px; font: inherit; line-height: 1.5;
+}
+.turn .btnrow { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+
+/* ---- folds: plain buttons, because <details> did not open on his phone -- */
+.fold { margin-top: 8px; }
+.fold-head {
+  display: block; width: 100%; text-align: left; background: none; border: 0; padding: 4px 2px;
+  color: var(--ink-soft); font: inherit; font-size: 13px; cursor: pointer;
+}
+.fold-body { margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.fold.thinking .fold-body { max-height: 45vh; overflow: auto; color: var(--ink-soft); font-size: 13.5px; }
+
+/* ---- what a change did: before in red, after in green ----------------- */
+.diff-fold { margin: 0 0 4px 17px; }
+.diff { display: flex; flex-direction: column; gap: 6px; max-height: 50vh; overflow: auto; }
+.diff .was, .diff .now {
+  white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 1.45;
+  padding: 8px 10px; border-radius: var(--radius-sm);
+}
+.diff .was { background: rgba(214, 92, 92, .14); border-left: 3px solid rgba(214, 92, 92, .8); color: var(--ink); text-decoration: line-through; text-decoration-color: rgba(214, 92, 92, .55); }
+.diff .now { background: rgba(110, 190, 120, .14); border-left: 3px solid var(--good); color: var(--ink); }
+
+/* ---- side by side: panes the width of the phone, swiped between -------- */
+.compare { display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: 8px; margin-top: 10px; }
+.compare .pane { flex: 0 0 82vw; max-width: 560px; scroll-snap-align: start; background: var(--panel); border: 1px solid var(--edge); border-radius: var(--radius); padding: 10px 12px; }
+.compare .pane-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.compare .pane-text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13.5px; line-height: 1.5; max-height: 62vh; overflow-y: auto; color: var(--ink); }

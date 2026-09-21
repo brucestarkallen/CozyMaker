@@ -144,7 +144,12 @@ function indexLine(doc, s) {
  *   — the most recent events in full; older ones stay as their index line
  *   — anything a worker asked for by name
  */
-export function inPlay(doc, { message = '', recent = [], asked = [], recentEvents = 8 } = {}) {
+export function inPlay(doc, { message = '', recent = [], asked = [], recentEvents = 8, whole = false } = {}) {
+  /* WHOLE, WHEN IT FITS (the Plot Essential Maker sends every document whole,
+   * never truncated, because a worker quoting from memory misquotes). Every
+   * section in full, nothing trimmed; the index-and-sections way is only for
+   * a world too big to send whole. */
+  if (whole) return doc.sections.map((s) => ({ id: s.id, title: s.title, trimmed: false, text: s.text }));
   const wanted = new Set();
   const msg = ' ' + String(message).toLowerCase() + ' ';
 

@@ -24,7 +24,9 @@ export const ALWAYS_THINKS_FLOOR = 16000;
 /* Which house is this address. */
 export function houseOf(url) {
   const u = String(url || '').toLowerCase();
-  if (u.includes('api.anthropic.com')) return 'anthropic';
+  /* Anthropic's own address, and the Anthropic-shaped addresses other houses
+   * publish under /anthropic (DeepSeek, Moonshot, Z.ai): same body, same path. */
+  if (u.includes('api.anthropic.com') || /\/anthropic(\/v\d+)?\/?(messages\/?)?$/.test(u.split('?')[0])) return 'anthropic';
   if (u.includes('openrouter.ai')) return 'openrouter';
   if (u.includes('bigmodel.cn') || u.includes('z.ai')) return 'zai';
   if (u.includes('moonshot')) return 'moonshot';
@@ -44,7 +46,7 @@ function endpoint(conn) {
   const base = String(conn.url || '').replace(/\/+$/, '');
   if (!base) return '';
   if (/\/(chat\/completions|messages)$/.test(base)) return base;
-  if (houseOf(base) === 'anthropic') return base + '/v1/messages';
+  if (houseOf(base) === 'anthropic') return /\/v\d+$/.test(base) ? base + '/messages' : base + '/v1/messages';
   if (/\/v\d+$/.test(base)) return base + '/chat/completions';
   return base + '/v1/chat/completions';
 }
@@ -65,117 +67,283 @@ function headersFor(conn) {
   return h;
 }
 
-/* THINKING, SPOKEN IN EACH HOUSE'S OWN WORDS.
+/* THINKING, SPOKEN IN EACH HOUSE'S OWN WORDS — Cozy Tavern's, ported whole.
  *
- * Every spelling below is the one Cozy Tavern proved on the wire, milestone by
- * milestone, and is copied here rather than re-guessed:
- *   M37  — DeepSeek: thinking:{type:enabled|disabled}, reasoning_effort low|high|max
- *   M303 — Kimi K3: top-level reasoning_effort low|high|max ONLY; it always
- *          thinks, so "off" is spoken as its lightest, "low"; never the K2
- *          thinking block
- *   M303 — Kimi K2.x on Moonshot: a switch only; reasoning_effort not taken
- *   M349 — GLM: its generation decides its words
- * The first version of this file sent DeepSeek "off" as reasoning_effort
- * "minimal" — a word DeepSeek does not have — so a worker on a no-thinking
- * DeepSeek connection could fail every single call. */
+ * Everything from here to buildRequest is a port of Cozy Tavern's proven
+ * provider code (js/providers/effort.js, and the thinking half of
+ * requestBody in openai.js and anthropic.js, at m363-001), changed only where
+ * CozyMaker names a field differently (url for baseUrl, thinking for
+ * reasoning.effort, thinkingBudget for reasoning.budgetTokens). It is held to
+ * Tavern's real output by tests/fixtures/tavern-thinking.json — 198 cases
+ * produced by running Tavern's own requestBody.
+ *
+ * One deliberate difference, the writer's own rule: a level he has NOT set is
+ * not sent at all, and the provider's default applies. (Tavern reads an unset
+ * level as Off.) */
 
-export const LEVELS = ['off', 'low', 'medium', 'high', 'xhigh', 'max'];
+export const EFFORT_RANK = ['off', 'low', 'medium', 'high', 'xhigh', 'max'];
+export const LEVELS = EFFORT_RANK;
 
-export function thinkingStyle(conn) {
-  const url = String(conn.url || '').toLowerCase();
-  const model = String(conn.model || '').toLowerCase();
+export const EFFORT_LEVELS = {
+  anthropic: ['off', 'low', 'medium', 'high', 'xhigh', 'max'],
+  openai: ['off', 'low', 'medium', 'high', 'xhigh', 'max'],
+  openrouter: ['off', 'low', 'medium', 'high', 'xhigh', 'max'],
+  zai: ['off', 'low', 'high', 'max'],
+  qwen: ['off', 'low', 'medium', 'high'],
+  hermes: ['off', 'low', 'medium', 'high'],
+  deepseek: ['off', 'low', 'high', 'max'],   /* M37 */
+  kimi: ['low', 'high', 'max'],              /* M303: K3 always thinks */
+  kimi2: ['off', 'low', 'medium', 'high', 'xhigh', 'max'],
+  none: ['off', 'low', 'medium', 'high'],
+};
+
+export const EFFORT_ALIAS = {
+  zai: { medium: 'high', xhigh: 'max' },
+  deepseek: { medium: 'high', xhigh: 'max' },
+  kimi: { off: 'low', medium: 'high', xhigh: 'max' },
+};
+
+function isAnthropicShape(conn) { return houseOf(conn && conn.url) === 'anthropic'; }
+
+/* Which family's words this connection speaks (Tavern familyStyle). */
+export function familyStyle(conn) {
+  const c = conn || {};
+  if (isAnthropicShape(c)) return 'anthropic';
+  const url = String(c.url || '').toLowerCase();
+  const model = String(c.model || '').toLowerCase();
+  const any = (re) => re.test(model);
+  if (c.preset === 'hermes' || model === 'hermes-agent') return 'hermes';
+  if (c.preset === 'openrouter' || url.includes('openrouter.ai')) return 'openrouter';
   const kimiHost = url.includes('moonshot') || /(^|[/.])kimi\.(ai|com)([/:]|$)/.test(url);
-  if (/kimi[-_.]?k[3-9]/.test(model) || (kimiHost && /^k[3-9]\b/.test(model))) return 'kimi';
-  if (kimiHost && /^kimi/.test(model)) return 'kimi2';
-  if (url.includes('api.anthropic.com')) return 'anthropic';
-  if (url.includes('openrouter.ai')) return 'openrouter';
-  if (url.includes('bigmodel.cn') || url.includes('z.ai')) return 'zai';
-  if (url.includes('deepseek') || /^deepseek/.test(model)) return 'deepseek';
-  if (url.includes('dashscope') || /^qwen/.test(model)) return 'qwen';
+  if (any(/kimi[-_.]?k[3-9]/) || (kimiHost && /^k[3-9]\b/.test(model))) return 'kimi';
+  if (kimiHost && /^kimi/.test(model)) return /k2\.?7-code/.test(model) ? 'none' : 'kimi2';
+  if (c.preset === 'zai' || url.includes('api.z.ai') || any(/\bglm\b|^glm|glm-/)) return 'zai';
+  if (any(/qwen/)) return 'qwen';
+  if (c.preset === 'deepseek' || url.includes('deepseek') || any(/^deepseek/)) return 'deepseek';
   return 'openai';
 }
+export const thinkingStyle = familyStyle;
 
-function glmVersion(model) {
-  const m = /glm[-_]?(\d+(?:\.\d+)?)/i.exec(String(model || ''));
-  return m ? parseFloat(m[1]) : null;
+export function glmVersion(conn) {
+  const m = /glm[-_.]?(\d+)(?:[._](\d+))?/.exec(String((conn && conn.model) || '').toLowerCase());
+  return m ? Number(m[1]) + (m[2] ? Number('0.' + m[2]) : 0) : null;
 }
 
-/* The fields to add for a level, or {} for "say nothing". */
-export function thinkingFields(conn, level) {
-  const t = level === false || level === 'none' ? 'off' : level;
-  if (t === undefined || t === null || t === '' || !LEVELS.includes(t)) return {};
-  const off = t === 'off';
-  const style = thinkingStyle(conn);
-  switch (style) {
-    case 'deepseek':
-      if (off) return { thinking: { type: 'disabled' } };
-      return { thinking: { type: 'enabled' }, reasoning_effort: { low: 'low', medium: 'high', high: 'high', xhigh: 'max', max: 'max' }[t] };
-    case 'kimi':
-      return { reasoning_effort: { off: 'low', low: 'low', medium: 'high', high: 'high', xhigh: 'max', max: 'max' }[t] };
-    case 'kimi2':
-      return { thinking: { type: off ? 'disabled' : 'enabled' } };
-    case 'zai': {
-      const v = glmVersion(conn.model);
-      if (v !== null && v >= 5.3) return { thinking: { type: 'enabled' }, reasoning_effort: off ? 'low' : t };
-      if (v !== null && v < 5.2) return { thinking: { type: off ? 'disabled' : 'enabled' } };
-      if (off) return { thinking: { type: 'disabled' } };
-      return { thinking: { type: 'enabled' }, reasoning_effort: t === 'low' ? 'high' : t };
-    }
-    case 'qwen':
-      return { enable_thinking: !off };
-    case 'openrouter':
-      return off ? { reasoning: { enabled: false } } : { reasoning: { effort: t === 'max' || t === 'xhigh' ? 'high' : t } };
-    case 'anthropic':
-      return {};  /* handled with its budget below */
-    default:
-      return off ? {} : { reasoning_effort: t === 'max' || t === 'xhigh' ? 'high' : t };
+/* A model that cannot be told not to think (Tavern alwaysThinks). */
+export function cannotStopThinking(conn) {
+  const style = familyStyle(conn);
+  if (style === 'kimi') return true;
+  if (style === 'zai') { const v = glmVersion(conn); return v !== null && v >= 5.3; }
+  return false;
+}
+
+export function zaiWire(effort, version) {
+  const e = effort === 'medium' ? 'high' : effort === 'xhigh' ? 'max' : effort;
+  if (version !== null && version >= 5.3) return { thinking: { type: 'enabled' }, reasoning_effort: e === 'off' ? 'low' : e };
+  if (version !== null && version < 5.2) return { thinking: { type: e === 'off' ? 'disabled' : 'enabled' } };
+  if (e === 'off') return { thinking: { type: 'disabled' } };
+  return { thinking: { type: 'enabled' }, reasoning_effort: e === 'low' ? 'high' : e };
+}
+
+/* The level this connection can actually SAY (Tavern effortFor). */
+export function effortFor(style, eff) {
+  const lv = EFFORT_LEVELS[style] || EFFORT_LEVELS.openai;
+  const e = (EFFORT_ALIAS[style] && EFFORT_ALIAS[style][eff]) || eff;
+  let r = EFFORT_RANK.indexOf(e);
+  if (r < 0) r = 0;
+  while (r > 0 && lv.indexOf(EFFORT_RANK[r]) < 0) r--;
+  if (lv.indexOf(EFFORT_RANK[r]) >= 0) return EFFORT_RANK[r];
+  if (lv.indexOf('off') < 0) { const least = lv.find((l) => l !== 'off'); if (least) return least; }
+  return 'off';
+}
+
+export function hostIsOpenAI(url) { return /(^|\/\/)api\.openai\.com(\/|$)/i.test(String(url || '')); }
+
+/* The thinking ROOM (M308): only Claude takes a budget directly (never under
+ * its own floor of 1,024), and through OpenRouter only Claude and Gemini. For
+ * every other model a number here is never sent — the level decides. */
+export const CLAUDE_BUDGET_FLOOR = 1024;
+export function budgetFor(conn) {
+  const c = conn || {};
+  const asked = Number(c.thinkingBudget) > 0 ? Math.round(Number(c.thinkingBudget)) : 0;
+  const model = String(c.model || '').toLowerCase();
+  const url = String(c.url || '').toLowerCase();
+  if (isAnthropicShape(c)) {
+    if (/deepseek/.test(url + ' ' + model)) return { sent: false, tokens: 0 };
+    const tokens = asked ? Math.max(CLAUDE_BUDGET_FLOOR, asked) : 0;
+    return { sent: Boolean(tokens), tokens };
   }
+  if (familyStyle(c) === 'openrouter' && /^(anthropic|google)\//.test(model)) return { sent: Boolean(asked), tokens: asked };
+  return { sent: false, tokens: 0 };
 }
 
-export const THINKING_FIELDS = ['thinking', 'reasoning_effort', 'reasoning', 'enable_thinking'];
+/* What the model itself taught the house (M350): the levels a refusal said it
+ * takes, a field it does not take, an Off that did not stop it. Kept per model
+ * at its address, for thirty days. A plain refusal of thinking is kept for a
+ * day (M319) — one that happened for a passing reason heals by itself. */
+export const LEARN_FOR_MS = 30 * 24 * 60 * 60 * 1000;
+export const REFUSAL_MEMORY_MS = 24 * 60 * 60 * 1000;
+export function learnKey(conn) { return String((conn && conn.model) || '') + '@' + String((conn && conn.url) || ''); }
+export function learnedFacts(conn, now = Date.now()) {
+  const L = conn && conn.learned;
+  if (!L || L.for !== learnKey(conn)) return null;
+  if (Number.isFinite(L.at) && now - L.at > LEARN_FOR_MS) return null;
+  return {
+    efforts: Array.isArray(L.efforts) && L.efforts.length ? L.efforts : null,
+    drop: Array.isArray(L.drop) ? L.drop : [],
+    offThinks: L.offThinks === true,
+    down: Number.isFinite(L.downAt) && now - L.downAt <= REFUSAL_MEMORY_MS,
+  };
+}
+
+const EFFORT_WORDS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+const OFFERS = /(supported values|allowed values|valid values|accepted values|possible values|available values|one of|must be|should be|expected|only supports?|options are|choose from|permitted values)/i;
+const NOT_TAKEN = '(?:unrecognized|unknown|unsupported|not supported|extra (?:inputs?|fields?|arguments?)|not permitted|not allowed|unexpected|invalid (?:parameter|field|argument|key)|no such|does not support|doesn.t support)';
+export function lessonFrom(detail, body) {
+  const text = String(detail || '');
+  const b = body && typeof body === 'object' ? body : {};
+  let allowed = null;
+  const m = OFFERS.exec(text);
+  if (m) {
+    const refused = [b.reasoning_effort, b.reasoning && b.reasoning.effort].filter((x) => typeof x === 'string');
+    const words = [...new Set((text.slice(m.index).toLowerCase().match(/[a-z]+/g) || []).filter((w) => EFFORT_WORDS.includes(w) && !refused.includes(w)))];
+    if (words.length) allowed = EFFORT_WORDS.filter((w) => words.includes(w));
+  }
+  let badField = null;
+  for (const f of ['thinking', 'enable_thinking', 'reasoning_effort', 'reasoning', 'chat_template_kwargs', 'model_options', 'output_config']) {
+    if (!(f in b)) continue;
+    const near = new RegExp(NOT_TAKEN + '[^.]{0,80}["\'`]?\\b' + f + '\\b(?!_)|\\b' + f + '\\b(?!_)["\'`]?[^.]{0,80}' + NOT_TAKEN, 'i');
+    if (near.test(text)) { badField = f; break; }
+  }
+  return { allowed, badField };
+}
+export function fitEffort(value, allowed, isOff = false) {
+  if (!Array.isArray(allowed) || !allowed.length) return value;
+  const thinking = EFFORT_RANK.filter((l) => l !== 'off' && allowed.includes(l));
+  if (isOff || value === 'none' || value === 'off') return allowed.includes('none') ? 'none' : (thinking[0] || allowed[0]);
+  if (allowed.includes(value)) return value;
+  const r = EFFORT_RANK.indexOf(value);
+  let best = '';
+  for (const l of thinking) if (EFFORT_RANK.indexOf(l) <= r) best = l;
+  return best || thinking[0] || allowed.find((a) => a !== 'none') || value;
+}
+
+export const THINKING_FIELDS = ['thinking', 'reasoning_effort', 'reasoning', 'enable_thinking', 'model_options', 'output_config'];
 export const REASONING_REFUSAL = /reasoning|effort|thinking|budget_tokens|enable_thinking/i;
 
-/* A reply budget that thinking cannot eat. A worker's room is the size of its
- * answer; a model that thinks spends that same budget on the thinking first,
- * and the answer comes back empty (Cozy Tavern M315). Only ever raised. */
-function thinks(conn) {
-  const t = conn.thinking;
-  if (t === 'off' || t === false || t === 'none') {
-    /* two families cannot be told not to think: Kimi K3, and GLM from 5.3 */
-    const style = thinkingStyle(conn);
-    if (style === 'kimi') return true;
-    if (style === 'zai') { const v = glmVersion(conn.model); return v !== null && v >= 5.3; }
-    return false;
+/* The OpenAI-shaped house's thinking fields for a level (Tavern requestBody). */
+export function thinkingFields(conn, level) {
+  const set = level === false || level === 'none' ? 'off' : level;
+  if (set === undefined || set === null || set === '' || !EFFORT_RANK.includes(set)) return {};
+  const style = familyStyle(conn);
+  const effort = effortFor(style, set);
+  const b = {};
+  if (style === 'none') return b;
+  if (style === 'openrouter') {
+    const budget = budgetFor(conn).tokens;
+    b.reasoning = effort === 'off' ? { enabled: false } : (budget ? { max_tokens: budget } : { effort });
+  } else if (style === 'zai') {
+    const w = zaiWire(effort, glmVersion(conn));
+    b.thinking = w.thinking;
+    if (w.reasoning_effort) b.reasoning_effort = w.reasoning_effort;
+  } else if (style === 'qwen') {
+    b.enable_thinking = effort !== 'off';
+  } else if (style === 'hermes') {
+    if (effort !== 'off') b.model_options = { reasoning: { enabled: true, effort } };
+  } else if (style === 'kimi') {
+    if (effort !== 'off') b.reasoning_effort = effort;
+  } else if (style === 'kimi2') {
+    b.thinking = { type: effort === 'off' ? 'disabled' : 'enabled' };
+  } else if (style === 'deepseek') {
+    b.thinking = { type: effort === 'off' ? 'disabled' : 'enabled' };
+    if (effort !== 'off') b.reasoning_effort = effort;
+  } else {
+    if (effort !== 'off') b.reasoning_effort = effort;
+    if (!hostIsOpenAI(conn && conn.url)) b.thinking = { type: effort === 'off' ? 'disabled' : 'enabled' };
   }
-  if (LEVELS.includes(t)) return true;
-  return alwaysThinks(conn.model);
+  return b;
 }
 
-function applyThinking(body, conn, house, room) {
+/* Does this request make the model think? Then a worker's reply room is
+ * raised so the thinking cannot eat the answer (M315). Only ever raised. */
+function thinks(conn) {
   const t = conn.thinking;
-  const said = t !== undefined && t !== null && t !== '';
-  if (house === 'anthropic') {
-    if (!said || t === 'off' || t === false || t === 'none') return;
-    const budget = Number(conn.thinkingBudget) || 4000;
-    body.thinking = { type: 'enabled', budget_tokens: budget };
-    body.max_tokens = Math.max(body.max_tokens || 0, budget + room);
-    return;
+  if (t === 'off' || t === false || t === 'none') return cannotStopThinking(conn);
+  if (EFFORT_RANK.includes(t)) return true;
+  return alwaysThinks(conn.model) || cannotStopThinking(conn);
+}
+
+function applyThinking(body, conn, house) {
+  const t = conn.thinking === false || conn.thinking === 'none' ? 'off' : conn.thinking;
+  const said = t !== undefined && t !== null && t !== '' && EFFORT_RANK.includes(t);
+  const learned = said ? learnedFacts(conn) : null;
+  if (said && learned && learned.down) {
+    /* refused within the last day: nothing is spent on it again today */
+  } else if (house === 'anthropic') {
+    if (said) {
+      const effort = effortFor('anthropic', t);
+      const on = effort !== 'off';
+      const url = String(conn.url || '') + ' ' + String(conn.model || '');
+      if (/deepseek/i.test(url)) {
+        /* M37: DeepSeek behind the Anthropic shape takes reasoning:{effort}, none disables */
+        const ladder = { off: 'none', low: 'low', medium: 'high', high: 'high', xhigh: 'max', max: 'max' };
+        body.reasoning = { effort: ladder[effort] || 'none' };
+        if (on) { body.temperature = 1; delete body.top_p; }
+      } else if (on) {
+        const budget = budgetFor(conn).tokens;
+        if (budget) {
+          body.thinking = { type: 'enabled', budget_tokens: budget };
+          if (body.max_tokens <= budget) body.max_tokens = budget + 4096;
+        } else {
+          /* adaptive thinking with an effort level — the full ladder */
+          body.thinking = { type: 'adaptive' };
+          body.output_config = { effort };
+        }
+        /* Claude takes no other temperature while it thinks, and no top-p. */
+        body.temperature = 1;
+        delete body.top_p;
+      }
+    }
+  } else if (said) {
+    Object.assign(body, thinkingFields(conn, t));
   }
-  if (said) Object.assign(body, thinkingFields(conn, t));
-  if (thinks(conn)) {
+  if (learned && !learned.down) {
+    const style = familyStyle(conn);
+    if (t === 'off' && learned.offThinks && style !== 'hermes') {
+      const least = learned.efforts ? fitEffort('low', learned.efforts) : 'low';
+      if ('thinking' in body) body.thinking = { type: 'enabled' };
+      if ('enable_thinking' in body) body.enable_thinking = true;
+      if (style === 'openrouter') body.reasoning = { effort: least };
+      else body.reasoning_effort = least;
+    }
+    for (const f of learned.drop) delete body[f];
+    if (learned.efforts) {
+      if (typeof body.reasoning_effort === 'string') body.reasoning_effort = fitEffort(body.reasoning_effort, learned.efforts, t === 'off' && !learned.offThinks);
+      if (body.reasoning && typeof body.reasoning.effort === 'string') body.reasoning.effort = fitEffort(body.reasoning.effort, learned.efforts);
+    }
+  }
+  if (house !== 'anthropic' && thinks(conn)) {
     for (const k of ['max_tokens', 'max_completion_tokens']) {
       if (body[k] !== undefined) body[k] = Math.max(body[k], ALWAYS_THINKS_FLOOR);
     }
   }
 }
 
-/* The same request with every thinking field taken off — for the one retry a
- * refusal earns. A level the model will not take steps down and goes again,
- * instead of eating the message (Cozy Chat v5.22.1, Cozy Tavern M350). */
+/* The same request with every thinking field taken off. */
 export function withoutThinking(body) {
   const b = { ...body };
   for (const f of THINKING_FIELDS) delete b[f];
   return b;
+}
+
+/* How the chosen level is actually spoken on this wire, in words — for the
+ * connection's "Try it". */
+export function spokenAs(conn) {
+  const probe = { max_tokens: 1000 };
+  applyThinking(probe, { ...conn }, houseOf(conn.url));
+  const shown = {};
+  for (const k of [...THINKING_FIELDS, 'temperature']) if (k in probe) shown[k] = probe[k];
+  return Object.keys(shown).length ? JSON.stringify(shown) : 'nothing about thinking is sent — the provider decides';
 }
 
 /* Build the request one house understands. */
@@ -201,7 +369,7 @@ export function buildRequest(conn, { system, messages, maxTokens, room = 512, st
   /* Only what the writer set. */
   if (Number.isFinite(conn.temperature)) body.temperature = conn.temperature;
   if (Number.isFinite(conn.topP)) body.top_p = conn.topP;
-  applyThinking(body, conn, house, room);
+  applyThinking(body, conn, house);
   if (stream) body.stream = true;
 
   return { url: endpoint(conn), headers: headersFor(conn), body, house };
