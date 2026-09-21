@@ -66,7 +66,8 @@ export function tidyOnLeaving(id) {
   const p = store.getProject();
   const doc = (p.docs || []).find((d) => d.id === id);
   if (!doc) { forgetOpening(); return; }
-  const r = lint(doc.text, { kind: doc.kind || 'pe', deliverable: (doc.kind || 'pe') !== 'notes' });
+  /* his own typing: every word of it is his, so nothing of it is taken out */
+  const r = lint(doc.text, { kind: doc.kind || 'pe', deliverable: (doc.kind || 'pe') !== 'notes', keep: doc.text });
   let text = doc.text;
   if (r.changed) {
     store.writeDoc(id, r.text);
@@ -350,11 +351,16 @@ export function bringIn() {
     if (!/\.(md|json|txt)$/i.test(clean)) clean += '.md';
     const p = store.getProject();
     if ((p.docs || []).some((d) => d.name === clean)) return toast('There is already one called that — give this one another name.');
+    /* IT ARRIVES WHOLE, as the box says: his document exactly as he gave it —
+     * only a Windows line ending made plain. The checks used to run on the way
+     * in and could take out what was his (a [HIDDEN] value, a "TBD:" line). */
     const kind = guessKind(clean, text);
-    const r = lint(text, { kind, deliverable: kind !== 'notes' });
-    await store.addDoc(clean, kind, r.text);
-    const fixed = r.found.filter((f) => f.repaired).map((f) => f.said);
-    toast(`${clean} is in.${fixed.length ? ' On the way in: ' + fixed.join('; ') + '.' : ''}`);
+    let words = text.replace(/\r\n?/g, '\n');
+    /* a worldbook in SillyTavern's own shape, or with a stray comma, is put in
+     * the one shape this house reads — its values exactly as they were */
+    if (kind === 'worldbook') { const wb = readWorldbook(words); if (wb.ok && (wb.fixed || wb.reshaped)) words = JSON.stringify(wb.entries, null, 2); }
+    await store.addDoc(clean, kind, words);
+    toast(`${clean} is in, whole.`);
     redraw();
     openDocs();
   });

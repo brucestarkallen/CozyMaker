@@ -556,25 +556,44 @@ front can receive inside that harness.
   lists the provider's models (M348); a picked one keeps what it is — the weights behind an alias, the
   levels it takes — and those fit his chosen level automatically. The relay can GET a model list.
 
+### His words are his (v1.1.13)
+
+- **A plot essential brought in was changed on the way in.** The box says "It arrives whole", but the checks
+  ran on import and took out every capitalised tag — the craft's own Fog of War value `[HIDDEN]` with them —
+  and every "TBD:" line. It now arrives exactly as given (Windows line endings made plain); a worldbook in
+  SillyTavern's shape is read into the one shape this house reads, its values untouched.
+- **Only the craft's alerts are working notes.** They are all two or more words joined (EPISTEMIC_VIOLATION,
+  PARROT_FIX …); a one-word tag — `[HIDDEN]`, `[TITLE]`, his own `[FLASHBACK]` — is his document's and stays.
+  Alerts come out wherever they are, because they are never story.
+- **The checks after a change took out what he had written.** They ran over every document when any changed,
+  and removed "TBD:" lines, bonds, and empty headings regardless of who wrote them; leaving the editor did the
+  same to his own typing. Now the checks look only at documents changed this turn, and `lint(…, { keep })`
+  removes only what the crew added this time: his "TBD:" line, his bond, his empty heading stay.
+- **"Clear it and build it again" could not build.** The builder creates the document by name and a cleared
+  one still existed, so it was refused. Creating over an empty document now writes it.
+- The walk now brings a raw plot essential in through the real screen and edits it in plain words
+  ("Jovan should be seventeen now, not sixteen"): it arrives whole, the listener sends the editor, the editor is
+  shown it word for word, the change lands, and nothing else of his moves.
+
 ## Testing
 
 ```
 bash tests/all.sh           all seven, exit code intact
 ```
 
-    node tests/units.mjs         620 checks — the real modules on a real document, and what the persona hears
+    node tests/units.mjs         628 checks — the real modules on a real document, and what the persona hears
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       46 checks — the real serve.py, real files on disk, streams timed
     python3 tests/browser.py      74 checks — real Chromium at 390x844, end to end
-    python3 tests/walk_worlds.py 148 checks — the drawer, conversations, swipes and versions, edit and
+    python3 tests/walk_worlds.py 152 checks — the drawer, conversations, swipes and versions, edit and
                                               send again, delete, branch, go on, re-quoting, crafts,
                                               the thinking box live, backup and restore, a model too
                                               small for the world, a real server killed mid-edit
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-942 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
+954 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

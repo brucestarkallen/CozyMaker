@@ -309,7 +309,7 @@ def main():
             page.wait_for_timeout(500)
             after = page.locator("#docsBody textarea").input_value()
             ok("tidying takes the working marker out", "[EPISTEMIC_VIOLATION]" not in after)
-            ok("tidying takes a genuinely empty heading out", "## EMPTY BIT" not in after)
+            ok("an empty heading he typed himself is kept for him to fill, never cut on leaving", "## EMPTY BIT" in after)
             ok("tidying keeps a heading that has something under it", "## STILL HERE" in after)
             ok("tidying keeps a heading whose content is subsections", "## WORLD" in after,
                "WORLD was deleted by the tidy")

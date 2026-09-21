@@ -165,10 +165,18 @@ class Model(http.server.BaseHTTPRequestHandler):
             said = rest[0]["content"].split("just said:")[-1].lower() if rest else ""
             if "still waiting on" in rest[0]["content"].lower() and "yes, all of it" in said:
                 body = '{"jobs":[{"worker":"showrunner","task":"Bruce approved the whole plan.","resumes":true}]}'
+            elif "jovan should be seventeen" in said:
+                body = '{"jobs":[{"worker":"editor","task":"Change the age in Jovan\'s heading from 16 to 17."}]}'
             elif "a lighthouse would suit" in said:
                 body = '{"jobs":[{"worker":"editor","task":"Move the scene to the Lighthouse."}]}'
             else:
                 body = "hm, hard to say"
+        elif who == "editor" and "heading from 16 to 17" in asked_for:
+            # like a real model: quote the heading exactly as it stands in the document it was shown
+            shown = rest[0]["content"].split("The documents as they stand:")[-1]
+            m = re.search(r"(?m)^## MC \u2014 Jovan \(16\)$", shown)
+            body = ('Changed his age.\n\n<edits>\n' + json.dumps([{"file": "My Old PE.md", "find": m.group(0) if m else "(not shown)",
+                    "replace": "## MC \u2014 Jovan (17)", "reason": "his age"}]) + '\n</edits>')
         elif who == "showrunner" and "the north arc" in asked_for and "What you put to" not in asked_for:
             # the craft's 10.2: a plan first, never executed without his say
             body = ('I read the whole plot essential and the north arc.\n\n'
@@ -516,7 +524,7 @@ def main():
             saved = world("p_new")
             wb = [d for d in saved["docs"] if d["name"] == "Old Worldbook.json"]
             ok("a pasted worldbook arrives as a worldbook", wb and wb[0]["kind"] == "worldbook", json.dumps(wb)[:200])
-            ok("it is tidied on the way in", wb and json.loads(wb[0]["text"])[0]["order"] == 1000)
+            ok("it arrives whole: its values are his, never rewritten on the way in", wb and json.loads(wb[0]["text"])[0]["order"] == 9999)
 
             page.locator("#docsBody .row .grow", has_text="Old Worldbook.json").click()
             page.wait_for_timeout(400)
@@ -814,6 +822,36 @@ def main():
             api("/api/project/p_new", "PUT", wd)
             page.reload(wait_until="networkidle")
             page.wait_for_timeout(700)
+
+            # ---------------------------------------- his own plot essential, brought in raw, then edited in plain words
+            RAW = ("# PLOT ESSENTIAL \u2014 The Ashen Coast \u2014 V2.3\r\n\r\n## WORLD\r\n### Rules\r\n- Magic costs memory.\r\n"
+                   "TBD: the name of the drowned king\r\n\r\n### Calendar\r\n\r\n## MC \u2014 Jovan (16)\r\nID: a quiet salvager \u201cfrom\u201d the coast\r\n"
+                   "\u2192 Mira: trusts her (P:40 R:0 S:0)\r\n\r\n### Mira (captain | active | 24)\r\nID: captain of the Gull\r\nAGENDA: [HIDDEN]\r\n")
+            WHOLE = RAW.replace("\r\n", "\n")
+            page.click("#menuBtn")
+            page.wait_for_timeout(300)
+            page.locator(".world-parts .btn", has_text="Bring one in").click()
+            page.wait_for_timeout(400)
+            page.locator("#docsBody input[type=text]").fill("My Old PE.md")
+            page.locator("#docsBody textarea").fill(RAW)
+            page.locator("#docsBody .btn", has_text="Bring it in").click()
+            page.wait_for_timeout(1300)
+            mine = [d for d in world("p_new")["docs"] if d["name"] == "My Old PE.md"]
+            ok("his raw plot essential arrives whole, every word, [HIDDEN] and TBD and all", bool(mine) and mine[0]["text"] == WHOLE and mine[0]["kind"] == "pe",
+               (mine[0]["text"][:120] if mine else "not there"))
+            page.click("#docsSheet [data-close]")
+            page.wait_for_timeout(300)
+            calls.clear()
+            page.fill("#say", "Jovan should be seventeen now, not sixteen")
+            page.click("#sendBtn")
+            settle()
+            eds = [c for c in calls if c["who"] == "editor"]
+            ok("plain words reach the editor through the listener, and it is shown his document word for word",
+               any(c["who"] == "listener" for c in calls) and bool(eds) and WHOLE.split("## MC")[0] in eds[0]["messages"][0]["content"], [c["who"] for c in calls])
+            after = [d for d in world("p_new")["docs"] if d["name"] == "My Old PE.md"][0]["text"]
+            ok("the edit lands in his plot essential", "## MC \u2014 Jovan (17)" in after, after[:200])
+            ok("and nothing else of his changed \u2014 not his TBD line, not his empty heading, not his bond, not [HIDDEN]",
+               after == WHOLE.replace("## MC \u2014 Jovan (16)", "## MC \u2014 Jovan (17)"), after)
 
             # a quote that missed goes back to the one who wrote it, once, with exactly what missed
             calls.clear()

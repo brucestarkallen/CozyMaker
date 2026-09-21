@@ -471,6 +471,8 @@ export async function runTurn({
     }
   }
   const talk = conversationFor(past.concat([{ role: 'writer', text: message }]), p);
+  /* the documents as he left them before this turn: what the checks never take out */
+  const startTexts = new Map(docsOf(project).map((d) => [d.name, d.text]));
   /* WHEN HE SAYS BUILD IT, THE BUILDER READS THE WHOLE BRAINSTORM. Nothing is
    * written while he talks a world through, so everything he said is still
    * only in the conversation — a builder shown the last 24,000 characters
@@ -503,7 +505,7 @@ export async function runTurn({
     if (res.ask) asks.push({ worker, ask: res.ask, at: Date.now() });
     /* a change already made this turn is not made again: a re-quote that
      * repeats one that landed would only come back as a false "not done" */
-    const fresh = (res.edits || []).map((e) => { const { house: _h, ...own } = e; return own; }).filter((e) => !landed.has(editKey(e)));
+    const fresh = (res.edits || []).map((e) => { const own = { ...e }; delete own.house; return own; }).filter((e) => !landed.has(editKey(e)));
     const applied = commit(working, fresh, label);
     working = applied.project;
     fresh.forEach((e, i) => { if (applied.cards[i] && applied.cards[i].status === 'applied') landed.add(editKey(e)); });
@@ -557,9 +559,10 @@ export async function runTurn({
    * document grown heavy), and he waited on them before the persona said a word.
    * They now run only when this turn changed a document. */
   const changed = () => allCards.some((c) => c.status === 'applied');
+  const touched = () => new Set(allCards.filter((c) => c.status === 'applied' && c.name).map((c) => c.name));
   if (!stopped() && changed()) {
     let repairsLeft = MAX_AUTO_REPAIRS;
-    const linted = sweep(working);
+    const linted = sweep(working, touched(), startTexts);
     working = linted.project;
     if (linted.repaired.length) crew.push({ worker: 'house', notes: linted.repaired.join(' ') });
     for (const job of linted.handOver) {
@@ -581,7 +584,7 @@ export async function runTurn({
     await send('eye',
       'The documents were just changed. Read the whole of them back, front to back, and put right anything that is wrong — not only near the change. Say what you read and what you found.',
       'the eye', true);
-    const after = sweep(working);
+    const after = sweep(working, touched(), startTexts);
     working = after.project;
     if (after.repaired.length) crew.push({ worker: 'house', notes: after.repaired.join(' ') });
   }
@@ -803,12 +806,15 @@ function recentFrom(project, touchedNames, prior) {
 
 /* The checks that need no model. Repairs land straight away; anything that
  * needs a person is handed to the worker whose job it is. */
-export function sweep(project) {
+export function sweep(project, only = null, before = null) {
   const next = { ...project, docs: (project.docs || []).map((d) => ({ ...d })) };
   const repaired = [];
   const handOver = [];
   for (const d of next.docs) {
-    const r = lint(d.text, { kind: d.kind || 'pe', deliverable: (d.kind || 'pe') !== 'notes' });
+    /* only the documents this turn changed: a document nobody touched is not
+     * rewritten because another one was */
+    if (only && !only.has(d.name)) continue;
+    const r = lint(d.text, { kind: d.kind || 'pe', deliverable: (d.kind || 'pe') !== 'notes', keep: before ? before.get(d.name) : null });
     if (r.changed) d.text = r.text;
     for (const f of r.found) {
       if (f.repaired) repaired.push(`In ${d.name}, ${f.said}.`);

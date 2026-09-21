@@ -20,7 +20,13 @@ import { parseWorldbook } from './worldbook.js';
 /* Anything that must never survive into a document the storyteller reads.
  * These are the maker's own working notes leaking into the deliverable — the
  * storyteller reads them as story and breaks. */
-const ALERT_TAG = /\[[A-Z][A-Z0-9_]{4,}\]/g;
+/* THE CRAFT'S ALERTS ARE WORKING NOTES; A ONE-WORD TAG IS HIS DOCUMENT'S. Every
+ * alert the craft raises is two words or more, joined (EPISTEMIC_VIOLATION,
+ * STALE_WORLD_STATE, PARROT_FIX …). A single word in brackets is not: the
+ * craft's own Fog of War writes [HIDDEN] into the plot essential as its value
+ * (7.4), a template says [TITLE], and his own document may mark [FLASHBACK] or
+ * [SECRET]. The first version removed every capitalised tag, [HIDDEN] with it. */
+const ALERT_TAG = /\[[A-Z][A-Z0-9]*_[A-Z0-9_]+\]/g;
 const CHORE_LINES = [
   /^\s*add to NEW CHARACTERS\s*$/gim,
   /^\s*(UNRESOLVED|TBD|needs verification)\s*:?.*$/gim,
@@ -119,7 +125,12 @@ function lintTransplantMarkers(text) {
 }
 function lintNothing(text) { return { text: String(text || ''), found: [], changed: false }; }
 
-export function lint(text, { kind = 'pe', deliverable = true } = {}) {
+/* keep: the words that were his before the crew touched the document. What was
+ * already there (a "TBD:" line, a bond, an empty heading he is about to fill) is
+ * never taken out; only what the crew left behind this time is. With keep equal
+ * to the whole text (his own typing), none of those are removed. The one
+ * exception is the craft's multi-word alert markers, which are never story. */
+export function lint(text, { kind = 'pe', deliverable = true, keep = null } = {}) {
   if (kind === 'transplant') return lintTransplantMarkers(text);
   if (UNTOUCHED_KINDS.includes(kind)) return lintNothing(text);
   let src = String(text || '');
@@ -129,6 +140,9 @@ export function lint(text, { kind = 'pe', deliverable = true } = {}) {
 
   /* 1 — the maker's working notes must never be in the document itself. */
   if (deliverable) {
+    const had = keep == null ? null : String(keep);
+    /* the craft's own alert markers are machine diagnostics, never story, and
+     * come out whoever put them there; everything else below is kept if it was his */
     const tags = src.match(ALERT_TAG);
     if (tags && tags.length) {
       src = src.replace(ALERT_TAG, '').replace(/[ \t]{2,}/g, ' ').replace(/[ \t]+$/gm, '');
@@ -138,8 +152,11 @@ export function lint(text, { kind = 'pe', deliverable = true } = {}) {
     }
     let chores = 0;
     for (const re of CHORE_LINES) {
-      const hits = src.match(re);
-      if (hits) { chores += hits.length; src = src.replace(re, ''); }
+      src = src.replace(re, (line) => {
+        if (had && had.includes(line.trim())) return line;
+        chores++;
+        return '';
+      });
     }
     if (chores) {
       found.push(finding('a note to somebody inside the document',
@@ -152,9 +169,10 @@ export function lint(text, { kind = 'pe', deliverable = true } = {}) {
   const mc = mcSpan(src);
   if (mc) {
     const body = src.slice(mc.from, mc.to);
-    const stripped = body.replace(/^\s*→\s*.*$/gm, '');
+    const was = keep == null ? null : String(keep);
+    const stripped = body.replace(/^\s*→\s*.*$/gm, (l) => (was && was.includes(l.trim()) ? l : ''));
     if (stripped !== body) {
-      const n = body.split('\n').filter((l) => /^\s*→\s*\S/.test(l)).length;
+      const n = body.split('\n').filter((l) => /^\s*→\s*\S/.test(l) && !(was && was.includes(l.trim()))).length;
       src = src.slice(0, mc.from) + stripped.replace(/\n{3,}/g, '\n\n') + src.slice(mc.to);
       found.push(finding('bonds on the main character',
         `moved ${n} bond line${n > 1 ? 's' : ''} off the main character — how he feels belongs in the scene and in what he does`,
@@ -179,7 +197,7 @@ export function lint(text, { kind = 'pe', deliverable = true } = {}) {
   }
 
   /* 4 — a heading with nothing under it is scaffolding, not content. */
-  const emptied = removeEmptySections(src);
+  const emptied = removeEmptySections(src, keep == null ? null : String(keep));
   if (emptied.removed.length) {
     src = emptied.text;
     found.push(finding('an empty heading',
@@ -317,7 +335,7 @@ function mcSpan(src) {
  * empty only when that whole stretch holds nothing but blanks, dividers and
  * other empty headings. When a parent is empty its children are too, so only
  * the outermost one is taken out, and only it is reported. */
-function removeEmptySections(src) {
+function removeEmptySections(src, had = null) {
   const lines = src.split('\n');
   const heads = [];
   let inFence = false;
@@ -350,6 +368,7 @@ function removeEmptySections(src) {
   const removed = [];
   for (const h of heads) {
     if (!h.empty || drop.has(h.line)) continue;
+    if (had && had.split('\n').some((l) => l.trim() === lines[h.line].trim())) continue;   /* his heading, kept for him to fill */
     removed.push(h.title.split('(')[0].trim());
     for (let i = h.line; i < h.end; i++) drop.add(i);
   }

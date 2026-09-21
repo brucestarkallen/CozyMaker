@@ -442,8 +442,14 @@ export function applyRun(docs, edits, { label = 'a change' } = {}) {
     }
     if (typeof e.create_file === 'string' && e.create_file) {
       const name = e.create_file;
-      if (texts.has(name)) {
+      if (texts.has(name) && String(texts.get(name) || '').trim()) {
         cards.push({ status: 'refused', name, reason: e.reason || '', why: 'a document with that name already exists' });
+        continue;
+      }
+      /* an empty one by that name (cleared a moment ago, or started by hand) is simply written */
+      if (texts.has(name)) {
+        texts.set(name, typeof e.replace === 'string' ? e.replace : '');
+        cards.push({ status: 'applied', name, reason: e.reason || '', how: 'wrote it', was: '', now: clip(String(e.replace || '')) });
         continue;
       }
       texts.set(name, typeof e.replace === 'string' ? e.replace : '');

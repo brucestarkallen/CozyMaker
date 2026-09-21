@@ -1722,6 +1722,50 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
   } finally { globalThis.fetch = realFetch; }
 }
 
+/* ============================ his words are his (v1.1.13) */
+{
+  const { lint } = await import('../js/doc/lint.js');
+  const { sweep, runTurn } = await import('../js/agents/run.js');
+  const { applyRun } = await import('../js/doc/edits.js');
+  const { LISTENER_MARK } = await import('../js/agents/listener.js');
+  const HIS = '# PE\n\n## WORLD\n### Rules\n- Magic costs memory.\nTBD: the name of the drowned king\n\n### Calendar\n\n## MC — Jovan (16)\nID: a salvager\n→ Mira: trusts her (P:40 R:0 S:0)\n\n### Mira (captain | active | 24)\nID: captain\nAGENDA: [HIDDEN]\nNOTE: [FLASHBACK] the first storm\n';
+  const r0 = lint(HIS, { kind: 'pe' });
+  ok('the craft\'s own [HIDDEN] and his one-word tags are never taken out', r0.text.includes('AGENDA: [HIDDEN]') && r0.text.includes('[FLASHBACK]'), r0.text);
+  const crewLeft = HIS + '\nSomething [STALE_WORLD_STATE] was noted.\nUNRESOLVED: who sank the king\n\n## EMPTY NEW\n';
+  const r1 = lint(crewLeft, { kind: 'pe', keep: HIS });
+  ok('what the crew left is cleaned: an alert, a chore line, an empty heading it added', !r1.text.includes('[STALE_WORLD_STATE]') && !r1.text.includes('UNRESOLVED: who sank') && !r1.text.includes('## EMPTY NEW'), r1.text);
+  ok('what was his stays: his TBD line, his empty heading, his bond, his tags', r1.text.includes('TBD: the name of the drowned king') && r1.text.includes('### Calendar') && r1.text.includes('→ Mira: trusts her') && r1.text.includes('AGENDA: [HIDDEN]'), r1.text);
+  const r2 = lint(HIS, { kind: 'pe', keep: HIS });
+  ok('his own typing, left as he typed it, loses nothing', r2.text.replace(/\n+$/, '') === HIS.replace(/\n+$/, ''), JSON.stringify(r2.found.map((f) => f.said)));
+  const proj = { docs: [{ name: 'A.md', kind: 'pe', text: '# A\n\n## SCENE\nWHERE: x\n' }, { name: 'His.md', kind: 'pe', text: 'TBD: keep me\nsomething [OLD_NOTE] of his\n' }] };
+  const sw = sweep(proj, new Set(['A.md']), new Map(proj.docs.map((d) => [d.name, d.text])));
+  ok('a document nobody touched this turn is not rewritten', sw.project.docs[1].text === proj.docs[1].text, sw.project.docs[1].text);
+  const cr = applyRun([{ name: 'Plot Essential.md', text: '' }], [{ create_file: 'Plot Essential.md', replace: '# PE\n' }]);
+  ok('a plot essential cleared a moment ago can be written again by creating it', cr.cards[0].status === 'applied' && cr.texts.get('Plot Essential.md') === '# PE\n');
+  const cr2 = applyRun([{ name: 'Plot Essential.md', text: 'x' }], [{ create_file: 'Plot Essential.md', replace: 'y' }]);
+  ok('but creating over a document with words in it is still refused', cr2.cards[0].status === 'refused');
+
+  /* the whole turn: "clear it and build it again" clears, then builds into the same document */
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    const req = JSON.parse(init.body);
+    if (req.stream) {
+      const sse = 'data: ' + JSON.stringify({ choices: [{ delta: { content: 'Mm.' } }] }) + '\n\ndata: [DONE]\n\n';
+      return new Response(new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(sse)); c.close(); } }), { status: 200 });
+    }
+    const sys = (req.body.messages.find((m) => m.role === 'system') || {}).content || '';
+    const out = sys.includes(LISTENER_MARK) ? '{"jobs":[{"worker":"builder","task":"Build the plot essential again from the talk."}],"clear":["Plot Essential.md"]}'
+      : /PROACTIVE CO-WRITER/.test(sys) ? 'Built it.\n<edits>[{"create_file":"Plot Essential.md","replace":"# PLOT ESSENTIAL — Anew — V1.0\\n\\n## SCENE\\nWHERE: the lighthouse\\n"}]</edits>'
+      : 'Read it all back.';
+    return { ok: true, json: async () => ({ choices: [{ message: { content: out }, finish_reason: 'stop' }] }) };
+  };
+  try {
+    const house = { connections: [{ id: 'c1', url: 'https://one.example/v1', model: 'm', key: 'k' }], agentConnections: {}, settings: { yourName: 'Bruce' }, personaFrame: '' };
+    const r = await runTurn({ house, project: { id: 'pz', docs: [{ id: 'd1', name: 'Plot Essential.md', kind: 'pe', text: HIS }], chats: [], recentSections: [] }, message: 'clear the plot essential and build it again from what we said' });
+    ok('"clear it and build it again" clears, then writes the new one into the same document', r.project.docs.length === 1 && /Anew/.test(r.project.docs[0].text) && !/Jovan/.test(r.project.docs[0].text), JSON.stringify(r.cards.map((c) => [c.status, c.how || c.why])));
+  } finally { globalThis.fetch = realFetch; }
+}
+
 /* ================================================================ done */
 
 console.log(`\n${pass} passed, ${fail} failed`);
