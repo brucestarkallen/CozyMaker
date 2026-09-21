@@ -47,6 +47,25 @@ function draw() {
 
 /* ------------------------------------------------------- who you are with */
 
+/* WHAT HE TYPES HERE IS KEPT AS HE TYPES IT. These boxes used to save only on
+ * "change", which a browser fires when the box loses focus: a persona pasted
+ * in and the app then left — the phone's back button, another app — was
+ * never saved, and nothing said so. Now a pause of 0.7s saves it, leaving the
+ * box saves it, and the page being hidden saves whatever is still waiting. */
+let unsaved = null;
+function keepAsTyped(box, keep) {
+  let timer = null;
+  const now = () => {
+    clearTimeout(timer); timer = null;
+    if (unsaved === now) unsaved = null;
+    return Promise.resolve().then(keep).catch((e) => toast('That could not be saved: ' + ((e && e.message) || e)));
+  };
+  box.addEventListener('input', () => { clearTimeout(timer); unsaved = now; timer = setTimeout(now, 700); });
+  box.addEventListener('change', now);
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && unsaved) unsaved(); });
+window.addEventListener('pagehide', () => { if (unsaved) unsaved(); });
+
 function whoSection(house) {
   const g = group('Who you are making this with',
     'Whatever you write here goes to them first and is never touched. Everything this place adds underneath it is written the way two people talk — so nothing in here can knock them out of character.');
@@ -64,22 +83,23 @@ function whoSection(house) {
       : '';
     macroNote.style.display = missing.length ? '' : 'none';
   };
-  frame.addEventListener('change', async () => {
-    house.personaFrame = frame.value;
-    await store.saveHouse(house);
+  keepAsTyped(frame, async () => {
+    const h = store.getHouse();
+    if (h.personaFrame === frame.value) return;
+    h.personaFrame = frame.value;
+    await store.saveHouse(h);
     showMacros();
-    toast('Saved.');
   });
   g.append(field('Their instructions, in your own words', frame));
   g.append(macroNote);
   showMacros();
 
   const maker = input(house.settings.makerName, 'Eni, Iron Man, Lothar — anyone');
-  maker.addEventListener('change', () => save('makerName', maker.value.trim()).then(showMacros));
+  keepAsTyped(maker, () => (store.getHouse().settings.makerName === maker.value.trim() ? null : save('makerName', maker.value.trim()).then(showMacros)));
   g.append(field('What they are called', maker));
 
   const you = input(house.settings.yourName, 'Bruce, Jovan — whatever they should call you');
-  you.addEventListener('change', () => save('yourName', you.value.trim()).then(showMacros));
+  keepAsTyped(you, () => (store.getHouse().settings.yourName === you.value.trim() ? null : save('yourName', you.value.trim()).then(showMacros)));
   g.append(field('What you are called', you));
 
   /* "second" was only ever the old default: it follows the frame now */

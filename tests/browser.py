@@ -337,6 +337,26 @@ def main():
             ok("a connection can be tried for real", "Working" in page.locator("#toast").inner_text(),
                page.locator("#toast").inner_text())
 
+            # -- what he types in the house is kept as he types it: no tap elsewhere, no Back
+            def house_now():
+                return json.loads(urllib.request.urlopen(f"http://127.0.0.1:{PORT}/api/house").read())
+            frame_box = page.locator("#houseBody textarea.plain")
+            was_frame = frame_box.input_value()
+            pasted = "I am Eni. I keep Bruce's worlds straight, and I talk like myself."
+            frame_box.fill(pasted)                      # input events only: the box never loses focus
+            page.wait_for_timeout(1500)
+            ok("a persona pasted in is on the device without leaving the box", house_now().get("personaFrame") == pasted,
+               (house_now().get("personaFrame") or "")[:60])
+            maker_box = page.locator("label.field", has_text="What they are called").locator("input")
+            maker_box.fill("Eni the Archivist")
+            page.wait_for_timeout(1500)
+            ok("a name typed in is on the device without leaving the box", house_now()["settings"].get("makerName") == "Eni the Archivist",
+               house_now()["settings"].get("makerName"))
+            maker_box.fill("Eni")
+            frame_box.fill(was_frame)
+            page.wait_for_timeout(1500)
+            ok("and put back the same way", house_now()["settings"].get("makerName") == "Eni" and house_now().get("personaFrame") == was_frame)
+
             # -- the coats of paint --------------------------------------------
             coat = page.locator("label.field", has_text="Coat of paint").locator("select")
             ok("the coats of paint are offered by name", coat.count() == 1)

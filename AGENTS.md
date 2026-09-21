@@ -469,6 +469,16 @@ front can receive inside that harness.
   several files in one answer. A cut answer (`length` / `max_tokens`) is now carried on — the worker is shown
   what it wrote and asked for the rest, up to four times — and joined where the pieces meet (`joinSeam`).
 
+### Found auditing plug and play (v1.1.7)
+
+- **A persona pasted into the house was only saved when the box lost focus.** "Their instructions", "What
+  they are called" and "What you are called" saved on `change`, which a browser fires on leaving the box: a
+  persona pasted in and the app then left — the phone's Back, another app — was never saved, and nothing said
+  so. Every suite set the persona through the API, never through the box. Now a pause of 0.7s saves what was
+  typed, leaving the box saves it, and the page being hidden saves whatever is still waiting
+  (`keepAsTyped`). `browser.py` types into the boxes without leaving them and reads the house back from the
+  device; the old code fails those three checks.
+
 ## Testing
 
 ```
@@ -479,7 +489,7 @@ bash tests/all.sh           all seven, exit code intact
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       31 checks — the real serve.py, real files on disk, streams timed
-    python3 tests/browser.py      66 checks — real Chromium at 390x844, end to end
+    python3 tests/browser.py      69 checks — real Chromium at 390x844, end to end
     python3 tests/walk_worlds.py 147 checks — the drawer, conversations, swipes and versions, edit and
                                               send again, delete, branch, go on, re-quoting, crafts,
                                               the thinking box live, backup and restore, a model too
@@ -487,7 +497,7 @@ bash tests/all.sh           all seven, exit code intact
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-868 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
+871 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.
