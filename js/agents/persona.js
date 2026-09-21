@@ -86,11 +86,20 @@ export function greeting(p) {
 /* {{user}} is read in any case, as SillyTavern reads it; <USER> and <BOT> only
  * in capitals — a preset's own <user> tag is markup, not a name. */
 export const MACROS = /\{\{\s*([Uu][Ss][Ee][Rr]|[Cc][Hh][Aa][Rr])\s*\}\}|<(USER|BOT)>/g;
+/* A MACRO NEVER REACHES THE MODEL AS BRACES. When he has set the name, the
+ * macro reads as it — the whole point of the two boxes. When he has NOT (a
+ * preset pasted in and the names not yet filled), a raw {{user}} in what the
+ * model reads is exactly the persona-break he does not want, so it falls back
+ * to a plain word that is grammatical wherever the macro sat — as a subject,
+ * an object or a possessive — never “{{char}}”. Setting the names is still
+ * better, and the house nudges him to (unfilledMacros); this only makes sure
+ * nothing machine-like leaks while he has not. */
+const MACRO_FALLBACK = { user: 'the author', char: 'the one telling this' };
 export function voiceMacros(text, p) {
   return String(text || '').replace(MACROS, (whole, curly, angle) => {
     const which = (curly || (angle && angle.toUpperCase() === 'USER' ? 'user' : 'char')).toLowerCase();
     const name = which === 'user' ? p.you : p.maker;
-    return name || whole;
+    return name || MACRO_FALLBACK[which];
   });
 }
 export function unfilledMacros(p) {

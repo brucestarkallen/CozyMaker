@@ -511,13 +511,23 @@ front can receive inside that harness.
   the change. `nameIn`: exact, then ignoring case, then without its ending — only when exactly one document
   answers; two that fit are refused, never guessed.
 
+### Found finishing the persona audit (v1.1.10)
+
+- **A pasted persona's `{{user}}` / `{{char}}` reached the model as braces when the names were not set.**
+  With the two name boxes filled, macros already read as the names — but the plug-and-play case is a preset
+  pasted in before the boxes are filled, and there the raw `{{char}}`, `{{user}}`, `<USER>`, `<BOT>` went
+  straight to the front, exactly the persona-break he means. `voiceMacros` now falls back to a plain word
+  ("the author", "the one telling this") that is grammatical wherever the macro sat — subject, object,
+  possessive — so not one brace ever reaches the model; setting the names is still better and the house still
+  nudges for it. `<ask>` is also stripped from anything the front reads, defensively.
+
 ## Testing
 
 ```
 bash tests/all.sh           all seven, exit code intact
 ```
 
-    node tests/units.mjs         579 checks — the real modules on a real document, and what the persona hears
+    node tests/units.mjs         586 checks — the real modules on a real document, and what the persona hears
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       46 checks — the real serve.py, real files on disk, streams timed
@@ -529,7 +539,7 @@ bash tests/all.sh           all seven, exit code intact
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-895 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
+902 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

@@ -1186,7 +1186,7 @@ ok('with no name the front still reads as talk', !/the writer|undefined|null/i.t
 /* --- SillyTavern's names read as his names (Cozy Tavern M361) --- */
 eq('{{user}} and {{char}} read as the two names',
   voiceMacros('You are {{char}}. {{user}} is here. <USER> and <BOT>.', p), 'You are Eni. Bruce is here. Bruce and Eni.');
-eq('an unset name leaves its macro as written', voiceMacros('{{user}}', personaOf({ settings: {} })), '{{user}}');
+eq('an unset name never leaves a raw macro on the wire', voiceMacros('{{user}}', personaOf({ settings: {} })), 'the author');
 eq('{{User}} in any case is his name', voiceMacros('{{User}} and {{ CHAR }}', p), 'Bruce and Eni');
 eq('a preset\'s own <user> tag is markup, not a name', voiceMacros('<user>hi</user> <USER>', p), '<user>hi</user> Bruce');
 ok('the house can point at an unfilled macro', unfilledMacros(personaOf({ settings: { makerName: 'Eni' }, personaFrame: '{{user}} and {{char}}' })).join() === '{{user}}');
@@ -1539,6 +1539,28 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
   ok('a document named the way a model names it is still found', loose.cards[0].status === 'applied' && loose.texts.get('Plot Essential.md') === 'WHERE: the Quay\n', JSON.stringify(loose.cards));
   const two = applyRun([{ name: 'A.md', text: 'x' }, { name: 'a.md', text: 'y' }], [{ file: 'A', find: 'x', replace: 'z' }]);
   ok('a loose name that fits two documents is refused, never guessed', two.cards[0].status === 'refused', JSON.stringify(two.cards));
+}
+
+/* ============================ a pasted persona with macros, no names (v1.1.10) */
+{
+  const { voiceMacros, openingFor, personaOf, MACROS } = await import('../js/agents/persona.js');
+  const { frontBody } = await import('../js/agents/run.js');
+  const paste = "You are {{char}}, a quiet archivist. {{user}} is your oldest friend. <BOT> keeps {{user}}'s worlds and <USER> trusts them.";
+
+  /* names set: the macros read as the two names, exactly (the whole point of the boxes) */
+  const named = personaOf({ settings: { makerName: 'Eni', yourName: 'Bruce' }, personaFrame: paste });
+  const withNames = openingFor(named, frontBody(named));
+  ok('names set: {{char}}/<BOT> read as the maker', /You are Eni, a quiet archivist/.test(withNames) && /Eni keeps Bruce's worlds/.test(withNames), withNames.slice(0, 120));
+  ok('names set: {{user}}/<USER> read as him', /Bruce is your oldest friend/.test(withNames) && /Bruce trusts them/.test(withNames));
+  ok('names set: not one brace or macro reaches the model', !MACROS.test(withNames) && !/\{\{|<USER>|<BOT>/.test(withNames), withNames.match(/\{\{[^}]*\}\}|<USER>|<BOT>/));
+
+  /* names NOT set (the plug-and-play paste): still not one macro reaches the model */
+  const bare = personaOf({ settings: {}, personaFrame: paste });
+  const noNames = openingFor(bare, frontBody(bare));
+  ok('names unset: not one brace or macro reaches the model', !MACROS.test(noNames) && !/\{\{|<USER>|<BOT>/.test(noNames), noNames.match(/\{\{[^}]*\}\}|<USER>|<BOT>/));
+  ok('names unset: the fallback is a plain word, grammatical as subject and possessive', /You are the one telling this, a quiet archivist/.test(noNames) && /the one telling this keeps the author's worlds/.test(noNames), noNames.slice(0, 140));
+  eq('a possessive macro folds into the word', voiceMacros("{{user}}'s map", personaOf({ settings: {} })), "the author's map");
+  eq('a lower-case <user> tag is still left as the preset\'s own markup', voiceMacros('<user>x</user> <USER>', named), '<user>x</user> Bruce');
 }
 
 /* ================================================================ done */

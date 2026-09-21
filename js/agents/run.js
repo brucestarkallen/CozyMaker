@@ -110,7 +110,7 @@ export function naturalize(text) {
   return String(text || '')
     /* the engine's command words, said as plain words */
     .replace(/(^|[\s(])[*#](source_new|hybrid_new|new|import|q|p|summari[sz]e|continuity|edit|retcon|delete|cleanup|optimi[sz]e|skip|ooc|show_full_file|show_spoilers|hide_spoilers|regress|next|audit|fix|brief)\b/gi, '$1$2')
-    .replace(/<\/?(?:edits|docedits|need)>?/gi, '')
+    .replace(/<\/?(?:edits|docedits|need|ask)>?/gi, '')
     .replace(/\bM-[A-Z]{3,}\b/g, '')
     .replace(/\[[A-Z][A-Z0-9_]{4,}\]/g, '')
     .replace(/\b(?:section|§)\s*\d+(?:\.\d+)*\b/gi, '')
