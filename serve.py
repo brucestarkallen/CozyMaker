@@ -33,7 +33,7 @@ import urllib.error
 import subprocess
 from pathlib import Path
 
-VERSION = "1.1.1"
+VERSION = "1.1.2"
 ROOT = Path(__file__).resolve().parent
 HOME = Path(os.environ.get("COZYMAKER_HOME", Path.home() / ".cozymaker"))
 PROJECTS = HOME / "projects"
@@ -376,7 +376,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         try:
             while True:
-                chunk = resp.read(2048)
+                chunk = resp.read1(2048)
                 if not chunk:
                     break
                 self.wfile.write(b"%X\r\n" % len(chunk))

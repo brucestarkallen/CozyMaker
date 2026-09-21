@@ -69,6 +69,19 @@ class FakeProvider(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(b'{"error":"slow down"}\n')
             return
+        if self.path.endswith("/slowstream"):
+            # a provider that writes slowly, the way a thinking model does: small events, far apart
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.end_headers()
+            for i in range(5):
+                chunk = json.dumps({"choices": [{"delta": {"reasoning_content": f"thought {i} "}}]})
+                self.wfile.write(f"data: {chunk}\n\n".encode())
+                self.wfile.flush()
+                time.sleep(0.3)
+            self.wfile.write(b"data: [DONE]\n\n")
+            self.wfile.flush()
+            return
         if self.path.endswith("/stream"):
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
@@ -230,6 +243,26 @@ def main():
         }, raw=True)
         body = raw.decode()
         ok("a streamed answer comes through in pieces", "he" in body and "llo" in body and "[DONE]" in body, body[:200])
+
+        # a stream reaches the page as it is written -- never held until a buffer fills.
+        # (The relay once read 2,048 bytes at a time and waited for all of them: a thinking
+        # model's small events sat on the phone's own server until the reply was over.)
+        import http.client
+        hc = http.client.HTTPConnection("127.0.0.1", PORT, timeout=15)
+        t0 = time.time()
+        hc.request("POST", "/api/call", body=json.dumps({"url": f"http://127.0.0.1:{FAKE_PROVIDER_PORT}/slowstream",
+                                                        "headers": {}, "body": {}, "stream": True}),
+                   headers={"Content-Type": "application/json"})
+        hr = hc.getresponse()
+        arrivals = []
+        while True:
+            piece = hr.read1(4096)
+            if not piece:
+                break
+            arrivals += [round(time.time() - t0, 2)] * piece.count(b"data: {")
+        hc.close()
+        ok("a slow stream reaches the page event by event, as it is written",
+           len(arrivals) == 5 and arrivals[0] < 0.6 and arrivals[-1] - arrivals[0] > 0.9, str(arrivals))
 
         code, r = call("/api/call", "POST", {
             "url": "http://127.0.0.1:9/nothing-listening", "headers": {}, "body": {},

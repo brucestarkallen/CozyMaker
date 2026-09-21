@@ -374,6 +374,15 @@ out; the rest were found here and fixed. Each has a test.
   outline keeps everything before the first section (`lead`), trimmed only for the front or a model too
   small for it, and says how much it left out. Whatever a worker's craft says it works on, check that
   `docBriefs` really hands it over — a worker given nothing will invent.
+- **The relay held every stream until 2,048 bytes had piled up.** `resp.read(2048)` waits for the whole
+  2,048; a streamed event is about a hundred bytes. A reply shorter than that reached the phone all at
+  once at the end, and a thinking model's thoughts arrived in lurches. The relay reads with `read1`,
+  which hands over whatever has arrived — as Cozy Tavern's `serve.py` already did. `tests/server.py`
+  times five events 300ms apart through the relay: 1.5s all together before, 0.03 → 1.23s after.
+- **The thinking was a fold labelled "what they were turning over", under the reply, filled only at the
+  end.** It is a Thinking box above the reply: "Thinking… 7s" while the model thinks, filling live,
+  "Thought for 12s" after, shut until tapped, with Copy the thinking (Cozy Tavern M40, M105). The time
+  it thought is kept on the turn, on every version, and added to by Go on.
 - **A model too small for the whole world failed the turn.** When a provider says a request is too long
   (`TOO_LONG`), the worker is asked once more with the outline and the newest talk.
 
@@ -386,16 +395,16 @@ bash tests/all.sh           all seven, exit code intact
     node tests/units.mjs         427 checks — the real modules on a real document
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
-    python3 tests/server.py       30 checks — the real serve.py, real files on disk
+    python3 tests/server.py       31 checks — the real serve.py, real files on disk, streams timed
     python3 tests/browser.py      66 checks — real Chromium at 390x844, end to end
-    python3 tests/walk_worlds.py 129 checks — the drawer, conversations, swipes and versions, edit and
+    python3 tests/walk_worlds.py 139 checks — the drawer, conversations, swipes and versions, edit and
                                               send again, delete, branch, go on, re-quoting, crafts,
-                                              backup and restore, a model too small for the world,
-                                              a real server killed mid-edit
+                                              the thinking box live, backup and restore, a model too
+                                              small for the world, a real server killed mid-edit
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-706 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
+717 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

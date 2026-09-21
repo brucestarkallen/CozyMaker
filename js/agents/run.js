@@ -450,7 +450,7 @@ export async function runTurn({
  * cards and the changes it made, never its undo payload, because a version
  * that is not shown has had its changes put back. */
 export function versionOf(t) {
-  return { text: t.text, thinking: t.thinking || '', cards: t.cards || [], edits: t.edits || [], cut: Boolean(t.cut), failed: Boolean(t.failed), at: t.at, batches: [] };
+  return { text: t.text, thinking: t.thinking || '', thinkingMs: t.thinkingMs, cards: t.cards || [], edits: t.edits || [], cut: Boolean(t.cut), failed: Boolean(t.failed), at: t.at, batches: [] };
 }
 
 export function landTurn(world, { chatId, snapshot, result, makerTurn, replaceAt = null }) {

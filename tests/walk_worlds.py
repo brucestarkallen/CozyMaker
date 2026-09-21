@@ -103,6 +103,25 @@ class Model(http.server.BaseHTTPRequestHandler):
             self.wfile.write(b"data: [DONE]\n\n")
             return
 
+        if sent.get("stream") and sent.get("model") == "thinker":
+            # a model that thinks out loud first, slowly enough to be watched, then answers
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.end_headers()
+            try:
+                for piece in ["The harbour ", "wall was ", "built after ", "the flood, ", "so the answer ", "should say ", "who paid ", "for it."]:
+                    self.wfile.write(("data: " + json.dumps({"choices": [{"delta": {"reasoning_content": piece}}]}) + "\n\n").encode())
+                    self.wfile.flush()
+                    time.sleep(0.35)
+                for piece in ["The harbour wall ", "was paid for by the guild."]:
+                    self.wfile.write(("data: " + json.dumps({"choices": [{"delta": {"content": piece}}]}) + "\n\n").encode())
+                    self.wfile.flush()
+                self.wfile.write(b"data: [DONE]\n\n")
+                self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            return
+
         if sent.get("stream"):
             time.sleep(DELAY["front"])
             self.send_response(200)
@@ -820,6 +839,47 @@ def main():
             h = api("/api/house")
             h["agentConnections"].pop("editor", None)
             h["connections"] = [c for c in h["connections"] if c["id"] != "c6"]
+            api("/api/house", "PUT", h)
+            page.reload(wait_until="networkidle")
+            page.wait_for_timeout(600)
+
+            # ---------------------------------------- the thinking box: above the reply, live, then how long
+            h = api("/api/house")
+            h["connections"].append({"id": "c7", "name": "thinks", "url": f"http://127.0.0.1:{MODEL_PORT}/v1", "model": "thinker", "key": "k"})
+            h["agentConnections"]["keeper"] = "c7"
+            api("/api/house", "PUT", h)
+            page.reload(wait_until="networkidle")
+            page.wait_for_timeout(600)
+            page.fill("#say", "who built the harbour wall")
+            page.click("#sendBtn")
+            page.wait_for_function("() => document.querySelector('.turn.maker:last-of-type .thinking-box')", timeout=15000)
+            page.wait_for_timeout(1300)
+            live = page.locator(".turn.maker").last
+            live_head = live.locator(".thinking-head").inner_text()
+            order = live.evaluate("t => [...t.children].map(c => c.className)")
+            ok("while it thinks, the box says Thinking and counts the seconds", live_head.startswith("\u25b8 Thinking\u2026"), live_head)
+            ok("and it sits above the reply", order.index("thinking-box") < order.index("bubble") if "thinking-box" in order and "bubble" in order else False, order)
+            live.locator(".thinking-head").click()
+            page.wait_for_timeout(500)
+            ok("opened, it shows the thinking as it arrives", "The harbour" in live.locator(".thinking-text").inner_text())
+            page.wait_for_function("() => !document.querySelector('#sendBtn.stop')", timeout=30000)
+            page.wait_for_timeout(900)
+            done = page.locator(".turn.maker").last
+            done_head = done.locator(".thinking-head").inner_text()
+            ok("afterwards it says how long it thought", re.match(r"^\u25b8 Thought for \d+s$", done_head) is not None, done_head)
+            order = done.evaluate("t => [...t.children].map(c => c.className)")
+            ok("and it stays above the reply", order.index("thinking-box") < order.index("bubble"), order)
+            ok("shut until tapped", done.locator(".thinking-body").is_hidden())
+            done.locator(".thinking-head").click()
+            page.wait_for_timeout(300)
+            ok("tapped, the whole of it is there", done.locator(".thinking-text").inner_text() == "The harbour wall was built after the flood, so the answer should say who paid for it.")
+            ok("with a way to copy it", done.locator(".thinking-body .btn", has_text="Copy the thinking").count() == 1)
+            kept = [t for t in world("p_new")["chats"] if t["id"] == world("p_new")["openChat"]][0]["turns"][-1]
+            ok("how long it thought is kept with the reply", isinstance(kept.get("thinkingMs"), int) and kept["thinkingMs"] >= 2000, kept.get("thinkingMs"))
+            ok("and the old wording is nowhere on the page", "turning over" not in page.content())
+            h = api("/api/house")
+            h["agentConnections"]["keeper"] = "c1"
+            h["connections"] = [c for c in h["connections"] if c["id"] != "c7"]
             api("/api/house", "PUT", h)
             page.reload(wait_until="networkidle")
             page.wait_for_timeout(600)

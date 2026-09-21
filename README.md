@@ -73,6 +73,10 @@ Changes land in the documents themselves and show as small cards underneath the
 reply, each with **put it back** if you want it gone. Tap **what changed** on a card
 to see what was there before and what is there now.
 
+When a model thinks, a **Thinking** box sits above its reply: it counts the
+seconds while the model thinks and fills as the thinking arrives, then says how
+long it thought. Tap it to read the thinking; **Copy the thinking** takes it away.
+
 **Tap any message** for **Copy**, **Edit**, **Branch here** and **Delete**. The last
 reply has **Another answer**; ◂ ▸ walks between the answers, and only the one shown
 is in the documents. Edit one of your messages and **Send again from here**: whatever
@@ -149,7 +153,7 @@ of the whole. The cog, under the floor, shows exactly who reads what.
 Read `AGENTS.md` first.
 
 ```
-bash tests/all.sh    seven suites, 706 checks
+bash tests/all.sh    seven suites, 717 checks
 ```
 
 `docs/lineage.md` lists every version of Cozy Tavern and Cozy Chat and what

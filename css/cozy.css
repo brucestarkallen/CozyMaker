@@ -415,3 +415,16 @@ textarea.plain { resize: vertical; min-height: 90px; font-family: var(--mono); f
 .compare .pane { flex: 0 0 82vw; max-width: 560px; scroll-snap-align: start; background: var(--panel); border: 1px solid var(--edge); border-radius: var(--radius); padding: 10px 12px; }
 .compare .pane-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
 .compare .pane-text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13.5px; line-height: 1.5; max-height: 62vh; overflow-y: auto; color: var(--ink); }
+
+/* ---- the thinking box: above the reply, shut until tapped --------------- */
+.turn .thinking-box { margin: 0 0 6px; border-left: 2px solid var(--edge); padding-left: 10px; }
+.turn .thinking-head {
+  background: none; border: 0; padding: 4px 0; font: inherit; font-size: 13px;
+  color: var(--ink-soft); cursor: pointer; text-align: left; font-variant-numeric: tabular-nums;
+}
+.turn .thinking-body { margin-top: 4px; }
+.turn .thinking-text {
+  white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink-faint);
+  font-size: 13.5px; line-height: 1.5; max-height: 40vh; overflow-y: auto;
+}
+.turn .thinking-body .btn { margin-top: 6px; }

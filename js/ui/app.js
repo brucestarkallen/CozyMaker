@@ -178,6 +178,47 @@ function drawComposer() {
   }
 }
 
+/* THE THINKING BOX, where a thinking box goes: above the reply, shut until
+ * tapped, "Thinking… 7s" while the model thinks and "Thought for 12s" after
+ * (SillyTavern's words; Cozy Tavern M40's clock, M105's copy). A plain button
+ * opens it: native <details> did not open on his phone. */
+function tookWords(ms) {
+  const sec = Math.max(0, ms || 0) / 1000;
+  return sec < 60 ? Math.round(sec) + 's' : Math.floor(sec / 60) + 'm ' + Math.round(sec % 60) + 's';
+}
+function thinkingBox(text, ms, { live = false } = {}) {
+  const box = el('div', 'thinking-box');
+  const head = el('button', 'thinking-head');
+  head.type = 'button';
+  const body = el('div', 'thinking-body');
+  body.hidden = true;
+  const words = el('div', 'thinking-text', text || '');
+  const copy = el('button', 'btn quiet small', 'Copy the thinking');
+  copy.addEventListener('click', (e) => { e.stopPropagation(); copyText(words.textContent); });
+  body.append(words, copy);
+  box.append(head, body);
+  let label = live ? 'Thinking\u2026' : Number.isFinite(ms) && ms > 0 ? `Thought for ${tookWords(ms)}` : 'Thinking';
+  const show = () => { head.textContent = (body.hidden ? '\u25b8 ' : '\u25be ') + label; };
+  head.addEventListener('click', (e) => { e.stopPropagation(); body.hidden = !body.hidden; show(); });
+  show();
+  if (!live) return { node: box };
+  const start = Date.now();
+  let stopped = 0;
+  const tick = setInterval(() => { label = `Thinking\u2026 ${tookWords(Date.now() - start)}`; show(); }, 1000);
+  return {
+    node: box,
+    add(chunk) { words.textContent += chunk; },
+    stop() {
+      if (stopped) return stopped;
+      clearInterval(tick);
+      stopped = Math.max(1, Date.now() - start);
+      label = `Thought for ${tookWords(stopped)}`;
+      show();
+      return stopped;
+    },
+  };
+}
+
 function turnNode(t, index) {
   const wrap = el('div', 'turn ' + (t.role === 'writer' ? 'writer' : 'maker'));
   const chat = store.openChat();
@@ -190,6 +231,7 @@ function turnNode(t, index) {
   bubble.textContent = t.text || '';
   /* a tap on a message shows what can be done with it */
   bubble.addEventListener('click', () => { if (!running) wrap.classList.toggle('acting'); });
+  if (t.thinking) wrap.append(thinkingBox(t.thinking, t.thinkingMs).node);
   wrap.append(bubble);
   if (t.cut) {
     wrap.append(el('div', 'cutnote', 'Cut off here — the reply ran out of room before it finished.'));
@@ -200,7 +242,6 @@ function turnNode(t, index) {
     }
   }
   if (t.role === 'maker' && last && !t.failed) wrap.append(swipeBar(t, index));
-  if (t.thinking) wrap.append(fold('what they were turning over', t.thinking, { className: 'thinking' }));
   if ((t.cards && t.cards.length) || (t.batches && t.batches.length)) wrap.append(cardsNode(t, index));
   /* THE FINDABLE RETRY (Cozy Tavern M25): the last turn, failed or stopped
    * with nothing changed, goes again with his same words. */
@@ -555,6 +596,9 @@ async function send(text, forceWorker, opts = {}) {
   if (who.maker && who.maker !== 'you') bubble.append(el('div', 'who', who.maker));
   const inner = el('div', 'bubble');
   bubble.append(inner);
+  let liveThinking = null;
+  let thinkingMs = 0;
+  const thoughtDone = () => { if (liveThinking && !thinkingMs) thinkingMs = liveThinking.stop(); };
   const titled = (store.getProject().chats || []).find((c) => c.id === chatId);
   running = { worldId, chatId, chatTitle: (titled || chat).title, startedAt: Date.now(), abort, bubble, replaceAt: opts.replaceAt };
   draw();
@@ -565,8 +609,13 @@ async function send(text, forceWorker, opts = {}) {
     result = await runTurn({
       house, project: store.getProject(), history, message: text, forceWorker,
       onStatus: setStatus,
-      onText: (chunk) => { reply += chunk; inner.textContent = reply; clearStatus(); follow(); },
-      onThinking: (chunk) => { thinking += chunk; },
+      onText: (chunk) => { thoughtDone(); reply += chunk; inner.textContent = reply; clearStatus(); follow(); },
+      onThinking: (chunk) => {
+        thinking += chunk;
+        if (!liveThinking) { liveThinking = thinkingBox('', 0, { live: true }); bubble.insertBefore(liveThinking.node, inner); clearStatus(); }
+        liveThinking.add(chunk);
+        follow();
+      },
       signal: abort.signal,
     });
   } catch (e) {
@@ -582,6 +631,7 @@ async function send(text, forceWorker, opts = {}) {
       : thinking ? '(no words came back \u2014 only their thinking, kept below)' : '(no words came back)'),
     failed: !words,
     thinking,
+    thinkingMs: (thoughtDone(), thinkingMs) || undefined,
     cards: (result.cards || []).filter((c) => c.status === 'refused' || c.reason || c.how),
     batches: result.batches || [],
     edits: result.edits || [],
@@ -600,6 +650,7 @@ async function send(text, forceWorker, opts = {}) {
       const joined = t.text + (/\s$/.test(t.text) || /^\s/.test(words) ? '' : ' ') + words;
       c.turns = c.turns.map((x, i) => (i !== opts.continueAt ? x : {
         ...x, text: joined, cut: makerTurn.cut, thinking: [x.thinking, thinking].filter(Boolean).join('\n\n'),
+        thinkingMs: ((x.thinkingMs || 0) + (makerTurn.thinkingMs || 0)) || undefined,
         versions: x.versions ? x.versions.map((v, j) => (j === x.shown ? { ...v, text: joined, cut: makerTurn.cut } : v)) : undefined,
       }));
       c.updated = Date.now();
