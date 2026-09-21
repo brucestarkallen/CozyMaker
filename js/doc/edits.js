@@ -198,9 +198,6 @@ function readOne(body) {
       `${got.length === 1 ? 'the one that could be read was' : `the ${got.length} that could were`} used`,
   };
 }
-function draftsNote(n) {
-  return n ? `${n === 1 ? 'an earlier block of changes' : `${n} earlier blocks of changes`} in the same answer ${n === 1 ? 'was' : 'were'} set aside as a draft — only the last one was used` : '';
-}
 
 export function parseEdits(text) {
   /* the extension's crafts name the block "docedits"; both are read */
@@ -213,11 +210,10 @@ export function parseEdits(text) {
     if (LOOKS_LIKE_DATA.test(tail)) {
       const got = salvageEdits(tail);
       const cut = 'the list of changes was cut off before it finished';
-      const drafts = draftsNote(blocks.filter((b) => LOOKS_LIKE_DATA.test(b.body)).length);
       const warn = got.length
         ? `${cut} — ${got.length === 1 ? 'the one complete change that arrived was' : `the ${got.length} complete changes that arrived were`} used and the rest were not`
         : `${cut}, and none of it arrived whole`;
-      return { edits: got, warn: [warn, drafts].filter(Boolean).join('; '), cut: true };
+      return { edits: got, warn, cut: true, drafts: blocks.filter((b) => LOOKS_LIKE_DATA.test(b.body)).length };
     }
   }
   if (!blocks.length) return { edits: [], warn: '' };
@@ -226,7 +222,9 @@ export function parseEdits(text) {
   if (!chosen) chosen = blocks[blocks.length - 1];
   const one = readOne(chosen.body);
   const set = blocks.filter((b) => b !== chosen && LOOKS_LIKE_DATA.test(b.body) && b.body.trim() !== chosen.body.trim()).length;
-  return { edits: one.edits, warn: [one.warn, draftsNote(set)].filter(Boolean).join('; ') };
+  /* a draft set aside is how the answer was written, not something that went
+   * wrong: it is counted, never reported as a change that did not come through */
+  return { edits: one.edits, warn: one.warn, drafts: set };
 }
 
 /* Thinking written on the page, taken out of what is shown and passed on

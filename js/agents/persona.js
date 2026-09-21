@@ -106,7 +106,8 @@ export function openingFor(p, body) {
   if (p.frame && p.frame.trim()) bits.push(voiceMacros(p.frame.trim(), p));
   const hello = greeting(p);
   if (hello) bits.push(hello);
-  bits.push(inPerson(p, body));
+  /* the body is written in the persona's own voice already (run.js frontBody) */
+  bits.push(body);
   return bits.join('\n\n');
 }
 

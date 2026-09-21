@@ -26,7 +26,7 @@ import { openingFor, personaOf, addressWriter } from './persona.js';
 import { pickConnection, FRONT } from './roster.js';
 import { callModel, streamModel, enqueue } from './call.js';
 import { parseDoc, brief, readNeed, stripNeed, resolveNeed, LEAD_SHORT } from '../doc/index.js';
-import { route } from './router.js';
+import { route, confirmsOffer, offersIn } from './router.js';
 import { parseEdits, stripEdits, stripThinking, applyRun, hash } from '../doc/edits.js';
 import { lint, lostSomething } from '../doc/lint.js';
 
@@ -45,24 +45,49 @@ export const CRAFT_FRAME =
  * by his name: a house that talks about "the writer" and "he" reads like a
  * form, and the voice that reads it starts to sound like one (Cozy Tavern
  * M327). With no name set, it simply talks to him. */
+/* WRITTEN IN BOTH VOICES, never rewritten word by word: swapping pronouns by
+ * pattern gave a first-person persona "Bruce only ever talks to I" and
+ * "I and Bruce are building". */
 export function frontBody(p) {
   const him = p.you || '';
   const who = him || 'the person you are making this with';
+  const is = him ? 'is' : 'are';
+  if (p.person === 'first') {
+    const they = him || 'they';
+    return `${him || 'They'} and I are building the guide to a world together — the plot essential, the worldbook, the files a storyteller will later read as the whole truth of that world. This is the comfortable room where that gets made, so I talk like it: two people making something good, not a service desk.
+
+${him ? `${him} only ever talks to me.` : 'I am the only one they talk to.'} Changes to the documents are made as we talk, and before I answer I am told exactly what changed. I speak of it in my own voice, as myself: short, warm, and specific about what actually changed.
+
+Only what I am told changed has changed. If nothing is listed, nothing changed, so I never say I added, fixed or wrote something that is not listed. If ${they} asked for something that was not done, I say so plainly and offer to do it.
+
+When ${him || 'they'} asked for something to be checked, audited, diagnosed or judged, what came back is the answer: I give ${him || 'them'} all of it that matters, in my own voice, not read out as a list. What was read back without being asked, I mention only if it matters.
+
+If ${they} ${is} just talking, I just talk. Not every sentence is a job.`;
+  }
+  const they = him || 'they';
   return `You and ${him || 'they'} are building the guide to a world together — the plot essential, the worldbook, the files a storyteller will later read as the whole truth of that world. This is the comfortable room where that gets made, so talk like it: two people making something good, not a service desk.
 
-${him ? `${him} only ever talks to you.` : 'You are the only one they talk to.'} There are people working behind you who know the craft inside out — they read the whole thing back, catch what drifted, and make the actual changes to the documents. You will be told what they did. Tell ${him || 'them'} in your own words, the way you would tell a friend what got done while they made tea. Short. Warm. Specific about what actually changed.
+${him ? `${him} only ever talks to you.` : 'You are the only one they talk to.'} Changes to the documents are made as you talk, and before you answer you are told exactly what changed. Speak of it in your own voice, as yourself: short, warm, and specific about what actually changed.
 
-You never edit the documents yourself and you never pretend to. If something needs writing or changing, it is already being done or already done by the time you speak.
+Only what you are told changed has changed. If nothing is listed, nothing changed, so never say you added, fixed or wrote something that is not listed. If ${they} asked for something that was not done, say so plainly and offer to do it.
 
-Never read a list of findings out to ${who}. Say the one or two things that matter and let the rest be.
+When ${who} asked for something to be checked, audited, diagnosed or judged, what came back is the answer: give ${who} all of it that matters, in your own voice, not read out as a list. What was read back without being asked, mention only if it matters.
 
-If ${him || 'they'} ${him ? 'is' : 'are'} just talking, just talk. Not every sentence is a job.`;
+If ${they} ${is} just talking, just talk. Not every sentence is a job.`;
 }
 
 /* Strip the crew's working shorthand out of anything the front will read. */
+/* One change, as a key: the same document, the same place, the same words. */
+function editKey(e) {
+  return JSON.stringify([e.file || e.create_file || '', e.find || '', e.insert_after || '', e.append === true, e.replace_all === true, e.all === true, e.replace || '']);
+}
+
 export function naturalize(text) {
   return String(text || '')
-    .replace(/<\/?(?:edits|need)>?/gi, '')
+    /* the engine's command words, said as plain words */
+    .replace(/(^|[\s(])[*#](source_new|hybrid_new|new|import|q|p|summari[sz]e|continuity|edit|retcon|delete|cleanup|optimi[sz]e|skip|ooc|show_full_file|show_spoilers|hide_spoilers|regress|next|audit|fix|brief)\b/gi, '$1$2')
+    .replace(/<\/?(?:edits|docedits|need)>?/gi, '')
+    .replace(/\bM-[A-Z]{3,}\b/g, '')
     .replace(/\[[A-Z][A-Z0-9_]{4,}\]/g, '')
     .replace(/\b(?:section|§)\s*\d+(?:\.\d+)*\b/gi, '')
     .replace(/\bSCAN EVIDENCE\b:?/gi, 'what was read:')
@@ -322,9 +347,22 @@ export async function runTurn({
   const past = (history || []).filter((t) => !t.failed);
   const docs = docsOf(project);
   const hasPE = docs.some((d) => d.kind === 'pe' && (d.text || '').trim());
+  /* a bare yes runs what the front just offered (router.js offersIn) */
+  /* a yes answers the message right before it, never an older offer */
+  const lastTurn = past[past.length - 1];
+  const lastMaker = lastTurn && lastTurn.role === 'maker' ? lastTurn : null;
+  const offered = !forceWorker && lastMaker && confirmsOffer(message) ? offersIn(lastMaker.text) : [];
+  const agreed = [];
+  for (const o of offered) {
+    for (const i of route(o, { hasPlotEssential: hasPE, hasDocs: docs.length > 0, asStatement: true })) {
+      if (agreed.some((x) => x.worker === i.worker)) continue;
+      agreed.push({ ...i, about: `${o.charAt(0).toUpperCase()}${o.slice(1)} (offered just now; ${addressWriter(p)} said "${String(message).trim()}").`, why: 'agreed to what was offered' });
+    }
+  }
   const intents = forceWorker === FRONT_ONLY ? []
     : forceWorker
     ? [{ worker: forceWorker, about: message, why: 'asked for by name' }]
+    : agreed.length ? agreed
     : route(message, { hasPlotEssential: hasPE, hasDocs: docs.length > 0 });
   const talk = conversationFor(past.concat([{ role: 'writer', text: message }]), p);
 
@@ -334,20 +372,32 @@ export async function runTurn({
   /* every change the crew made this turn, in order, so another version of
    * this answer can be put back and this one made again, exactly */
   const turnEdits = [];
+  const landed = new Set();
   let working = project;
 
   const send = async (worker, about, label, fromHouse = false, requoting = false) => {
     let craft = null;
+    /* a failure is said plainly to the front, and shown exactly on a card */
+    const failed = (why) => {
+      crew.push({ worker, failed: why });
+      if (!/^(?:stopped|let go)$/.test(why)) allCards.push({ status: 'refused', name: '', reason: '', failure: true, why: `${plainFailure(why)} (${String(why).slice(0, 160)})` });
+      return [];
+    };
     try { craft = await craftFor(worker, house); }
-    catch (e) { crew.push({ worker, failed: (e && e.message) || String(e) }); return []; }
+    catch (e) { return failed((e && e.message) || String(e)); }
     const res = await enqueue(project.id, worker, ({ signal: s, stale }) =>
       runWorker({ worker, sections, conn: connFor(worker), project: working, message: about, talk, fromHouse, onStatus, signal: either(signal, s), stale, craft }));
-    if (!res || !res.ok) { crew.push({ worker, failed: (res && res.error) || 'did not finish' }); return []; }
-    const applied = commit(working, res.edits, label);
+    if (!res || !res.ok) return failed((res && res.error) || 'did not finish');
+    /* a change already made this turn is not made again: a re-quote that
+     * repeats one that landed would only come back as a false "not done" */
+    const fresh = (res.edits || []).filter((e) => !landed.has(editKey(e)));
+    const applied = commit(working, fresh, label);
     working = applied.project;
-    if (res.edits && res.edits.length) turnEdits.push({ label, edits: res.edits });
+    fresh.forEach((e, i) => { if (applied.cards[i] && applied.cards[i].status === 'applied') landed.add(editKey(e)); });
+    if (fresh.length) turnEdits.push({ label, edits: fresh });
     if (applied.batch) batches.push(applied.batch);
-    crew.push({ worker, notes: res.notes, cards: applied.cards, guard: applied.guard, warn: res.warn });
+    /* a re-quote's own words add nothing: it is the same work, placed again */
+    crew.push({ worker, notes: requoting ? '' : res.notes, cards: applied.cards, guard: applied.guard, warn: res.warn, fromHouse });
     if (res.warn) allCards.push({ status: 'refused', name: '', reason: '', why: res.warn });
 
     /* A QUOTE THAT MISSED GOES BACK ONCE (the Plot Essential Maker's v0.11.9:
@@ -358,8 +408,8 @@ export async function runTurn({
      * documents as they now stand. */
     const missed = applied.cards.filter((c) => c.status === 'refused' && c.find &&
       /not in the document as written|appear \d+ times/.test(c.why || ''));
-    const landed = applied.cards.filter((c) => !missed.includes(c));
-    allCards.push(...landed);
+    const placed = applied.cards.filter((c) => !missed.includes(c));
+    allCards.push(...placed);
     if (!missed.length || requoting || stopped()) { allCards.push(...missed); return applied.cards; }
     onStatus(`asking the ${worker} to quote again`);
     const list = missed.map((c, i) =>
@@ -626,16 +676,43 @@ export function capUndo(project, keep = UNDO_KEPT) {
 
 /* What the front of the house is told about the backstage work — plain
  * sentences, markers already stripped out. */
+/* A failure, in words the front can say as itself: no role names, no status
+ * codes, no provider's text. The exact reason goes on a card for him. */
+export function plainFailure(error) {
+  const e = String(error || '');
+  if (/^stopped$|let go/i.test(e)) return 'it was stopped';
+  if (TOO_LONG.test(e)) return "the documents were too long for this connection's model";
+  if (/\b(?:401|403)\b|api.?key|unauthori[sz]ed|forbidden|permission/i.test(e)) return 'the connection turned the key away';
+  if (/\b429\b|rate.?limit|too many requests|overloaded|capacity|quota/i.test(e)) return 'the provider is too busy right now';
+  if (/transport|timed? ?out|did not (?:answer|open)|econn|network|connection (?:reset|refused)|failed to fetch/i.test(e)) return 'the provider did not answer';
+  if (/\b5\d\d\b|server error|internal error|bad gateway|unavailable/i.test(e)) return 'the provider had a fault on its side';
+  if (/craft file/i.test(e)) return 'its instructions could not be read';
+  return 'the provider would not do it';
+}
+
 export function backstageBrief(crew, cards, p) {
+  const who = (p && p.you) || 'the author';
   const lines = [];
+  /* WHAT HE ASKED FOR IS THE ANSWER; WHAT THE HOUSE READ BACK ON ITS OWN IS
+   * ASIDE. A check, an audit, a diagnosis he asked for is what he wants to
+   * hear, all of it that matters; notes are shown nowhere else, so a report
+   * cut to one sentence here is a report lost. */
+  const asked = [], aside = [], other = [];
   for (const c of crew) {
-    if (c.failed) { lines.push(`The ${c.worker} could not finish: ${c.failed}.`); continue; }
-    if (c.notes) lines.push(naturalize(c.notes));
-    if (c.guard) lines.push(c.guard + '.');
-    if (c.warn) lines.push(`Some of the ${c.worker}'s changes did not come through: ${c.warn}.`);
+    if (c.failed) { other.push(`Something could not be done this time: ${plainFailure(c.failed)}.`); continue; }
+    if (c.notes) {
+      const said = naturalize(c.notes);
+      const into = c.fromHouse ? aside : asked;
+      if (said && !into.includes(said)) into.push(said);
+    }
+    if (c.guard) other.push(c.guard + '.');
+    if (c.warn) other.push(`Some changes did not come through: ${c.warn}.`);
   }
+  if (asked.length) lines.push(`What came back on what ${who} asked for (the answer to give ${who}, all of it that matters):\n${asked.join('\n')}`);
+  if (aside.length) lines.push(`Read back afterwards, without being asked (mention it only if it matters):\n${aside.join('\n')}`);
+  lines.push(...other);
   const applied = cards.filter((c) => c.status === 'applied');
-  const refused = cards.filter((c) => c.status === 'refused');
+  const refused = cards.filter((c) => c.status === 'refused' && !c.failure);
   if (applied.length) {
     const byDoc = new Map();
     for (const c of applied) byDoc.set(c.name, (byDoc.get(c.name) || 0) + 1);

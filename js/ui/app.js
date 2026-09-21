@@ -86,6 +86,17 @@ function grow() {
 let pinned = true;
 function nearBottom() { return stream.scrollHeight - stream.scrollTop - stream.clientHeight < 120; }
 function follow() { if (pinned) stream.scrollTop = stream.scrollHeight; }
+/* HE OWNS THE SCROLL, measured before the page changes (the Plot Essential
+ * Maker's rule). The flag the scroll event keeps is a frame late: a piece of
+ * the reply landing in that frame found him still "pinned" and threw him back
+ * to the bottom just after he had scrolled up. So each piece asks where he is
+ * right now, before it is added, and follows only if he was at the bottom. */
+function keepPlace(change) {
+  const stay = pinned && nearBottom();
+  change();
+  if (stay) stream.scrollTop = stream.scrollHeight;
+  else pinned = false;
+}
 
 /* ---------------------------------------------------------------- drawing */
 
@@ -609,12 +620,13 @@ async function send(text, forceWorker, opts = {}) {
     result = await runTurn({
       house, project: store.getProject(), history, message: text, forceWorker,
       onStatus: setStatus,
-      onText: (chunk) => { thoughtDone(); reply += chunk; inner.textContent = reply; clearStatus(); follow(); },
+      onText: (chunk) => { thoughtDone(); keepPlace(() => { reply += chunk; inner.textContent = reply; clearStatus(); }); },
       onThinking: (chunk) => {
         thinking += chunk;
-        if (!liveThinking) { liveThinking = thinkingBox('', 0, { live: true }); bubble.insertBefore(liveThinking.node, inner); clearStatus(); }
-        liveThinking.add(chunk);
-        follow();
+        keepPlace(() => {
+          if (!liveThinking) { liveThinking = thinkingBox('', 0, { live: true }); bubble.insertBefore(liveThinking.node, inner); clearStatus(); }
+          liveThinking.add(chunk);
+        });
       },
       signal: abort.signal,
     });
@@ -699,10 +711,11 @@ function setStatus(label) {
     statusEl.append(el('span', 'ember'));
     statusEl.append(el('span', 'label'));
   }
-  statusEl.querySelector('.label').textContent = label;
   const p = store.getProject(), chat = store.openChat();
-  if (running && p && chat && running.worldId === p.id && running.chatId === chat.id && !statusEl.isConnected) stream.append(statusEl);
-  follow();
+  keepPlace(() => {
+    statusEl.querySelector('.label').textContent = label;
+    if (running && p && chat && running.worldId === p.id && running.chatId === chat.id && !statusEl.isConnected) stream.append(statusEl);
+  });
 }
 function clearStatus() { if (statusEl) { statusEl.remove(); statusEl = null; } }
 

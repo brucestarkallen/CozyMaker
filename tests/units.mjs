@@ -408,8 +408,10 @@ eq('with no names it says nothing rather than inventing one', greeting({ maker: 
 const opening = openingFor(p, 'You and the writer are building something.');
 ok('the writer\'s own instructions come first and untouched', opening.startsWith('You are Eni. You swear a bit.'));
 ok('the greeting follows them', opening.includes('Hey Eni, this is Bruce.'));
-ok('first person rewrites the body too',
-  openingFor({ ...p, person: 'first' }, 'You are building something.').includes('I am building something.'));
+/* This test once checked that openingFor swapped "you" for "I" in the body. The swapping is gone: it
+ * wrote "talks to I" and "I and Bruce". The body is written in each voice (see "both voices" below). */
+ok('first person: the text sent reads in the first person', openingFor(personaOf({ settings: { makerName: 'Eni', yourName: 'Bruce', person: 'first' } }),
+  frontBody(personaOf({ settings: { makerName: 'Eni', yourName: 'Bruce', person: 'first' } }))).includes('Bruce only ever talks to me.'));
 
 /* THE FIREWALL: nothing the front reads may carry the craft's machinery. */
 const FRONT_TEXT = openingFor(p, frontBody(p));
@@ -794,6 +796,153 @@ ok('a block in the thinking channel is still a block', (() => {
   eq('an empty document is still said to be empty', brief(parseDoc('', 'notes'), 'N.md', { whole: true }), 'N.md — it is empty so far.');
 }
 
+/* --- a bare yes runs what was just offered --- */
+{
+  const { confirmsOffer, offersIn } = await import('../js/agents/router.js');
+  for (const y of ['yes', 'Yes please', 'do it', 'go ahead', 'sure, go ahead!', 'yep. do it']) ok(`"${y}" is a yes`, confirmsOffer(y));
+  for (const n of ['no', 'yes, and make her older', 'yes but not the timeline', 'what do you think?']) ok(`"${n}" is not a bare yes`, !confirmsOffer(n));
+  eq('the offer in a reply is found', offersIn("That's a lovely thought. Want me to fold that into the plot essential?").join('|'), 'fold that into the plot essential');
+  eq('"should I" is an offer too', offersIn('Should I move the scene to the Quay?').join('|'), 'move the scene to the Quay');
+  eq('"I can\'t" is not', offersIn("I can't see a timeline yet.").join('|'), '');
+  eq('an offer phrased as a question still names its job', route('move the scene to the Quay', { asStatement: true }).map((r) => r.worker).join(), 'editor');
+}
+
+/* --- the front's text in each voice is grammar, not pronoun swaps --- */
+{
+  const first = openingFor(personaOf({ settings: { makerName: 'Eni', yourName: 'Bruce', person: 'first' }, personaFrame: 'I am {{char}}.' }),
+    frontBody(personaOf({ settings: { makerName: 'Eni', yourName: 'Bruce', person: 'first' } })));
+  ok('first person: "Bruce and I", "talks to me", "as myself"', first.includes('Bruce and I are building') && first.includes('Bruce only ever talks to me.') && first.includes('as myself'), first.slice(0, 300));
+  ok('first person: no "talks to I", no "I and", no you or yourself anywhere', !/talks to I\b|\bI and |\byou\b|\byour(self)?\b/i.test(first.replace(/^I am Eni\.\s*/, '')), (first.match(/talks to I\b|\bI and |\byou\b|\byour(self)?\b/i) || [''])[0]);
+  const second = frontBody(personaOf({ settings: { yourName: 'Bruce' } }));
+  ok('second person reads as it always did', second.includes('You and Bruce are building') && second.includes('Bruce only ever talks to you.'));
+  const nobody = frontBody(personaOf({ settings: { person: 'first' } }));
+  ok('first person with no names still reads as sentences', nobody.startsWith('They and I are building') && nobody.includes('I am the only one they talk to.') && !/undefined|null/.test(nobody));
+}
+
+/* --- his everyday phrases reach the right one --- */
+{
+  const pick = (m) => route(m).map((r) => r.worker).join(',');
+  eq('"Claire is 17 now, not 16" is a correction', pick('Claire is 17 now, not 16'), 'editor');
+  eq('"her age should be 17, not 16" too', pick('her age should be 17, not 16'), 'editor');
+  eq('"Claire is sad now" with no correction is talk', pick('Claire is sad now'), '');
+  eq('a what-if about a change is a question, not a change', pick('would that move Claire to the city?'), '');
+  eq('"can you" is still a request', pick("can you change Claire's age to fifteen"), 'editor');
+  eq('"could we" is too', pick('could we move the scene to the Quay?'), 'editor');
+  eq('whether the story can reach somewhere goes to the novelist', pick('can the story realistically reach a war by chapter ten?'), 'novelist');
+  eq('and so does "how do we get to the wedding"', pick('how do we get to the wedding without rushing it?'), 'novelist');
+}
+
+/* --- a failure, said the way the persona can say it --- */
+{
+  const { plainFailure } = await import('../js/agents/run.js');
+  eq('a refused key', plainFailure('the call did not go through — 401 Incorrect API key provided: sk-abc'), 'the connection turned the key away');
+  eq('a busy provider', plainFailure('429 Too Many Requests'), 'the provider is too busy right now');
+  eq('no answer', plainFailure('transport: timed out'), 'the provider did not answer');
+  eq('too long', plainFailure("This model's maximum context length is 8192 tokens"), "the documents were too long for this connection's model");
+}
+
+/* --- THE PERSONA HEARS ONLY THE STORY: every kind of turn, through the real pipeline --- */
+{
+  const { runTurn } = await import('../js/agents/run.js');
+  const { setCraftForTests } = await import('../js/engine/crafts.js');
+  setCraftForTests('auditor', 'AUDITOR CRAFT');
+  const persona = 'You are {{char}}, a quiet archivist who loves old maps. {{user}} is your oldest friend.';
+  const house = { connections: [{ id: 'c1', url: 'https://relay.example/v1', model: 'm', key: 'k' }], agentConnections: {},
+    settings: { makerName: 'Eni', yourName: 'Bruce', person: 'second' }, personaFrame: persona };
+  const PE = '# PLOT ESSENTIAL — Harbour — V1.0\n\n## WORLD\n### Rules\n- The city lives inside a dormant leviathan.\n\n## SCENE\nWHERE: the Ribway\n';
+  const world = () => ({ id: 'pw', docs: [{ id: 'd1', name: 'Plot Essential.md', kind: 'pe', text: PE }], chats: [], recentSections: [] });
+  const edit = (find, to) => 'Moved it.\n\n<edits>\n' + JSON.stringify([{ file: 'Plot Essential.md', find, replace: to, reason: 'moved the scene' }]) + '\n</edits>';
+  let answer = () => 'Read it all back; nothing else needed changing.';
+  const fronts = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    const req = JSON.parse(init.body);
+    if (req.stream) {
+      fronts.push(req.body);
+      const sse = 'data: ' + JSON.stringify({ choices: [{ delta: { content: 'All right.' } }] }) + '\n\ndata: [DONE]\n\n';
+      return new Response(new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(sse)); c.close(); } }), { status: 200 });
+    }
+    const user = (req.body.messages.find((m) => m.role === 'user') || {}).content || '';
+    const out = answer(user);
+    return { ok: true, json: async () => (typeof out === 'string' ? { choices: [{ message: { content: out }, finish_reason: 'stop' }] } : out) };
+  };
+  const MACHINERY = /<\/?(?:edits|docedits|need)>|replace_all|\bthe (?:builder|chronicler|scribe|editor|eye|showrunner|compressor|novelist|diagnostician|worldbook keeper|memory auditor|instructions writer)\b|\bworkers?\b|\bcrew\b|backstage|people working behind|\bslice\b|§|\bM-[A-Z]{3,}\b|\bapi\b|\b40[13]\b|sk-abc|set aside as a draft|\bdraft\b|\bJSON\b|\bcraft\b|could not finish/i;
+  const heard = () => { const b = fronts[fronts.length - 1]; return [b.messages.map((m) => m.content).join('\n')].join('\n'); };
+  const check = (name) => {
+    const b = fronts[fronts.length - 1];
+    const sys = (b.messages.find((m) => m.role === 'system') || {}).content || '';
+    const all = b.messages.map((m) => m.content).join('\n');
+    ok(`${name}: the persona leads, word for word, names filled in`, sys.startsWith('You are Eni, a quiet archivist who loves old maps. Bruce is your oldest friend.'), sys.slice(0, 90));
+    const leak = MACHINERY.exec(all);
+    ok(`${name}: nothing the persona hears names the machinery`, !leak, leak && all.slice(Math.max(0, leak.index - 60), leak.index + 60));
+  };
+  try {
+    fronts.length = 0;
+    await runTurn({ house, project: world(), message: 'what do you think of the harbour so far?' });
+    check('talk');
+    ok('talk: nothing is said to have changed', !/What got done/.test(heard()));
+
+    answer = (user) => (/What the author just asked for/.test(user) ? edit('WHERE: the Ribway', 'WHERE: the Quay') : 'Read it all back; nothing else needed changing.');
+    let r = await runTurn({ house, project: world(), message: '*edit move the scene to the Quay' });
+    check('a change');
+    ok('a change: the persona is told what changed, by document', /Changed: Plot Essential\.md \(1 change\)/.test(heard()) && /WHERE: the Quay/.test(r.project.docs[0].text));
+
+    answer = (user) => (/What the author just asked for/.test(user) ? { error: 'provider', status: 401, detail: 'Incorrect API key provided: sk-abc' } : 'fine');
+    r = await runTurn({ house, project: world(), message: '*edit move the scene to the Quay' });
+    check('a failure');
+    ok('a failure: said plainly to the persona', /Something could not be done this time: the connection turned the key away\./.test(heard()));
+    ok('a failure: the exact reason is on a card for him', r.cards.some((c) => c.failure && /401|API key/i.test(c.why)));
+
+    answer = (user) => (/What the author just asked for|could not be placed/.test(user) ? edit('WHERE: the Ribwayy', 'WHERE: the Quay') : 'fine');
+    r = await runTurn({ house, project: world(), message: '*edit move the scene to the Quay' });
+    check('a quote that never fit');
+    ok('a quote that never fit: said plainly as not done', /Not done: Plot Essential\.md — those words are not in the document as written/.test(heard()));
+
+    answer = (user) => (/What the author just asked for/.test(user)
+      ? 'Plan:\n<edits>[{"file":"Plot Essential.md","find":"WHERE: the Ribway","replace":"WHERE: the Quay"}]</edits>\nFinal:\n' + edit('WHERE: the Ribway', 'WHERE: the Quay') : 'fine');
+    r = await runTurn({ house, project: world(), message: '*edit move the scene to the Quay' });
+    check('a draft on the page');
+    ok('a draft on the page: no card says something went wrong', !r.cards.some((c) => c.status === 'refused'), JSON.stringify(r.cards.map((c) => c.why)));
+
+    answer = () => 'M-SCAN read every block. M-RECORD holds. The ledger for Claire is sound.';
+    const sc = { id: 'pw', docs: [{ id: 'd2', name: 'Harbour transplant.md', kind: 'transplant', text: '<!-- SC-TRANSPLANT {"v":1} -->' }], chats: [], recentSections: [] };
+    await runTurn({ house, project: sc, message: '*audit Harbour transplant.md', forceWorker: 'auditor' });
+    check('an audit');
+
+    answer = (user) => (/What the author just asked for/.test(user) ? edit('WHERE: the Ribway', 'WHERE: the Quay') : 'fine');
+    const history = [{ role: 'writer', text: 'the Ribway feels wrong for this scene', at: 1 },
+      { role: 'maker', text: "It does feel cramped. Want me to move the scene to the Quay?", at: 2 }];
+    r = await runTurn({ house, project: world(), history, message: 'yes' });
+    check('a yes');
+    ok('a yes: runs what was offered, and the change lands', /WHERE: the Quay/.test(r.project.docs[0].text), r.project.docs[0].text.slice(-30));
+    ok('a yes: the persona is told it changed', /Changed: Plot Essential\.md/.test(heard()));
+    const moved = [{ role: 'maker', text: 'Want me to move the scene to the Quay?', at: 2 }, { role: 'writer', text: 'hmm, let me think', at: 3 }];
+    r = await runTurn({ house, project: world(), history: moved, message: 'yes' });
+    ok('a yes after he has moved on does not reach back to an older offer', /WHERE: the Ribway/.test(r.project.docs[0].text), r.project.docs[0].text.slice(-30));
+
+    /* a report he asked for is the answer; a read-back he did not ask for is aside */
+    answer = () => 'Claire is 16 in one event and 17 in the next. The harbour wall is built twice.';
+    await runTurn({ house, project: world(), message: 'Check Plot Essential.md for anything wrong', forceWorker: 'eye' });
+    check('a check he asked for');
+    ok('a check he asked for: its findings reach the persona as the answer to give',
+      /What came back on what Bruce asked for \(the answer to give Bruce, all of it that matters\):\nClaire is 16 in one event and 17 in the next\. The harbour wall is built twice\./.test(heard()), heard().slice(-400));
+    answer = (user) => (/What the author just asked for/.test(user) ? edit('WHERE: the Ribway', 'WHERE: the Quay') : 'Read every line back: the harbour wall is built twice.');
+    await runTurn({ house, project: world(), message: '*edit move the scene to the Quay' });
+    ok('a read-back he did not ask for is set aside, to mention only if it matters',
+      /Read back afterwards, without being asked \(mention it only if it matters\):\nRead every line back: the harbour wall is built twice\./.test(heard()), heard().slice(-400));
+
+    /* a re-quote that repeats a change which already landed: one honest "not done", and no repeated note */
+    answer = (user) => (/What the author just asked for|could not be placed/.test(user)
+      ? 'Moved it.\n<edits>' + JSON.stringify([{ file: 'Plot Essential.md', find: 'WHERE: the Ribway', replace: 'WHERE: the Quay' },
+        { file: 'Plot Essential.md', find: 'a line that is not there', replace: 'x' }]) + '</edits>' : 'fine');
+    r = await runTurn({ house, project: world(), message: '*edit move the scene to the Quay' });
+    check('a re-quote that repeats itself');
+    ok('a re-quote that repeats a landed change: that change is not refused afterwards',
+      r.cards.filter((c) => c.status === 'refused').length === 1 && r.cards.filter((c) => c.status === 'applied').length === 1, JSON.stringify(r.cards.map((c) => [c.status, c.why])));
+    ok('and its words reach the persona once', (heard().match(/Moved it\./g) || []).length === 1, heard().slice(-300));
+  } finally { globalThis.fetch = realFetch; }
+}
+
 /* --- the words houses use for "too long" --- */
 {
   const { TOO_LONG } = await import('../js/agents/run.js');
@@ -807,6 +956,20 @@ ok('a block in the thinking channel is still a block', (() => {
   for (const said of ['Incorrect API key provided', 'Unrecognized request argument supplied: reasoning_effort', 'rate limit reached']) {
     ok(`"${said.slice(0, 40)}" is not`, !TOO_LONG.test(said));
   }
+}
+
+/* --- the persona's frame, in both voices; what it reads of a document --- */
+{
+  for (const person of ['second', 'first']) {
+    const body = frontBody({ you: 'Bruce', maker: 'Eni', person });
+    ok(`${person} person: a report he asked for is the answer to give`, /what came back is the answer/.test(body) && /all of it that matters/.test(body), body);
+    ok(`${person} person: no rule left that cuts his report to one or two things`, !/one or two things/.test(body), body);
+  }
+  eq('the engine\'s command words reach the persona as plain words', naturalize('Ran *cleanup, then #q and (*audit) — see *optimize.'), 'Ran cleanup, then q and (audit) — see optimize.');
+  const pe = '# PLOT ESSENTIAL — Harbour — V1.0\n\n## WORLD\n- The city lives inside a dormant leviathan.\n\n## SCENE\nWHERE: the Ribway\n';
+  const w = { docs: [{ name: 'Plot Essential.md', kind: 'pe', text: pe }] };
+  ok('the persona reads the outline without character counts', !/characters/.test(docBriefs(w, { forFront: true })), docBriefs(w, { forFront: true }));
+  ok('a worker reading an outline still has them, to choose what to ask for', /\d+ characters/.test(brief(parseDoc(pe, 'pe'), 'Plot Essential.md', {})));
 }
 
 /* --- a worldbook is repaired by code where code can read it --- */
@@ -876,7 +1039,9 @@ ok('structure outside strings is left alone', escapeRawControlsInStrings('[\n {"
   const drafted = 'Plan: <edits>[{"find":"Claire","replace":"Claire Reynolds"}]</edits> let me check. Final:\n<edits>[{"find":"Claire","replace":"Claire Reynolds"},{"find":"x","replace":"y"}]</edits>';
   const r = parseEdits(drafted);
   eq('only the last block is used', r.edits.length, 2);
-  ok('and the draft is said to have been set aside', /set aside as a draft/.test(r.warn), r.warn);
+  /* This line once required a note about the draft in r.warn. That note reached the cards as "Not done"
+   * and the persona as a failure; a draft set aside is how the answer was written, so it is only counted. */
+  ok('the draft is counted, never reported as something that went wrong', r.drafts === 1 && !r.warn, JSON.stringify(r));
   const same = parseEdits('<edits>[{"find":"a","replace":"b"}]</edits> <edits>[{"find":"a","replace":"b"}]</edits>');
   ok('the same block twice is one block and no note', same.edits.length === 1 && !same.warn, JSON.stringify(same));
   const cutFinal = parseEdits('<edits>[{"find":"old","replace":"draft"}]</edits> Final: <edits>[{"find":"a","replace":"b"},{"find":"c","rep');

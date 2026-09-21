@@ -122,6 +122,22 @@ class Model(http.server.BaseHTTPRequestHandler):
                 pass
             return
 
+        if sent.get("stream") and "tell me something long" in json.dumps(rest[-1:] if rest else []):
+            # a fast model: two hundred small pieces, 5ms apart -- the way tokens really arrive
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.end_headers()
+            try:
+                for i in range(200):
+                    self.wfile.write(("data: " + json.dumps({"choices": [{"delta": {"content": f"word {i} and done. "}}]}) + "\n\n").encode())
+                    self.wfile.flush()
+                    time.sleep(0.005)
+                self.wfile.write(b"data: [DONE]\n\n")
+                self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            return
+
         if sent.get("stream"):
             time.sleep(DELAY["front"])
             self.send_response(200)

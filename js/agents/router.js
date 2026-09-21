@@ -81,6 +81,9 @@ const PLAIN = [
     /\b(add|give|remove|delete|drop)\b[^.?!]{0,40}\b(to|from|for)\b[^.?!]{0,30}\b(profile|dossier|entry|core|id|skills|rels|character|npc)\b/i,
     /\b(add|give)\b[^.?!]{0,30}\bto\s+[A-Z][a-z]+/,
     /\b(his|her|their|its)\s+(age|name|rank|title|height|build|hair|eyes?)\s+(is|should be)\b/i,
+    /* an explicit correction: "Claire is 17 now, not 16", "her age should be 17, not 16" */
+    /\b(?:is|are)\s+[^.?!,]{1,30}\s+now\b[^.?!]{0,30}\bnot\b/i,
+    /\bshould be\b[^.?!]{1,40}\bnot\b/i,
     /\brename\b/i,
     /\bretcon\b/i,
     /\bdelete\s+[A-Z][a-z]+/,
@@ -96,7 +99,11 @@ const PLAIN = [
     /\b(cut|reduce) the (size|tokens|length)\b/i,
     /\bfewer tokens\b/i,
   ] }],
-  ['novelist', { always: [/\b#?skip\b/i], statement: [
+  ['novelist', { always: [/\b#?skip\b/i,
+    /* whether the story can get somewhere is a question by nature */
+    /\bcan (?:the story|it|we|this)\b[^.?!]{0,30}\b(?:reach|get to|get there|arrive at|build to|lead to|end up)\b/i,
+    /\bhow (?:do|can|would|could) (?:we|the story|it)\b[^.?!]{0,20}\b(?:get|reach|build) to\b/i,
+  ], statement: [
     /\bi want\b[^.?!]{0,60}\bto happen\b/i,
     /\b(get|jump|move|fast ?forward)\b[^.?!]{0,30}\bto (the point|where|when)\b/i,
     /\bbridge\b[^.?!]{0,20}\b(to|between)\b/i,
@@ -121,7 +128,11 @@ const PLAIN = [
 /* Somebody asking, not telling. */
 const ASKING = /^\s*(do|does|did|is|are|was|were|am|should|shall|would|could|can|may|might|will|have|has|what|why|how|who|whom|whose|when|where|which)\b/i;
 /* …unless the question mark is only manners. */
-const MANNERS = /^\s*(please\s+)?(can|could|would|will)\s+(you\s+)?(please\s+)?/i;
+/* Politeness is "can YOU", "could WE": a request wearing a question mark. "Can
+ * the story reach it?" and "would that move Claire to the city?" are real
+ * questions, and stripping their first word made them instructions: the second
+ * sent the editor to change a document on a what-if. */
+const MANNERS = /^\s*(please\s+)?(can|could|would|will)\s+(you|we)\s+(please\s+)?/i;
 
 /* Sentences that are conversation and nothing else — no worker, just talk. */
 const JUST_TALKING = [
@@ -139,14 +150,14 @@ function clauses(message) {
   return parts.map((p) => String(p || '').trim()).filter(Boolean);
 }
 
-function readOne(text) {
+function readOne(text, asStatement = false) {
   for (const [re, worker] of COMMANDS) if (re.test(text)) return { worker, why: 'written command', strong: true };
 
   /* Strip the manners first: "can you change her age to fifteen" is an
    * instruction wearing a question mark. What is left is judged on its own. */
   const polite = MANNERS.test(text);
   const bare = polite ? text.replace(MANNERS, '') : text;
-  const asking = !polite && ASKING.test(text);
+  const asking = !asStatement && !polite && ASKING.test(text);
 
   for (const [worker, shapes] of PLAIN) {
     for (const re of shapes.always) if (re.test(bare)) return { worker, why: 'plain words', strong: false };
@@ -159,7 +170,7 @@ function readOne(text) {
 }
 
 /* The whole read. Returns [] when the writer is simply talking. */
-export function route(message, { hasPlotEssential = true, hasDocs = true } = {}) {
+export function route(message, { hasPlotEssential = true, hasDocs = true, asStatement = false } = {}) {
   const text = String(message || '').trim();
   if (!text) return [];
   for (const re of JUST_TALKING) if (re.test(text)) return [];
@@ -175,7 +186,7 @@ export function route(message, { hasPlotEssential = true, hasDocs = true } = {})
   const found = [];
   const seen = new Set();
   for (const part of clauses(text)) {
-    const hit = readOne(part);
+    const hit = readOne(part, asStatement);
     if (!hit) continue;
     if (seen.has(hit.worker)) continue;
     seen.add(hit.worker);
@@ -198,4 +209,24 @@ export function route(message, { hasPlotEssential = true, hasDocs = true } = {})
     return found.filter((f) => f.worker === 'builder');
   }
   return found;
+}
+
+/* A BARE YES RUNS WHAT WAS JUST OFFERED. The front offers ("want me to fold
+ * that into the plot essential?") and he answers "yes": a word that names no
+ * job, so it reached no one. The offer itself names the job, so the sentences
+ * where the front offered something are read as the instruction he agreed to.
+ * Only a bare yes: "yes, and make her older" is routed as its own words. */
+const CONFIRM = /^\s*(?:(?:yes|yeah|yep|yup|sure|ok|okay|alright|all right|please|go ahead|do it|do that|go for it|please do|sounds good|let'?s do (?:it|that)|sure thing|of course|absolutely|definitely)[\s,.!]*){1,3}$/i;
+export function confirmsOffer(message) { return CONFIRM.test(String(message || '')); }
+
+const OFFER = /\b(?:(?:do you |would you )?(?:want|like) me to|you'?d like me to|shall i|should i|i can|i could)\s+(.+)/i;
+export function offersIn(text) {
+  const out = [];
+  for (const sentence of String(text || '').split(/(?<=[.?!])\s+|\n+/)) {
+    const m = OFFER.exec(sentence);
+    if (!m) continue;
+    const job = m[1].replace(/\s*(?:for you|now|right now|next|if you like|if you want)?\s*[?.!]*\s*$/i, '').trim();
+    if (job) out.push(job);
+  }
+  return out;
 }

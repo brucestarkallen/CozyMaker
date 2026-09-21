@@ -169,8 +169,8 @@ function editConnection(id) {
   g.append(field('How much thinking, when it is on', budget));
 
   const row = el('div', 'btnrow');
-  const save = el('button', 'btn', 'Save');
-  save.addEventListener('click', async () => {
+  const saveBtn = el('button', 'btn', 'Save');
+  saveBtn.addEventListener('click', async () => {
     c.name = name.value.trim() || model.value.trim() || 'a connection';
     c.url = url.value.trim();
     c.model = model.value.trim();
@@ -188,7 +188,7 @@ function editConnection(id) {
   });
   const back = el('button', 'btn quiet', 'Back');
   back.addEventListener('click', draw);
-  row.append(save, back);
+  row.append(saveBtn, back);
   if (existing) {
     const del = el('button', 'btn danger', 'Remove');
     del.addEventListener('click', async () => {

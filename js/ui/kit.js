@@ -43,9 +43,9 @@ const redrawers = new Set();
 export function onRedraw(fn) { redrawers.add(fn); return () => redrawers.delete(fn); }
 export function redraw() { for (const fn of redrawers) { try { fn(); } catch (_) {} } }
 
-export function field(label, input) {
+export function field(label, control) {
   const l = el('label', 'field');
-  l.append(el('span', '', label), input);
+  l.append(el('span', '', label), control);
   return l;
 }
 

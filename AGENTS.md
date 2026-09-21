@@ -386,13 +386,44 @@ out; the rest were found here and fixed. Each has a test.
 - **A model too small for the whole world failed the turn.** When a provider says a request is too long
   (`TOO_LONG`), the worker is asked once more with the outline and the newest talk.
 
+### Found auditing what the persona hears (v1.1.3)
+
+`tests/units.mjs` runs whole turns and checks everything the persona receives against a machinery
+pattern (edit tags, role names, worker, crew, craft, draft, JSON, api, status codes, a raw key, §, rule
+codes) and that its system prompt opens with his persona word for word. Keep every new message the
+front can receive inside that harness.
+
+- **A report he asked for was cut to "one or two things".** The persona was told never to read findings
+  out, and worker notes are shown nowhere else: a check, audit or diagnosis he asked for was lost past
+  a sentence. What he asked for now reaches the persona as the answer to give, all of it that matters;
+  what the house read back on its own is set aside, mentioned only if it matters. Both voices.
+- **A failure put machinery in its mouth** ("The editor could not finish: 401 …"). It is said as the
+  persona can say it (`plainFailure`); the exact reason is on a card for him.
+- **The frame was written by swapping pronouns**, which gave a first-person persona "talks to I". It is
+  written in both voices, and says nothing about anyone working behind it.
+- **Worker notes carried the engine's command words** (`*cleanup`, `#q`) and the persona's outline carried
+  character counts; both are gone from what it reads. Workers keep the counts.
+- **A draft set aside was reported as a change that did not come through**; it is counted, not reported.
+- **A re-quote that repeated a change which had landed** came back as a false "not done", and its note was
+  heard twice. A change that landed this turn is never made again; a re-quote adds no words.
+- **A what-if lost its first word to "manners"** ("would that move Claire…") and sent the editor to change
+  the document. Only "can you / could we" is politeness. "Claire is 17 now, not 16" is a correction;
+  "can the story reach the siege?" goes to the novelist; a bare yes runs what the persona just offered.
+- **Scrolling up during a fast reply was undone.** The scroll event lands a frame late, and a piece of the
+  reply arriving in that frame found him still "pinned". Each piece measures where he is before it is
+  added (`keepPlace`). Proven both ways with 200 pieces 5ms apart: 3201px before, left where he was after.
+- **A second `function grow` stopped the whole app loading.** `node --check` parses a file as a script,
+  where that is allowed; a module refuses it. Before every push, run ESLint 8 over `js/` as modules with
+  `no-undef`, `no-shadow` and `no-redeclare` — no suite reaches every line, and a module that does not
+  parse fails everything at once.
+
 ## Testing
 
 ```
 bash tests/all.sh           all seven, exit code intact
 ```
 
-    node tests/units.mjs         427 checks — the real modules on a real document
+    node tests/units.mjs         495 checks — the real modules on a real document, and what the persona hears
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       31 checks — the real serve.py, real files on disk, streams timed
@@ -404,7 +435,7 @@ bash tests/all.sh           all seven, exit code intact
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-717 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
+785 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

@@ -107,8 +107,9 @@ function parseWorldbook(src) {
 
 /* ------------------------------------------------------------- the index */
 
-export function indexLines(doc) {
+export function indexLines(doc, { counts = true } = {}) {
   const out = [];
+  const say = (line) => (counts ? line : line.replace(/ \u2014 [\d,]+ characters?:? ?/, ' \u2014 ').replace(/ \u2014 $/, ''));
   for (let i = 0; i < doc.sections.length; i++) {
     const s = doc.sections[i];
     /* A heading whose content is other headings is a grouping, not a section
@@ -120,7 +121,7 @@ export function indexLines(doc) {
       out.push(`${s.level === 3 ? '  ' : ''}${s.title} — what follows is under this`);
       continue;
     }
-    out.push(indexLine(doc, s));
+    out.push(say(indexLine(doc, s)));
   }
   return out;
 }
@@ -218,7 +219,7 @@ export function brief(doc, name, opts = {}) {
       : lead);
   }
   if (doc.sections.length) {
-    parts.push(`Everything that is in it:\n${indexLines(doc).join('\n')}`);
+    parts.push(`Everything that is in it:\n${indexLines(doc, { counts: !opts.forFront }).join('\n')}`);
   } else if (!lead) {
     parts.push('It is empty so far.');
   }

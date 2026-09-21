@@ -225,10 +225,10 @@ async function streamOnce(conn, opts, dropThinking) {
     const { done, value } = await reader.read();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
-    let cut;
-    while ((cut = buffer.indexOf('\n')) !== -1) {
-      handle(buffer.slice(0, cut));
-      buffer = buffer.slice(cut + 1);
+    let nl;
+    while ((nl = buffer.indexOf('\n')) !== -1) {
+      handle(buffer.slice(0, nl));
+      buffer = buffer.slice(nl + 1);
     }
   }
   /* WHAT IS LEFT WHEN THE STREAM ENDS IS STILL PART OF IT. A refusal comes
