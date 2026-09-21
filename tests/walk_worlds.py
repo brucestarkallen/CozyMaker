@@ -51,6 +51,8 @@ def until(check, timeout=6.0):
 
 
 def which(system):
+    if "You are the one who listens." in system:
+        return "listener"
     for marker, name in (("worldbook architect for SillyTavern", "worldbook"), ("PROACTIVE CO-WRITER", "builder"), ("THE CLEANUP WORKFLOW", "showrunner"),
                          ("THE EXPERT EYE", "eye"), ("Edit Mode Discipline", "editor"),
                          ("SMART COMPRESSION SYSTEM", "compressor")):
@@ -156,7 +158,22 @@ class Model(http.server.BaseHTTPRequestHandler):
             return
 
         time.sleep(DELAY["worker"])
-        if who == "builder":
+        asked_for = rest[0]["content"].split("What the author just asked for:")[-1] if rest else ""
+        if who == "listener":
+            # a listener that knows two sentences; anything else it cannot read, and the house
+            # falls back to the old reading, so every other scenario here is routed as before
+            said = rest[0]["content"].split("just said:")[-1].lower() if rest else ""
+            if "still waiting on" in rest[0]["content"].lower() and "yes, all of it" in said:
+                body = '{"jobs":[{"worker":"showrunner","task":"Bruce approved the whole plan.","resumes":true}]}'
+            elif "a lighthouse would suit" in said:
+                body = '{"jobs":[{"worker":"editor","task":"Move the scene to the Lighthouse."}]}'
+            else:
+                body = "hm, hard to say"
+        elif who == "showrunner" and "the north arc" in asked_for and "What you put to" not in asked_for:
+            # the craft's 10.2: a plan first, never executed without his say
+            body = ('I read the whole plot essential and the north arc.\n\n'
+                    '<ask>NORTH ARC PLAN: say the leviathan is dormant, not dead, so the arc stops reading as a funeral. Go ahead?</ask>')
+        elif who == "builder":
             body = ('I started the plot essential from what you described.\n\n<edits>\n'
                     '[{"create_file":"Plot Essential.md","replace":"# PLOT ESSENTIAL — The Leviathan Quarter — V1.0\\n\\n'
                     '## WORLD\\n### Rules\\n- The city lives inside a dormant leviathan.\\n\\n## SCENE\\nWHERE: the Ribway\\n",'
@@ -561,9 +578,13 @@ def main():
             # what each refusal names (Cozy Tavern M350): the first try names reasoning_effort, the second
             # teaches nothing new, so thinking is silenced for the day (M319), and the third goes through.
             # (Before the port this was 2 tries, because the first refusal threw every field away at once.)
-            ok("a refused thinking level is learned from and goes again", len(refused) == 3, len(refused))
-            ok("the second try left out the field that was named", len(refused) == 3 and "reasoning_effort" not in refused[1]["body"])
-            ok("the third carried no thinking at all", len(refused) == 3 and not any(k in refused[2]["body"] for k in ("thinking", "reasoning_effort", "reasoning", "enable_thinking")))
+            # The listener rides the front's connection when nothing else is set, so it meets the refusal
+            # first and learns; the front after it goes right the first time.
+            THINK = ("thinking", "reasoning_effort", "reasoning", "enable_thinking")
+            ok("a refused thinking level is learned from and goes again", len(refused) == 4, len(refused))
+            ok("the second try left out the field that was named", len(refused) == 4 and "reasoning_effort" not in refused[1]["body"])
+            ok("the third carried no thinking at all", len(refused) == 4 and not any(k in refused[2]["body"] for k in THINK))
+            ok("and every call after the lesson carries none either", all(not any(k in c["body"] for k in THINK) for c in refused[2:]))
             learned = [c for c in api("/api/house")["connections"] if c["id"] == "c2"][0].get("learned") or {}
             ok("what it learned is kept on the connection", "reasoning_effort" in (learned.get("drop") or []) and learned.get("downAt"), learned)
             last = page.locator(".turn.maker .bubble").last.inner_text()
@@ -574,8 +595,8 @@ def main():
             page.wait_for_function("() => !document.querySelector('#sendBtn.stop')", timeout=30000)
             page.wait_for_timeout(900)
             again = [c for c in calls if c["who"] == "refuse"]
-            ok("the next turn goes right the first time", len(again) == 1 and not any(
-                k in again[0]["body"] for k in ("thinking", "reasoning_effort", "reasoning", "enable_thinking")), len(again))
+            ok("the next turn goes right the first time — the listener and the front, once each, no thinking",
+               len(again) == 2 and not any(any(k in c["body"] for k in THINK) for c in again), len(again))
 
             h["agentConnections"]["keeper"] = "c3"
             api("/api/house", "PUT", h)
@@ -588,8 +609,9 @@ def main():
             page.wait_for_timeout(1200)
             last = page.locator(".turn.maker .bubble").last.inner_text()
             ok("a refused call says what the provider said", "did not go through" in last and "Incorrect API key" in last, last[:160])
-            ok("a bad key is asked once, not retried", len([c for c in calls if c["who"] == "badkey"]) == 1,
-               len([c for c in calls if c["who"] == "badkey"]))
+            bad = [c for c in calls if c["who"] == "badkey"]
+            ok("a bad key is asked once, not retried — once by the listener, once by the front",
+               len(bad) == 2 and sum(1 for c in bad if c["body"].get("stream")) == 1, len(bad))
 
             # ---------------------------------------- the findable retry
             ok("a failed turn that changed nothing offers Try again",
@@ -745,6 +767,50 @@ def main():
             page.wait_for_timeout(1500)
             ok("walking back puts that change back and makes the first answer's again — still once",
                pe_text().count("dormant, not dead") == 1 and last_maker().locator(".swipe-count").inner_text().strip() == "1 / 2", pe_text()[:200])
+
+            # ---------------------------------------- the listener, and a plan that waits on him
+            wd = world("p_new")
+            for d in wd["docs"]:
+                if d["name"] == "Plot Essential.md":
+                    d["text"] = ("# PLOT ESSENTIAL — The Leviathan Quarter — V1.0\n\n## WORLD\n### Rules\n"
+                                 "- The city lives inside a dormant leviathan.\n\n## SCENE\nWHERE: the Ribway\n")
+            api("/api/project/p_new", "PUT", wd)
+            page.reload(wait_until="networkidle")
+            page.wait_for_timeout(700)
+            calls.clear()
+            page.fill("#say", "Honestly a lighthouse would suit this scene far better.")
+            page.click("#sendBtn")
+            settle()
+            ok("plain words no keyword names are heard by the listener", any(c["who"] == "listener" for c in calls), [c["who"] for c in calls])
+            ok("and the one it sent changed the document on the device", "WHERE: the Lighthouse" in pe_text(), pe_text()[-60:])
+            calls.clear()
+            page.fill("#say", "*cleanup the north arc feels muddled")
+            page.click("#sendBtn")
+            settle()
+            ok("a plan that needs his say changes nothing yet", "dormant leviathan." in pe_text() and "dormant, not dead" not in pe_text(), pe_text()[:200])
+            chat = max(world("p_new")["chats"], key=lambda c: c.get("updated", 0))
+            waiting = [t for t in chat["turns"] if t["role"] == "maker"][-1].get("asks") or []
+            ok("what waits on him is kept on the turn, on the device", len(waiting) == 1 and waiting[0]["worker"] == "showrunner"
+               and "NORTH ARC PLAN" in waiting[0]["ask"], waiting)
+            fronts = [c for c in calls if c["who"] == "front"]
+            ok("the persona was told to put all of it to him", bool(fronts) and "Still to decide" in json.dumps(fronts[-1]["messages"])
+               and "NORTH ARC PLAN" in json.dumps(fronts[-1]["messages"]))
+            calls.clear()
+            page.fill("#say", "yes, all of it")
+            page.click("#sendBtn")
+            settle()
+            sr = [c for c in calls if c["who"] == "showrunner"]
+            ok("his yes went back to the same worker with its plan, word for word", bool(sr)
+               and "What you put to Bruce last time, word for word:\nNORTH ARC PLAN" in sr[0]["messages"][0]["content"], [c["who"] for c in calls])
+            ok("and the plan he approved landed on the device", pe_text().count("dormant, not dead") == 1, pe_text()[:200])
+            # the scenes after this one start where the swipes left the world: the scene back at the Ribway
+            wd = world("p_new")
+            for d in wd["docs"]:
+                if d["name"] == "Plot Essential.md":
+                    d["text"] = d["text"].replace("WHERE: the Lighthouse", "WHERE: the Ribway")
+            api("/api/project/p_new", "PUT", wd)
+            page.reload(wait_until="networkidle")
+            page.wait_for_timeout(700)
 
             # a quote that missed goes back to the one who wrote it, once, with exactly what missed
             calls.clear()

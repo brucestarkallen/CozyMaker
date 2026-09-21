@@ -1273,6 +1273,141 @@ eq('a plot essential is the default', guessKind('Plot Essential.md', '# PLOT ESS
 eq('a note that opens with a bracket is words, not a worldbook', guessKind('Scratch.md', '[OOC: remember the siege]\nmore'), 'pe');
 eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries":{"0":{"comment":"a"}}}'), 'worldbook');
 
+/* ================================================ the listener (v1.1.5) */
+
+{
+  const { readJobs, listenerPrompt, listenerReading, LISTENER_MARK } = await import('../js/agents/listener.js');
+  const { runTurn, versionOf, readAsk, jobFor } = await import('../js/agents/run.js');
+
+  /* --- reading its answer --- */
+  eq('a plain answer is read', readJobs('{"jobs":[{"worker":"editor","task":"Make Mira twenty."}]}').jobs, [{ worker: 'editor', task: 'Make Mira twenty.', resumes: false }]);
+  eq('fenced and with a trailing comma, still read', readJobs('```json\n{"jobs":[{"worker":"the Editor","task":"x",},]}\n```').jobs.map((j) => j.worker), ['editor']);
+  eq('nothing to do is an answer too', readJobs('{"jobs": []}'), { ok: true, jobs: [] });
+  ok('prose is not an answer', !readJobs('I think the editor should do it.').ok);
+  ok('someone who is not on the crew is not an answer', !readJobs('{"jobs":[{"worker":"storyteller","task":"x"}]}').ok);
+  ok('the listener cannot send itself', !readJobs('{"jobs":[{"worker":"listener","task":"x"}]}').ok);
+  eq('two jobs for one worker become one job, both parts kept', readJobs('{"jobs":[{"worker":"editor","task":"a"},{"worker":"editor","task":"b"}]}').jobs, [{ worker: 'editor', task: 'a\n\nAnd: b', resumes: false }]);
+  eq('an answer written after its thinking is still read', readJobs('<think>hmm</think>{"jobs":[{"worker":"eye","task":"check"}]}').jobs.map((j) => j.worker), ['eye']);
+
+  /* --- what it reads --- */
+  const reading = listenerReading(SECTIONS);
+  ok('it reads the craft\'s own words on reading a request (7.6) and its commands (11)', /Command Parsing \(Free-Form Input\)/.test(reading) && /11 · COMMANDS/.test(reading), reading.slice(0, 80));
+  const pr = listenerPrompt({ frame: 'FRAME', reading, docs: [{ name: 'Plot Essential.md', kind: 'pe', text: PE }], talk: 'Bruce: hello', open: [{ worker: 'showrunner', ask: 'Cut the north arc? Yes or no.' }], message: 'yes', p: { you: 'Bruce', maker: 'Eni' } });
+  ok('it is told who does what, with the craft\'s commands that are theirs', /- showrunner: .*\*cleanup, #prune/.test(pr.system) && /- editor: .*\*edit/.test(pr.system), pr.system.slice(-900));
+  ok('it sees what is waiting on him, word for word', pr.user.includes('The showrunner put this to him and is waiting for his answer:\nCut the north arc? Yes or no.'));
+  ok('it sees the documents by name and section, never their text', pr.user.includes('Plot Essential.md — the plot essential: ') && !pr.user.includes('Majority is sixteen.'), pr.user.slice(0, 200));
+  ok('what he just said comes last', pr.user.endsWith('What Bruce just said:\nyes'));
+
+  /* --- the ask a worker leaves, and the craft's own marker --- */
+  eq('an ask is taken out of the notes', readAsk('I read it all.\n<ask>Cut the north arc?</ask>'), { ask: 'Cut the north arc?', rest: 'I read it all.' });
+  eq('an ask cut off at the end is still an ask', readAsk('Notes.\n<ask>Cut the north arc? Or keep').ask, 'Cut the north arc? Or keep');
+  const back = jobFor({ worker: 'showrunner', task: 'He approved only the safe cuts.', resumes: true }, [{ worker: 'showrunner', ask: 'MANIFEST: cut A, reshape B.' }], 'only the safe ones', { you: 'Bruce' });
+  ok('his answer goes back with what was asked, word for word, and his own words', back.about === 'He approved only the safe cuts.\n\nWhat you put to Bruce last time, word for word:\nMANIFEST: cut A, reshape B.\n\nWhat Bruce said back:\nonly the safe ones', back.about);
+  ok('a job that answers nothing gets its task alone', jobFor({ worker: 'editor', task: 'Make Mira twenty.', resumes: false }, [{ worker: 'showrunner', ask: 'x' }], 'y', {}).about === 'Make Mira twenty.');
+  eq('a kept version keeps what it asked', versionOf({ text: 't', asks: [{ worker: 'showrunner', ask: 'x' }] }).asks, [{ worker: 'showrunner', ask: 'x' }]);
+
+  /* --- whole turns, on the wire --- */
+  const calls = [];
+  let listenerSays = () => 'not sure';
+  let workerSays = () => 'Read it all back; nothing else needed changing.';
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    const req = JSON.parse(init.body);
+    if (req.stream) {
+      calls.push({ who: 'front', url: req.url, body: req.body });
+      const sse = 'data: ' + JSON.stringify({ choices: [{ delta: { content: 'Mm.' } }] }) + '\n\ndata: [DONE]\n\n';
+      return new Response(new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(sse)); c.close(); } }), { status: 200 });
+    }
+    const sys = (req.body.messages.find((m) => m.role === 'system') || {}).content || '';
+    const user = (req.body.messages.find((m) => m.role === 'user') || {}).content || '';
+    const who = sys.includes(LISTENER_MARK) ? 'listener' : 'worker';
+    calls.push({ who, url: req.url, sys, user });
+    const out = who === 'listener' ? listenerSays(user) : workerSays(user, sys);
+    return { ok: true, json: async () => ({ choices: [{ message: { content: out }, finish_reason: 'stop' }] }) };
+  };
+  const house = { connections: [{ id: 'c1', url: 'https://one.example/v1', model: 'm', key: 'k' }, { id: 'c2', url: 'https://two.example/v1', model: 'm2', key: 'k' }],
+    agentConnections: {}, settings: { makerName: 'Eni', yourName: 'Bruce' }, personaFrame: 'You are Eni.' };
+  const PE1 = '# PLOT ESSENTIAL — Harbour — V1.0\n\n## WORLD\n### Rules\n- The city lives inside a dormant leviathan.\n\n## SCENE\nWHERE: the Ribway\n';
+  const world = () => ({ id: 'pl', docs: [{ id: 'd1', name: 'Plot Essential.md', kind: 'pe', text: PE1 }], chats: [], recentSections: [] });
+  const heard = () => { const f = calls.filter((c) => c.who === 'front').pop(); return f.body.messages[f.body.messages.length - 1].content; };
+  const listened = () => calls.filter((c) => c.who === 'listener');
+  const edit = (find, to) => 'Done.\n<edits>' + JSON.stringify([{ file: 'Plot Essential.md', find, replace: to, reason: 'x' }]) + '</edits>';
+  try {
+    /* words no keyword table knows */
+    const plain = 'the kingdom deserves a second moon, pale and slow';
+    ok('the old keyword reading sends nobody for it (why the listener exists)', route(plain).length === 0);
+    listenerSays = () => '{"jobs":[{"worker":"editor","task":"Add to the world\'s rules: the kingdom has a second moon, pale and slow."}]}';
+    workerSays = (user) => (/What the author just asked for:\nAdd to the world's rules/.test(user) ? 'Added.\n<edits>' + JSON.stringify([{ file: 'Plot Essential.md', insert_after: '- The city lives inside a dormant leviathan.', replace: '- A second moon, pale and slow, crosses the sky.', reason: 'his world' }]) + '</edits>' : 'Read it all back.');
+    let r = await runTurn({ house, project: world(), message: plain });
+    ok('the listener sends the right one, and the change lands', /A second moon, pale and slow/.test(r.project.docs[0].text), r.project.docs[0].text);
+    ok('the persona is told it changed', /Changed: Plot Essential\.md/.test(heard()), heard().slice(-300));
+    ok('the listener heard the conversation and the craft, not the documents\' text', listened().length === 1 && /Command Parsing/.test(listened()[0].sys) && !listened()[0].user.includes('dormant leviathan'), listened()[0].user.slice(0, 200));
+
+    /* nothing readable from the listener: the old reading, so a turn never fails because of it */
+    calls.length = 0;
+    listenerSays = () => 'hm, hard to say';
+    workerSays = (user) => (/What the author just asked for/.test(user) ? edit('WHERE: the Ribway', 'WHERE: the Quay') : 'fine');
+    r = await runTurn({ house, project: world(), message: 'move the scene to the Quay' });
+    ok('an unreadable listener falls back to the old reading, and the change still lands', /WHERE: the Quay/.test(r.project.docs[0].text), r.project.docs[0].text.slice(-40));
+
+    /* a listener that decides it is talk: nothing runs, and the persona is told nothing changed */
+    calls.length = 0;
+    listenerSays = () => '{"jobs": []}';
+    r = await runTurn({ house, project: world(), message: 'move the scene to the Quay, maybe? not sure yet' });
+    ok('talk sends nobody', calls.filter((c) => c.who === 'worker').length === 0 && r.project.docs[0].text === PE1);
+    ok('and the persona hears of no change', !/Changed:/.test(heard()));
+
+    /* written commands and greetings never wait on the listener */
+    calls.length = 0;
+    workerSays = (user) => (/What the author just asked for/.test(user) ? edit('WHERE: the Ribway', 'WHERE: the Quay') : 'fine');
+    await runTurn({ house, project: world(), message: '*edit move the scene to the Quay' });
+    ok('a written command goes straight to its worker', listened().length === 0 && calls.some((c) => c.who === 'worker'));
+    calls.length = 0;
+    await runTurn({ house, project: world(), message: 'thanks!' });
+    ok('a thank-you with nothing waiting asks nobody', listened().length === 0 && calls.filter((c) => c.who === 'worker').length === 0);
+    calls.length = 0;
+    listenerSays = () => '{"jobs": []}';
+    await runTurn({ house, project: world(), message: 'sure' });
+    ok('"sure" is heard by the listener: after an offer it is the answer', listened().length === 1);
+
+    /* the listener rides its own connection when he gives it one */
+    calls.length = 0;
+    await runTurn({ house: { ...house, agentConnections: { listener: 'c2' } }, project: world(), message: 'what a lovely harbour' });
+    ok('the listener rides its own connection', listened().length === 1 && listened()[0].url.startsWith('https://two.example'), listened()[0] && listened()[0].url);
+    ok('and the front keeps the front\'s', calls.filter((c) => c.who === 'front').every((c) => c.url.startsWith('https://one.example')));
+
+    /* THE ROUND TRIP: a worker that needs his say, his answer, the same worker again */
+    calls.length = 0;
+    const MANIFEST = 'Cleanup plan: cut the duplicated harbour rule; reshape nothing else. Approve all, or only the safe cuts?';
+    /* only the showrunner asks; the eye that reads back afterwards just reads */
+    workerSays = (user, sys) => (!/THE CLEANUP WORKFLOW/.test(sys) ? 'Read it all back.'
+      : /What you put to Bruce last time, word for word:/.test(user)
+        ? edit('- The city lives inside a dormant leviathan.', '- The city lives inside a leviathan that is dormant, not dead.')
+        : `I read the whole plot essential.\n<ask>${MANIFEST}</ask>`);
+    r = await runTurn({ house, project: world(), message: 'Tidy up Plot Essential.md.', forceWorker: 'showrunner' });
+    ok('a worker that waits on him is kept on the turn, word for word', r.asks.length === 1 && r.asks[0].worker === 'showrunner' && r.asks[0].ask === MANIFEST, JSON.stringify(r.asks));
+    ok('nothing changed while it waits', r.project.docs[0].text === PE1);
+    ok('the persona is told to put all of it to him', heard().includes('Still to decide') && heard().includes(MANIFEST) && heard().includes('cannot go further until Bruce decides'), heard().slice(-400));
+    const history = [{ role: 'writer', text: 'Tidy up Plot Essential.md.', at: 1 }, { role: 'maker', text: 'Here is the plan — all of it, or only the safe cuts?', at: 2, asks: r.asks }];
+    calls.length = 0;
+    listenerSays = (user) => (user.includes(MANIFEST) ? '{"jobs":[{"worker":"showrunner","task":"Bruce approved only the safe cuts.","resumes":true}]}' : '{"jobs":[]}');
+    r = await runTurn({ house, project: world(), history, message: 'only the safe cuts, go' });
+    const sr = calls.find((c) => c.who === 'worker' && /THE CLEANUP WORKFLOW/.test(c.sys));
+    ok('his answer reaches the same worker with its own plan, word for word, and his words', sr && sr.user.includes(`What you put to Bruce last time, word for word:\n${MANIFEST}`) && sr.user.includes('What Bruce said back:\nonly the safe cuts, go'), sr && sr.user.slice(-400));
+    ok('and the approved change lands', /dormant, not dead/.test(r.project.docs[0].text), r.project.docs[0].text);
+    ok('once answered, nothing is waiting any more', r.asks.length === 0);
+
+    /* a worker that follows the craft's own marker instead of the tag */
+    calls.length = 0;
+    workerSays = () => 'CLEANUP MANIFEST\nNOISE — REMOVE (1): the duplicated rule. [PERMISSION_REQUEST]';
+    r = await runTurn({ house, project: world(), message: 'Tidy up Plot Essential.md.', forceWorker: 'showrunner' });
+    ok('the craft\'s own permission marker is read as waiting on him', r.asks.length === 1 && /NOISE — REMOVE/.test(r.asks[0].ask));
+
+    /* the craft's #prune has a home */
+    eq('#prune goes to the showrunner', route('#prune the minor characters').map((x) => x.worker), ['showrunner']);
+  } finally { globalThis.fetch = realFetch; }
+}
+
 /* ================================================================ done */
 
 console.log(`\n${pass} passed, ${fail} failed`);

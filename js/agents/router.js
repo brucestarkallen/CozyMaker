@@ -1,19 +1,20 @@
 /* CozyMaker — js/agents/router.js
  *
- * What did the writer just ask for? He should never have to know, or type, a
- * command. He says "Ivar should have dual affinity too, and have a look at
- * that ception while you're there" and two different workers get sent, each
- * to its own job, exactly as the craft says to do it.
+ * The written commands, read exactly, and the old keyword reading of plain
+ * words — which is now only the fallback.
  *
- * This is deliberately arithmetic and not a model. It runs instantly, it costs
- * nothing, it is the same every time, and it is readable — when it sends the
- * wrong worker, the line that did it can be found and fixed. A model asked to
- * pick would be slower, dearer, and different on Tuesday.
+ * Plain words are read by the listener (listener.js): the craft's own law
+ * (7.6) is to parse a request for intent, never to match it to the nearest
+ * command keyword, and a table of keywords could not do that — "give the
+ * kingdom a second moon" named no keyword and reached no one, and "only the
+ * safe cuts" could never answer a plan that was waiting on him. What is kept
+ * here serves two purposes: a written command (*edit, #q, #prune …) is already
+ * exact and goes straight to its worker without waiting on anybody; and when
+ * the listener cannot be reached or answers with nothing readable, this
+ * reading is used so a turn never fails because of it.
  *
- * The most important rule here is the quiet one: a message that is just TALK
- * sends nobody. Asking a question, thinking out loud, saying "that's lovely" —
- * none of that should set machinery running. This is meant to be a comfortable
- * place to make something, and a comfortable place lets you talk.
+ * The quiet rule still holds in both: a message that is just TALK sends
+ * nobody.
  */
 
 /* The written commands still work, for anyone who knows them. */
@@ -26,6 +27,8 @@ const COMMANDS = [
   [/(^|\s)\*continuity\b/i, 'scribe'],
   [/(^|\s)\*(edit|retcon|delete)\b/i, 'editor'],
   [/(^|\s)\*cleanup\b/i, 'showrunner'],
+  /* the craft's controlled pruning: a manifest first, like *cleanup's */
+  [/(^|\s)#prune\b/i, 'showrunner'],
   [/(^|\s)\*optimi[sz]e\b/i, 'compressor'],
   [/(^|\s)#skip\b/i, 'novelist'],
   [/(^|\s)\*ooc\b/i, 'diagnostician'],
@@ -33,6 +36,34 @@ const COMMANDS = [
   /* the Summaryception auditor's own commands (its brief, carried over) */
   [/(^|\s)\*(audit|fix|brief)\b/i, 'auditor'],
 ];
+
+/* A written command anywhere in the message: exact already, so it keeps its
+ * instant path and never waits on the listener. */
+export function writtenCommand(message) {
+  const text = String(message || '');
+  return COMMANDS.some(([re]) => re.test(text));
+}
+
+/* The craft's command words by the worker they belong to, for the listener. */
+export const COMMAND_WORDS = {
+  builder: '*new, *source_new, *hybrid_new, *import',
+  chronicler: '*p, #q',
+  scribe: '*continuity, *summarize brief',
+  editor: '*edit, *retcon, *delete',
+  showrunner: '*cleanup, #prune',
+  compressor: '*optimize',
+  novelist: '#skip',
+  diagnostician: '*ooc',
+  eye: '*regress, *show_full_file, *show_spoilers, *hide_spoilers',
+  auditor: '*audit, *fix, *brief, and *cleanup or *optimize aimed at a transplant',
+  worldbook: '*cleanup, *optimize, *edit aimed at a worldbook',
+};
+
+/* A greeting or a thank-you, and nothing else: the only thing that skips the
+ * listener. "ok", "sure", "yeah" are NOT here — said after an offer or a
+ * question from the crew, they are the answer to it. */
+const GREETING = /^\s*(?:hi|hey|hello|yo|morning|evening|good (?:morning|evening|night)|thanks|thank you|thx|ta|cheers|haha+|lol|lmao)\b[\s.!?]*$/i;
+export function justGreeting(message) { return GREETING.test(String(message || '')); }
 
 /* Plain words. Each worker has the shapes of sentence that mean its job.
  *

@@ -16,6 +16,7 @@
 export const FRONT = 'keeper';
 
 export const WORKERS = [
+  ['listener',      'The listener \u2014 hears what you said and sends the right one to it, or nobody'],
   ['builder',       'The builder — starts a new world, or rebuilds an old story without losing a word'],
   ['chronicler',    'The chronicler — folds what happened into the plot essential'],
   ['scribe',        'The scribe — turns notes, summaries or pasted prose into a clean continuation file'],

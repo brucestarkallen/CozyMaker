@@ -86,7 +86,8 @@ js/engine/slices.js    cuts the craft; SLICES decides who reads what
 js/agents/persona.js   the writer's names, first or second person, natural words
 js/agents/roster.js    who does what; which connection each of them rides
 js/agents/call.js      the one way anything speaks to a model + the work channel
-js/agents/router.js    plain words -> the right worker (arithmetic, not a model)
+js/agents/listener.js  what he said -> the right workers, read for intent as the craft's 7.6 says
+js/agents/router.js    written commands, exactly; the old keyword reading, now only the fallback
 js/agents/run.js       the turn: workers backstage, one voice at the front
 js/doc/index.js        the whole shape always, full text only where it matters
 js/doc/edits.js        find, apply, undo, with a drift guard
@@ -431,25 +432,49 @@ front can receive inside that harness.
   It is a house note with no speaker (`GO_ON`).
 - `inPerson`, the pronoun swapper, was dead code after v1.1.3 and is gone: no second way to voice the house.
 
+### Found auditing the pipeline end to end (v1.1.5)
+
+- **The router broke the craft's own law.** 7.6: a request is parsed for INTENT, "not matched to the nearest
+  command keyword". The router was a keyword copy of 7.6 — the second copy of a law, disagreeing with the
+  first. "Give the kingdom a second moon" reached nobody, and the persona then said truthfully that nothing
+  changed; the craft's 7.6, 7.4 and 11 were read by no one. Plain words now go to **the listener**
+  (`listener.js`): a model that reads 7.6 and 11, the crew, the documents' shape (names and sections, never
+  their text), the conversation and whatever is waiting on him, and answers with jobs or none. It rides its
+  own connection if given one (Settings → Who does what), else the backstage one, else the front's. Written
+  commands keep their instant path; a greeting or thank-you with nothing waiting skips it; "ok / sure / yeah"
+  never skip it, because after an offer they are the answer. If it cannot be reached or answers with
+  nothing readable, the old reading runs (router.js `route` and the bare yes to an offer): a turn never
+  fails because of it.
+- **Every approval gate in the craft was a dead end.** The cleanup manifest (10.2, "never execute without
+  approval"), a scene proposed before its bridge (9.1/9.2), the new-world interview and seed (7.1), a
+  protected field, a change that outgrew its scope, `#prune`: the worker proposed, its proposal was never
+  kept, and his answer reached nobody — "Tidy it up" could only ever propose. Now a worker puts what waits
+  on him in `<ask>` (the craft's own `[PERMISSION_REQUEST]`, `[SCOPE_CREEP_WARNING]`, "CLEANUP MANIFEST"
+  and "Pending approval" are read the same way); it is kept on the turn and on every version of it
+  (`asks`); the persona is told to put every point of it to him; and the listener sends his answer back to
+  the same worker with what it asked, word for word, and his own words (`jobFor`). An ask is open only for
+  the message right after it. The walk proves the whole round trip in a real browser.
+- **`#prune` reached no one.** It is the showrunner's, like `*cleanup`.
+
 ## Testing
 
 ```
 bash tests/all.sh           all seven, exit code intact
 ```
 
-    node tests/units.mjs         522 checks — the real modules on a real document, and what the persona hears
+    node tests/units.mjs         560 checks — the real modules on a real document, and what the persona hears
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       31 checks — the real serve.py, real files on disk, streams timed
     python3 tests/browser.py      66 checks — real Chromium at 390x844, end to end
-    python3 tests/walk_worlds.py 139 checks — the drawer, conversations, swipes and versions, edit and
+    python3 tests/walk_worlds.py 147 checks — the drawer, conversations, swipes and versions, edit and
                                               send again, delete, branch, go on, re-quoting, crafts,
                                               the thinking box live, backup and restore, a model too
                                               small for the world, a real server killed mid-edit
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-812 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
+858 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

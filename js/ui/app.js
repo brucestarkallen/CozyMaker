@@ -647,6 +647,7 @@ async function send(text, forceWorker, opts = {}) {
     cards: (result.cards || []).filter((c) => c.status === 'refused' || c.reason || c.how),
     batches: result.batches || [],
     edits: result.edits || [],
+    asks: result.asks || [],
     cut: Boolean(result.cut && words),
     at: Date.now(),
   };

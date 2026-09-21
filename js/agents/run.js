@@ -26,7 +26,8 @@ import { openingFor, personaOf, addressWriter } from './persona.js';
 import { pickConnection, FRONT } from './roster.js';
 import { callModel, streamModel, enqueue } from './call.js';
 import { parseDoc, brief, readNeed, stripNeed, resolveNeed, LEAD_SHORT } from '../doc/index.js';
-import { route, confirmsOffer, offersIn } from './router.js';
+import { route, confirmsOffer, offersIn, writtenCommand, justGreeting } from './router.js';
+import { listen, LISTENER, LISTEN_TALK } from './listener.js';
 import { parseEdits, stripEdits, stripThinking, applyRun, hash } from '../doc/edits.js';
 import { lint, lostSomething } from '../doc/lint.js';
 
@@ -172,7 +173,7 @@ export function docBriefs(project, opts) {
 
 /* --------------------------------------------------------------- a worker */
 
-const RETURN_CONTRACT = `When you are done, write two things and nothing else.
+const RETURN_CONTRACT = `When you are done, write these and nothing else.
 
 First, in plain sentences — a short paragraph at most — what you did and what you found while you were in there. Write it for a person, not for a form.
 
@@ -195,7 +196,23 @@ How the block must behave:
 - Use replace_all only when the whole document is genuinely being rebuilt. Every part that should survive must be present in it — anything left out is deleted.
 - A change you only describe in words does not happen. It happens in the block or it does not happen.
 - Nothing you write in the block may be a note, a flag, a marker or an instruction. What goes into a document is what the story is, and nothing else.
-- If nothing should change, send no block.`;
+- If nothing should change, send no block.
+
+Last, and only if the job cannot be finished until he decides something — the craft tells you to get his go-ahead first, or there is a question only he can answer — put everything he has to decide between <ask> and </ask>: the plan or the options, and the questions, complete enough to answer with nothing else in front of him. Make only the changes that do not wait on his answer. His answer will come back to you together with what you asked, word for word.`;
+
+/* WHAT WAITS ON HIM (the craft's approval gates: the cleanup manifest, a
+ * scene proposed before a bridge is built, the new-world interview and seed,
+ * a protected field, a change that outgrew its scope). A worker puts it in
+ * <ask>; a worker that follows the craft's own marker instead is read the
+ * same way. It is kept on the turn, put to him whole by the persona, and his
+ * answer goes back to the same worker with this, word for word. */
+export const CRAFT_ASKS = /\[PERMISSION_REQUEST\]|\[SCOPE_CREEP_WARNING\]|\bPending approval\b|\bCLEANUP MANIFEST\b/;
+export function readAsk(text) {
+  const t = String(text || '');
+  const found = [...t.matchAll(/<ask>([\s\S]*?)(?:<\/ask>|$)/gi)].map((m) => m[1].trim()).filter(Boolean);
+  if (!found.length) return { ask: '', rest: t };
+  return { ask: found.join('\n\n'), rest: t.replace(/<ask>[\s\S]*?(?:<\/ask>|$)/gi, '').trim() };
+}
 
 /* A first-person claim that something was changed. Quoted text is taken out
  * first, so a worker quoting the story is never mistaken for one claiming work
@@ -276,7 +293,10 @@ async function runWorker({ worker, sections, conn, project, message, talk, fromH
     if (!parsed.edits.length && !parsed.warn && out.thinking && /<edits>/i.test(out.thinking)) {
       parsed = parseEdits(out.thinking);
     }
-    const notes = stripThinking(stripNeed(stripEdits(out.text)));
+    const fromAsk = readAsk(stripThinking(out.text));
+    let notes = stripThinking(stripNeed(stripEdits(fromAsk.rest)));
+    let ask = fromAsk.ask;
+    if (!ask && !parsed.edits.length && CRAFT_ASKS.test(notes)) { ask = notes; notes = ''; }
 
     /* NOTHING LOST IN SILENCE — each of these earns exactly one more try, told
      * plainly what went wrong (Cozy Tavern M75, M75-003, M117):
@@ -298,12 +318,12 @@ async function runWorker({ worker, sections, conn, project, message, talk, fromH
       }
       if (why) { nudged = true; nudge = why; onStatus && onStatus(`asking the ${worker} again`); continue; }
     }
-    answer = { out, parsed, notes };
+    answer = { out, parsed, notes, ask };
     break;
   }
 
   if (!answer) return { ok: false, error: 'no answer came back' };
-  return { ok: true, worker, notes: answer.notes, edits: answer.parsed.edits, warn: answer.parsed.warn, sliceChars: own.length };
+  return { ok: true, worker, notes: answer.notes, edits: answer.parsed.edits, warn: answer.parsed.warn, ask: answer.ask, sliceChars: own.length };
 }
 
 /* ------------------------------------------------------------- the turn */
@@ -375,28 +395,49 @@ export async function runTurn({
   const past = (history || []).filter((t) => !t.failed);
   const docs = docsOf(project);
   const hasPE = docs.some((d) => d.kind === 'pe' && (d.text || '').trim());
-  /* a bare yes runs what the front just offered (router.js offersIn) */
-  /* a yes answers the message right before it, never an older offer */
   const lastTurn = past[past.length - 1];
   const lastMaker = lastTurn && lastTurn.role === 'maker' ? lastTurn : null;
-  const offered = !forceWorker && lastMaker && confirmsOffer(message) ? offersIn(lastMaker.text) : [];
-  const agreed = [];
-  for (const o of offered) {
-    for (const i of route(o, { hasPlotEssential: hasPE, hasDocs: docs.length > 0, asStatement: true })) {
-      if (agreed.some((x) => x.worker === i.worker)) continue;
-      agreed.push({ ...i, about: `${o.charAt(0).toUpperCase()}${o.slice(1)} (offered just now; ${addressWriter(p)} said "${String(message).trim()}").`, why: 'agreed to what was offered' });
+  /* What the crew is still waiting on him for: only what was put to him in the
+   * answer right before this message. Once he has moved on, it is closed. */
+  const open = !forceWorker && lastMaker && Array.isArray(lastMaker.asks)
+    ? lastMaker.asks.filter((a) => a && a.worker && a.ask) : [];
+  /* THE OLD READING, kept for when the listener cannot answer: a bare yes runs
+   * what the front just offered (router.js offersIn), else the keyword table. */
+  const oldReading = () => {
+    const offered = lastMaker && confirmsOffer(message) ? offersIn(lastMaker.text) : [];
+    const agreed = [];
+    for (const o of offered) {
+      for (const i of route(o, { hasPlotEssential: hasPE, hasDocs: docs.length > 0, asStatement: true })) {
+        if (agreed.some((x) => x.worker === i.worker)) continue;
+        agreed.push({ ...i, about: `${o.charAt(0).toUpperCase()}${o.slice(1)} (offered just now; ${addressWriter(p)} said "${String(message).trim()}").`, why: 'agreed to what was offered' });
+      }
     }
+    return agreed.length ? agreed : route(message, { hasPlotEssential: hasPE, hasDocs: docs.length > 0 });
+  };
+  let intents;
+  if (forceWorker === FRONT_ONLY) intents = [];
+  else if (forceWorker) intents = [{ worker: forceWorker, about: message, why: 'asked for by name' }];
+  else if (writtenCommand(message)) intents = route(message, { hasPlotEssential: hasPE, hasDocs: docs.length > 0 });
+  else if (!open.length && justGreeting(message)) intents = [];
+  else {
+    /* THE LISTENER (listener.js): what he said, read for intent the way the
+     * craft's own 7.6 says to, with the conversation and whatever is waiting
+     * on him. On the same channel as every worker, so Stop and a change of
+     * world let it go like any other job. */
+    onStatus('reading that');
+    const heard = await enqueue(project.id, LISTENER, ({ signal: s, stale }) => listen({
+      conn: connFor(LISTENER), frame: CRAFT_FRAME, sections, docs, open, message, p,
+      talk: conversationFor(past, p, LISTEN_TALK), signal: either(signal, s), stale,
+    }));
+    if (stopped()) return { project, reply: '', cards: [], batches: [], crew: [], edits: [], asks: [], error: 'stopped', stopped: true };
+    intents = heard && heard.ok ? heard.jobs.map((j) => jobFor(j, open, message, p)) : oldReading();
   }
-  const intents = forceWorker === FRONT_ONLY ? []
-    : forceWorker
-    ? [{ worker: forceWorker, about: message, why: 'asked for by name' }]
-    : agreed.length ? agreed
-    : route(message, { hasPlotEssential: hasPE, hasDocs: docs.length > 0 });
   const talk = conversationFor(past.concat([{ role: 'writer', text: message }]), p);
 
   const crew = [];
   const allCards = [];
   const batches = [];
+  const asks = [];
   /* every change the crew made this turn, in order, so another version of
    * this answer can be put back and this one made again, exactly */
   const turnEdits = [];
@@ -416,6 +457,7 @@ export async function runTurn({
     const res = await enqueue(project.id, worker, ({ signal: s, stale }) =>
       runWorker({ worker, sections, conn: connFor(worker), project: working, message: about, talk, fromHouse, onStatus, signal: either(signal, s), stale, craft }));
     if (!res || !res.ok) return failed((res && res.error) || 'did not finish');
+    if (res.ask) asks.push({ worker, ask: res.ask, at: Date.now() });
     /* a change already made this turn is not made again: a re-quote that
      * repeats one that landed would only come back as a false "not done" */
     const fresh = (res.edits || []).filter((e) => !landed.has(editKey(e)));
@@ -481,7 +523,7 @@ export async function runTurn({
   }
 
   onStatus('');
-  if (stopped()) return { project: working, reply: '', cards: allCards, batches, crew, edits: turnEdits, error: 'stopped', stopped: true };
+  if (stopped()) return { project: working, reply: '', cards: allCards, batches, crew, edits: turnEdits, asks, error: 'stopped', stopped: true };
 
   /* Now the one voice the writer hears. */
   const system = openingFor(p, frontBody(p));
@@ -492,6 +534,7 @@ export async function runTurn({
     'Where the book stands right now:',
     docBriefs(working, { message, recent: working.recentSections || [], forFront: true }),
     said ? `\nWhat got done while you were talking:\n${said}` : '',
+    asks.length ? `\n${waitingBrief(asks, p)}` : '',
     /* his words under his name; with no name set, never "you said:", which
      * tells the persona it said them itself. Go on is the house's note and
      * carries no speaker at all. */
@@ -507,15 +550,35 @@ export async function runTurn({
       onThinking, signal,
     });
     reply = endAtControlToken(out.text || reply);
-    if (out.cut) return { project: working, reply, cards: allCards, batches, crew, edits: turnEdits, error: null, cut: true };
+    if (out.cut) return { project: working, reply, cards: allCards, batches, crew, edits: turnEdits, asks, error: null, cut: true };
   } catch (e) {
     const aborted = (e && e.name === 'AbortError') || stopped();
     return {
-      project: working, reply: endAtControlToken(reply), cards: allCards, batches, crew, edits: turnEdits,
+      project: working, reply: endAtControlToken(reply), cards: allCards, batches, crew, edits: turnEdits, asks,
       error: aborted ? 'stopped' : ((e && e.message) || String(e)), stopped: aborted,
     };
   }
-  return { project: working, reply, cards: allCards, batches, crew, edits: turnEdits, error: null };
+  return { project: working, reply, cards: allCards, batches, crew, edits: turnEdits, asks, error: null };
+}
+
+/* A job the listener chose. When it answers something a worker put to him,
+ * that worker gets back its own words, whole, and what he said to them —
+ * never a retelling (the persona's retelling is in the conversation too). */
+export function jobFor(j, open, message, p) {
+  const who = (p && p.you) || 'the author';
+  const waiting = j.resumes ? (open || []).find((o) => o.worker === j.worker) : null;
+  const task = j.task || message;
+  const about = waiting
+    ? `${task}\n\nWhat you put to ${who} last time, word for word:\n${waiting.ask}\n\nWhat ${who} said back:\n${message}`
+    : task;
+  return { worker: j.worker, about, why: waiting ? 'his answer to what was put to him' : 'the listener' };
+}
+
+/* What waits on him, as the persona is told it: put all of it to him. */
+export function waitingBrief(asks, p) {
+  const who = (p && p.you) || 'the author';
+  return `Still to decide \u2014 this cannot go further until ${who} decides. Put every point of it to ${who}, in your own voice, and leave the choice there:\n` +
+    asks.map((a) => naturalize(a.ask)).join('\n\n');
 }
 
 /* LANDING A TURN IN THE WORLD AS IT STANDS NOW (Cozy Tavern M59: overlapping
@@ -531,7 +594,7 @@ export async function runTurn({
  * cards and the changes it made, never its undo payload, because a version
  * that is not shown has had its changes put back. */
 export function versionOf(t) {
-  return { text: t.text, thinking: t.thinking || '', thinkingMs: t.thinkingMs, cards: t.cards || [], edits: t.edits || [], cut: Boolean(t.cut), failed: Boolean(t.failed), at: t.at, batches: [] };
+  return { text: t.text, thinking: t.thinking || '', thinkingMs: t.thinkingMs, cards: t.cards || [], edits: t.edits || [], asks: t.asks || [], cut: Boolean(t.cut), failed: Boolean(t.failed), at: t.at, batches: [] };
 }
 
 export function landTurn(world, { chatId, snapshot, result, makerTurn, replaceAt = null }) {
