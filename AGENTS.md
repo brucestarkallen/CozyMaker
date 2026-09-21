@@ -208,6 +208,17 @@ out; the rest were found here and fixed. Each has a test.
 - **`tests/server.py` ended with `pkill -f serve.py`**, which matched the
   calling shell and killed it. Never pkill by a pattern that matches your own
   process tree.
+- **The launcher killed by name, `pkill -f "python.*serve\.py"`** — which is
+  also Cozy Tavern's server. An update to CozyMaker would have taken the story
+  server down with it. An old server is now stopped by `POST /api/quit` to
+  CozyMaker's own port; the only pkill left matches this clone's absolute path.
+- **The launcher's update check was dead.** It compared `VERSION` strings, and
+  nobody had bumped `VERSION`, so every update reported "already lit". The
+  server now reports the git commit it started from and the launcher compares
+  that with the folder. A number somebody has to remember is a check that stops
+  working the first time they forget.
+- **The launcher pulls a new copy of itself.** Bash reads a script as it runs,
+  so the body is wrapped in `main()` and parsed whole before the pull.
 
 ---
 
@@ -220,6 +231,8 @@ bash tests/all.sh           all three, exit code intact
     node tests/units.mjs      229 checks — the real modules on a real document
     python3 tests/server.py    29 checks — the real serve.py, real files on disk
     python3 tests/browser.py   64 checks — real Chromium at 390x844, end to end
+    bash tests/launcher.sh     21 checks — real clone, install, updates pulled live,
+                                           and a Cozy Tavern stand-in that must survive
 
 All three must be green before a push. Never pipe a gate through `tail` or
 `head` — they mask the exit code, and a gate whose failure cannot be seen is

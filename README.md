@@ -17,7 +17,18 @@ cd CozyMaker
 cozymaker
 ```
 
-Then open **http://127.0.0.1:8090** in your browser.
+That's the only time you type all of that. From then on, one word:
+
+```
+cozymaker
+```
+
+It pulls the latest, replaces the running server if it's out of date, and opens
+the app in your browser. If nothing changed it just opens the app. It never
+touches Cozy Tavern — both run a file called `serve.py`, so CozyMaker only ever
+stops whatever is on its own port (8090), and only by asking it to leave.
+
+If something else is on 8090: `COZYMAKER_PORT=8091 cozymaker`.
 
 Everything you make lives on the device, in `~/.cozymaker`. The browser holds
 only the world that is open. There is no syncing between browsers — close every

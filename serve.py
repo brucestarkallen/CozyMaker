@@ -30,6 +30,7 @@ import shutil
 import threading
 import urllib.request
 import urllib.error
+import subprocess
 from pathlib import Path
 
 VERSION = "1.0.0"
@@ -41,6 +42,22 @@ EXPORTS = HOME / "exports"
 HOUSE = HOME / "_house.json"
 PORT = int(os.environ.get("COZYMAKER_PORT", "8090"))
 KEEP_BACKUPS = 8
+
+
+def _commit():
+    """The exact code this server was started from. The launcher compares it
+    with the folder after pulling: different means stale, whatever any version
+    string says. A number somebody has to remember to bump is a check that
+    silently stops working the first time they forget."""
+    try:
+        out = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "HEAD"],
+                             capture_output=True, text=True, timeout=5)
+        return out.stdout.strip() if out.returncode == 0 else ""
+    except Exception:
+        return ""
+
+
+COMMIT = _commit()
 
 for d in (HOME, PROJECTS, BACKUPS, EXPORTS):
     d.mkdir(parents=True, exist_ok=True)
@@ -215,7 +232,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         path = self.path.split("?", 1)[0]
         if path == "/api/version":
-            return self.send_json({"version": VERSION, "home": str(HOME)})
+            return self.send_json({"version": VERSION, "commit": COMMIT,
+                                   "home": str(HOME), "root": str(ROOT)})
         if path == "/api/house":
             house = read_json(HOUSE, None)
             if house is None:
@@ -298,6 +316,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
         path = self.path.split("?", 1)[0]
         if path == "/api/call":
             return self.proxy_call()
+        if path == "/api/quit":
+            # How the launcher stops an old server: by asking whatever is on
+            # THIS port to leave. Never by process name — Cozy Tavern also runs
+            # a file called serve.py, and killing by name takes it down too.
+            self.send_json({"ok": True})
+            threading.Thread(target=self.server.shutdown, daemon=True).start()
+            return
         return self.send_json({"error": "unknown"}, 404)
 
     # ---------- the one way out to a provider ----------
@@ -380,7 +405,13 @@ def watch_self():
 
 def main():
     threading.Thread(target=watch_self, daemon=True).start()
-    with Server(("127.0.0.1", PORT), Handler) as httpd:
+    try:
+        httpd = Server(("127.0.0.1", PORT), Handler)
+    except OSError:
+        print(f"port {PORT} is held by another program.")
+        print("stop it, or run: COZYMAKER_PORT=8091 cozymaker")
+        sys.exit(1)
+    with httpd:
         print(f"CozyMaker {VERSION} — http://127.0.0.1:{PORT}")
         print(f"everything lives in {HOME}")
         try:

@@ -9,6 +9,7 @@ fail=0
 echo "— the modules —"; node tests/units.mjs   || fail=1
 echo; echo "— the server —"; python3 tests/server.py  || fail=1
 echo; echo "— the browser —"; python3 tests/browser.py || fail=1
+echo; echo "— the launcher —"; bash tests/launcher.sh || fail=1
 echo
 if [ "$fail" -eq 0 ]; then echo "all green"; else echo "SOMETHING IS RED"; fi
 exit "$fail"
