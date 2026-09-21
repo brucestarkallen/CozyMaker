@@ -1524,6 +1524,23 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
   } catch (e) { ok('the save line test ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
 }
 
+/* ============================ where a change lands (v1.1.9) */
+{
+  const { applyEdit, applyRun } = await import('../js/doc/edits.js');
+  const doc = '# PE\n\n## WORLD\n- The city lives inside a dormant leviathan.\n- The tide is red.\n';
+  const r = applyEdit(doc, { insert_after: '- The city lives inside', replace: '- The Ribway floods at every tide.' });
+  eq('a quote that stops partway along a line puts the new line under the whole line, never inside it', r.text,
+    '# PE\n\n## WORLD\n- The city lives inside a dormant leviathan.\n- The Ribway floods at every tide.\n- The tide is red.\n');
+  eq('a whole-line quote still lands right under it', applyEdit(doc, { insert_after: '- The tide is red.', replace: '- Salt in the air.' }).text,
+    '# PE\n\n## WORLD\n- The city lives inside a dormant leviathan.\n- The tide is red.\n- Salt in the air.\n');
+  eq('the last line with no ending still works', applyEdit('a\nb', { insert_after: 'b', replace: 'c' }).text, 'a\nb\nc');
+  const docs = [{ name: 'Plot Essential.md', text: 'WHERE: the Ribway\n' }, { name: 'Notes.md', text: 'n\n' }];
+  const loose = applyRun(docs, [{ file: 'plot essential', find: 'WHERE: the Ribway', replace: 'WHERE: the Quay' }]);
+  ok('a document named the way a model names it is still found', loose.cards[0].status === 'applied' && loose.texts.get('Plot Essential.md') === 'WHERE: the Quay\n', JSON.stringify(loose.cards));
+  const two = applyRun([{ name: 'A.md', text: 'x' }, { name: 'a.md', text: 'y' }], [{ file: 'A', find: 'x', replace: 'z' }]);
+  ok('a loose name that fits two documents is refused, never guessed', two.cards[0].status === 'refused', JSON.stringify(two.cards));
+}
+
 /* ================================================================ done */
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -351,7 +351,12 @@ export function applyEdit(text, edit) {
     if (alreadyHolds(src, edit.replace)) return { ok: false, why: 'those words are already in the document' };
     const add = edit.replace;
     const joiner = add.startsWith('\n') ? '' : '\n';
-    return { ok: true, text: src.slice(0, at.to) + joiner + add + src.slice(at.to), how: 'put it under ' + short(edit.insert_after), was: '', now: add };
+    /* UNDER THE LINE, NEVER INSIDE IT. A quote that stops partway along a line
+     * ("- The city lives inside") put the new text in the middle of that line
+     * and split it in two. It goes after the end of the line the quote is on. */
+    let cut = at.to;
+    if (cut < src.length && src[cut] !== '\n') { const nl = src.indexOf('\n', cut); cut = nl === -1 ? src.length : nl; }
+    return { ok: true, text: src.slice(0, cut) + joiner + add + src.slice(cut), how: 'put it under ' + short(edit.insert_after), was: '', now: add };
   }
   if (typeof edit.find === 'string' && edit.find) {
     const to = typeof edit.replace === 'string' ? edit.replace : '';
@@ -386,6 +391,24 @@ function short(s) {
 
 /* Apply a run of changes to a set of documents. Returns the new texts, one
  * card per change, and one undo batch holding what was there before. */
+/* A DOCUMENT NAMED THE WAY A MODEL NAMES IT. "plot essential.md" or "Plot
+ * Essential" for "Plot Essential.md" was refused as "no document by that
+ * name" and the change was lost. Exact first; then ignoring case; then without
+ * its ending — and only when exactly one document answers. */
+export function nameIn(texts, want) {
+  const names = [...texts.keys()];
+  const w = String(want || '').trim();
+  if (texts.has(w)) return w;
+  const low = w.toLowerCase();
+  const bare = (s) => s.toLowerCase().replace(/\.(md|json|txt)$/, '').trim();
+  for (const pick of [(n) => n.toLowerCase() === low, (n) => bare(n) === bare(w)]) {
+    const hits = names.filter(pick);
+    if (hits.length === 1) return hits[0];
+    if (hits.length > 1) return null;
+  }
+  return null;
+}
+
 export function applyRun(docs, edits, { label = 'a change' } = {}) {
   const texts = new Map();
   for (const d of docs) texts.set(d.name, d.text);
@@ -405,7 +428,7 @@ export function applyRun(docs, edits, { label = 'a change' } = {}) {
       cards.push({ status: 'applied', name, reason: e.reason || '', how: 'started it', was: '', now: clip(String(e.replace || '')) });
       continue;
     }
-    const name = e.file || (texts.size === 1 ? [...texts.keys()][0] : null);
+    const name = e.file ? nameIn(texts, e.file) || e.file : (texts.size === 1 ? [...texts.keys()][0] : null);
     if (!name) { cards.push({ status: 'refused', name: '', reason: e.reason || '', why: 'the change did not say which document it belongs to' }); continue; }
     if (!texts.has(name)) { cards.push({ status: 'refused', name, reason: e.reason || '', why: 'there is no document by that name' }); continue; }
     const out = applyEdit(texts.get(name), e);

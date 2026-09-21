@@ -501,13 +501,23 @@ front can receive inside that harness.
   landed the older one last and the newer change was lost (proven: his name vanished). House saves now go in
   order, each written from the house as it is when it goes.
 
+### Found reading where a change lands (v1.1.9)
+
+- **A new line quoted under a part-line went inside that line.** `insert_after` put the text right after the
+  quoted words, so a quote stopping partway ("- The city lives inside") split the line in two — proven on the
+  old code: "- The city lives inside\n- The Ribway floods… a dormant leviathan." It now goes under the end of
+  the line the quote is on.
+- **A document named loosely was "no document by that name".** "plot essential" for "Plot Essential.md" lost
+  the change. `nameIn`: exact, then ignoring case, then without its ending — only when exactly one document
+  answers; two that fit are refused, never guessed.
+
 ## Testing
 
 ```
 bash tests/all.sh           all seven, exit code intact
 ```
 
-    node tests/units.mjs         574 checks — the real modules on a real document, and what the persona hears
+    node tests/units.mjs         579 checks — the real modules on a real document, and what the persona hears
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       46 checks — the real serve.py, real files on disk, streams timed
@@ -519,7 +529,7 @@ bash tests/all.sh           all seven, exit code intact
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-890 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
+895 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.
