@@ -1464,6 +1464,66 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
   } finally { call.setCallTimeoutForTests(30 * 60 * 1000); }
 }
 
+/* ============================ the save line: deletes and house saves (v1.1.8) */
+{
+  const store = await import('../js/store.js');
+  const log = [];
+  const worlds = { pA: { id: 'pA', title: 'A', docs: [], chats: [] }, pB: { id: 'pB', title: 'B', docs: [], chats: [] } };
+  let putsFail = true;
+  let gate = null;
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts = {}) => {
+    const u = String(url);
+    const m = opts.method || 'GET';
+    const json = (v, status = 200) => ({ ok: status < 400, status, json: async () => v });
+    if (u.startsWith('/api/project/')) {
+      const id = u.split('/').pop();
+      if (m === 'GET') return worlds[id] ? json(JSON.parse(JSON.stringify(worlds[id]))) : json({ error: 'not found' }, 404);
+      if (m === 'PUT') {
+        if (putsFail) return json({ error: 'down' }, 503);
+        if (gate && id === 'pA') await gate.wait;
+        log.push(`PUT ${id}`); worlds[id] = JSON.parse(opts.body); return json({ ok: true });
+      }
+      if (m === 'DELETE') { log.push(`DELETE ${id}`); delete worlds[id]; return json({ ok: true }); }
+    }
+    if (u === '/api/house' && m === 'PUT') {
+      const h = JSON.parse(opts.body);
+      if (h.settings && h.settings.slow) await new Promise((r) => setTimeout(r, 120));
+      log.push(`HOUSE ${h.settings.makerName || '-'}/${h.settings.yourName || '-'}`);
+      return json({ ok: true });
+    }
+    if (u === '/api/house') return json({ settings: {}, connections: [], agentConnections: {} });
+    return json({});
+  };
+  try {
+    /* two worlds waiting to be saved while the device was away */
+    await store.updateWorld('pA', (w) => { w.title = 'A2'; return w; });
+    await store.updateWorld('pB', (w) => { w.title = 'B2'; return w; });
+    ok('both wait while the device is away', store.unsavedWorlds().sort().join() === 'pA,pB', store.unsavedWorlds().join());
+    putsFail = false;
+    let open; gate = { wait: new Promise((r) => { open = r; }) };
+    const run = store.flush();                 /* A's save goes out and hangs */
+    await new Promise((r) => setTimeout(r, 30));
+    const gone = store.deleteProject('pB');     /* he deletes B while A is still saving */
+    await new Promise((r) => setTimeout(r, 30));
+    open();
+    await run; await gone;
+    ok('a world deleted while another was saving is never saved back', !log.includes('PUT pB') && log[log.length - 1] === 'DELETE pB' && !('pB' in worlds), log.join(' | '));
+    ok('and the one that was saving still lands', log.includes('PUT pA') && worlds.pA.title === 'A2');
+
+    /* two house saves a moment apart land in the order they were made */
+    log.length = 0;
+    await store.loadHouse();
+    const h = store.getHouse();
+    h.settings.slow = true; h.settings.makerName = 'Eni';
+    const first = store.saveHouse(h);           /* the slow one goes first */
+    h.settings.slow = false; h.settings.yourName = 'Bruce';
+    const second = store.saveHouse(h);
+    await Promise.all([first, second]);
+    eq('house saves land in order, the newest last', log, ['HOUSE Eni/Bruce', 'HOUSE Eni/Bruce']);
+  } catch (e) { ok('the save line test ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
+}
+
 /* ================================================================ done */
 
 console.log(`\n${pass} passed, ${fail} failed`);

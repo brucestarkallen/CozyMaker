@@ -33,7 +33,7 @@ import urllib.error
 import subprocess
 from pathlib import Path
 
-VERSION = "1.1.7"
+VERSION = "1.1.8"
 ROOT = Path(__file__).resolve().parent
 HOME = Path(os.environ.get("COZYMAKER_HOME", Path.home() / ".cozymaker"))
 PROJECTS = HOME / "projects"
@@ -41,7 +41,9 @@ BACKUPS = HOME / "backups"
 EXPORTS = HOME / "exports"
 HOUSE = HOME / "_house.json"
 PORT = int(os.environ.get("COZYMAKER_PORT", "8090"))
-KEEP_BACKUPS = 8
+KEEP_BACKUPS = 8          # the newest, whatever their age
+KEEP_HOURLY_FOR = 48 * 3600
+KEEP_DAILY_FOR = 31 * 24 * 3600
 
 
 def _commit():
@@ -92,10 +94,76 @@ def roll_backup(path: Path):
         with open(path, "rb") as src, gzip.open(dest, "wb") as out:
             shutil.copyfileobj(src, out)
         mine = sorted(BACKUPS.glob(f"{path.stem}.*{path.suffix}.gz"))
-        for old in mine[:-KEEP_BACKUPS]:
-            old.unlink(missing_ok=True)
+        keep = keep_which([m.name for m in mine], path.stem, path.suffix)
+        for old in mine:
+            if old.name not in keep:
+                old.unlink(missing_ok=True)
     except Exception as e:  # a backup must never stop a save
         print("backup skipped:", e, file=sys.stderr)
+
+
+def keep_which(names, stem, suffix, now=None):
+    """Which backups stay. The newest eight; then the newest of each hour for
+    two days; then the newest of each day for a month. Saves land about once a
+    second while he types, so eight on their own covered the last few seconds
+    of typing, and a bad save found an hour later had no good copy behind it."""
+    now = time.time() if now is None else now
+    dated = []
+    for n in names:
+        stamp = n[len(stem) + 1:len(stem) + 16]
+        try:
+            dated.append((time.mktime(time.strptime(stamp, "%Y%m%d-%H%M%S")), stamp, n))
+        except ValueError:
+            dated.append((now, "", n))           # a name it cannot read is never thrown away
+    dated.sort(reverse=True)
+    keep, hours, days = set(), set(), set()
+    for i, (t, stamp, n) in enumerate(dated):
+        age = now - t
+        if i < KEEP_BACKUPS or not stamp:
+            keep.add(n)
+        elif age <= KEEP_HOURLY_FOR and stamp[:11] not in hours:
+            keep.add(n)
+        elif age <= KEEP_DAILY_FOR and stamp[:8] not in days:
+            keep.add(n)
+        if stamp:
+            hours.add(stamp[:11])
+            days.add(stamp[:8])
+    return keep
+
+
+def newest_backup(path: Path):
+    """The newest backup of a file that can still be read, or None."""
+    for b in sorted(BACKUPS.glob(f"{path.stem}.*{path.suffix}.gz"), reverse=True):
+        try:
+            with gzip.open(b, "rt", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            continue
+    return None
+
+
+def read_healing(path: Path):
+    """What is on disk. If the file is there but cannot be read, the newest
+    backup that can be is put back in its place, so the listing and the next
+    reader see the world instead of losing it; the unreadable copy is kept
+    beside it. Only a file that is not there at all reads as nothing."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return None
+    except Exception as e:
+        good = newest_backup(path)
+        print("could not read", path, e, "- " + ("put back from its newest backup" if good is not None else "no backup to put back"), file=sys.stderr)
+        if good is None:
+            return None
+        with _write_lock:
+            try:
+                shutil.copyfile(path, path.with_name(path.name + ".unreadable"))
+            except Exception:
+                pass
+            atomic_write(path, json.dumps(good, indent=1))
+        return good
 
 
 def read_json(path: Path, fallback):
@@ -134,7 +202,7 @@ def project_list():
     out = []
     for p in sorted(PROJECTS.glob("*.json")):
         try:
-            d = read_json(p, None)
+            d = read_healing(p)
             if not d:
                 continue
             out.append({
@@ -224,14 +292,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def read_body(self):
-        n = int(self.headers.get("Content-Length") or 0)
+        """The whole body, or None. A body cut short — a phone putting the
+        app away mid-save — or one that is not JSON used to read as {}, and
+        {} was then written over the world or the house: erased."""
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            return None
         if n <= 0:
-            return {}
+            return None
         raw = self.rfile.read(n)
+        if len(raw) != n:
+            return None
         try:
             return json.loads(raw.decode("utf-8"))
         except Exception:
-            return {}
+            return None
 
     # ---------- GET ----------
 
@@ -241,10 +317,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self.send_json({"version": VERSION, "commit": COMMIT,
                                    "home": str(HOME), "root": str(ROOT)})
         if path == "/api/house":
-            house = read_json(HOUSE, None)
+            house = read_healing(HOUSE)
             if house is None:
                 house = default_house()
-                atomic_write(HOUSE, json.dumps(house, indent=1))
+                if not HOUSE.exists():          # never write defaults over a house it could not read
+                    atomic_write(HOUSE, json.dumps(house, indent=1))
             return self.send_json(house)
         if path == "/api/projects":
             return self.send_json({"projects": project_list()})
@@ -252,7 +329,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             pid = path[len("/api/project/"):]
             if not safe_id(pid):
                 return self.send_json({"error": "bad id"}, 400)
-            d = read_json(project_path(pid), None)
+            d = read_healing(project_path(pid))
             if d is None:
                 return self.send_json({"error": "not found"}, 404)
             return self.send_json(d)
@@ -285,7 +362,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_PUT(self):
         path = self.path.split("?", 1)[0]
         body = self.read_body()
+        incomplete = {"error": "that save arrived incomplete, so nothing was written"}
         if path == "/api/house":
+            if not (isinstance(body, dict) and ("settings" in body or "connections" in body)):
+                return self.send_json(incomplete, 400)
             with _write_lock:
                 roll_backup(HOUSE)
                 atomic_write(HOUSE, json.dumps(body, indent=1))
@@ -294,6 +374,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             pid = path[len("/api/project/"):]
             if not safe_id(pid):
                 return self.send_json({"error": "bad id"}, 400)
+            if not (isinstance(body, dict) and isinstance(body.get("docs"), list)):
+                return self.send_json(incomplete, 400)
             body["id"] = pid
             body["updated"] = int(time.time() * 1000)
             with _write_lock:
@@ -334,7 +416,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
     # ---------- the one way out to a provider ----------
 
     def proxy_call(self):
-        spec = self.read_body()
+        spec = self.read_body() or {}
         url = spec.get("url") or ""
         if not (url.startswith("https://") or url.startswith("http://")):
             return self.send_json({"error": "that address does not look right"}, 400)

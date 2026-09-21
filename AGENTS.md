@@ -479,16 +479,38 @@ front can receive inside that harness.
   (`keepAsTyped`). `browser.py` types into the boxes without leaving them and reads the house back from the
   device; the old code fails those three checks.
 
+### Found reading the device and the save line (v1.1.8)
+
+- **A save cut short erased the world.** `read_body` read a body that ended early (a phone putting the app
+  away mid-save) or was not JSON as `{}`, and `{}` was written over the world — proven on the old server: the
+  world came back with no documents; `PUT {}` to the house came back 200 and the house became `{}`,
+  connections and persona gone. A body is now read whole or not at all, and a world must hold its `docs`, a
+  house its `settings` or `connections`, or nothing is written (400; the save line keeps its copy and
+  retries).
+- **A file that could not be read was taken for deleted, or replaced.** An unreadable world answered 404 (the
+  app then says it was deleted) and fell out of the listing; an unreadable house was overwritten with an empty
+  default. Both are now put back from their newest readable backup (`read_healing`), with the unreadable copy
+  kept beside them; defaults are only ever written where no house exists.
+- **Backups covered only the last few seconds.** Eight were kept, and saves land about once a second while he
+  types. Now: the newest eight, the newest of each hour for two days, the newest of each day for a month
+  (`keep_which`).
+- **A world deleted while another was saving could come back.** The delete went out beside the save line, and
+  a run already under way saved every world in its snapshot — proven: DELETE, then PUT brought it back. The
+  delete now goes in the line, and a run skips a world no longer waiting.
+- **Two house saves a moment apart could land stale-last.** They went out side by side; the device's threads
+  landed the older one last and the newer change was lost (proven: his name vanished). House saves now go in
+  order, each written from the house as it is when it goes.
+
 ## Testing
 
 ```
 bash tests/all.sh           all seven, exit code intact
 ```
 
-    node tests/units.mjs         570 checks — the real modules on a real document, and what the persona hears
+    node tests/units.mjs         574 checks — the real modules on a real document, and what the persona hears
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
-    python3 tests/server.py       31 checks — the real serve.py, real files on disk, streams timed
+    python3 tests/server.py       46 checks — the real serve.py, real files on disk, streams timed
     python3 tests/browser.py      69 checks — real Chromium at 390x844, end to end
     python3 tests/walk_worlds.py 147 checks — the drawer, conversations, swipes and versions, edit and
                                               send again, delete, branch, go on, re-quoting, crafts,
@@ -497,7 +519,7 @@ bash tests/all.sh           all seven, exit code intact
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-871 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
+890 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

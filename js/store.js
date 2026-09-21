@@ -76,15 +76,25 @@ export async function loadHouse() {
 
 export function getHouse() { return house; }
 
-export async function saveHouse(next) {
+/* HOUSE SAVES GO IN ORDER. Two saves a moment apart (his name typed while the
+ * persona box saves, a lesson learned mid-turn) went out side by side, and the
+ * device's threads could land the older one last — the newer change lost.
+ * Each save waits for the one before it and is written from the house as it
+ * is when it goes, so the last to land is always the newest. */
+let houseLine = Promise.resolve();
+export function saveHouse(next) {
   house = next || house;
-  await api('/api/house', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(house),
+  const step = houseLine.catch(() => {}).then(async () => {
+    await api('/api/house', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(house),
+    });
+    tell();
+    return house;
   });
-  tell();
-  return house;
+  houseLine = step;
+  return step;
 }
 
 export function setSetting(key, value) {
@@ -245,9 +255,15 @@ export async function createProject(title) {
 }
 
 export async function deleteProject(id) {
-  /* A deleted world is never put back by a save still waiting to retry. */
+  /* A deleted world is never put back by a save still waiting to retry —
+   * nor by one already going out: the delete goes in the save line, after any
+   * save in flight, and a run already under way skips a world no longer
+   * waiting. Sent beside it, a save mid-flight landed after the delete and
+   * brought the world back. */
   pending.delete(id);
-  await api('/api/project/' + id, { method: 'DELETE' });
+  let failed = null;
+  await inLine(async () => { try { await api('/api/project/' + id, { method: 'DELETE' }); } catch (e) { failed = e; } });
+  if (failed) throw failed;
   if (project && project.id === id) project = null;
   try { if (localStorage.getItem('cozymaker:open') === id) localStorage.removeItem('cozymaker:open'); } catch (_) {}
   tell();
@@ -282,7 +298,9 @@ export function flush() {
  * saved yet. A copy superseded while its save was in flight stays for the
  * next run, so the newest always wins. */
 async function drain() {
-  for (const [id, body] of [...pending]) {
+  for (const [id] of [...pending]) {
+    const body = pending.get(id);
+    if (body === undefined) continue;        /* deleted while an earlier one saved */
     try {
       await api('/api/project/' + id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body });
       if (pending.get(id) === body) pending.delete(id);

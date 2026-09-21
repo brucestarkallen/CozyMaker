@@ -269,6 +269,75 @@ def main():
         })
         ok("a dead address becomes words, not a crash", r.get("error") == "transport", json.dumps(r)[:200])
 
+        # --- a save that arrives cut short, or empty, is never written ----------
+        import socket
+        heal = {"id": "p_heal", "title": "Heal", "docs": [{"id": "d1", "name": "PE.md", "kind": "pe", "text": "version one"}], "chats": []}
+        call("/api/project/p_heal", "PUT", heal)
+        body = json.dumps({**heal, "docs": [{"id": "d1", "name": "PE.md", "kind": "pe", "text": "x" * 4000}]}).encode()
+        sock = socket.create_connection(("127.0.0.1", PORT), timeout=10)
+        sock.sendall(b"PUT /api/project/p_heal HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\n"
+                     + f"Content-Length: {len(body)}\r\n\r\n".encode() + body[:300])
+        sock.shutdown(socket.SHUT_WR)       # the phone put the app away mid-save
+        try:
+            sock.recv(1000)
+        except Exception:
+            pass
+        sock.close()
+        time.sleep(0.3)
+        code, back = call("/api/project/p_heal")
+        ok("a save cut short mid-body is not written over the world", back.get("docs") and back["docs"][0]["text"] == "version one", str(back)[:120])
+        for bad, label in ((b"{}", "an empty save"), (b"not json at all", "a save that is not JSON")):
+            req = urllib.request.Request(f"http://127.0.0.1:{PORT}/api/project/p_heal", data=bad, method="PUT")
+            try:
+                urllib.request.urlopen(req, timeout=10)
+                refused = False
+            except urllib.error.HTTPError as e:
+                refused = e.code == 400
+            code, back = call("/api/project/p_heal")
+            ok(f"{label} is refused and the world stays as it was", refused and back["docs"][0]["text"] == "version one")
+        req = urllib.request.Request(f"http://127.0.0.1:{PORT}/api/house", data=b"{}", method="PUT")
+        try:
+            urllib.request.urlopen(req, timeout=10)
+            refused = False
+        except urllib.error.HTTPError as e:
+            refused = e.code == 400
+        code, h = call("/api/house")
+        ok("an empty house save is refused and the house stays as it was", refused and "connections" in h and "settings" in h)
+
+        # --- a file that cannot be read is put back from its newest backup ------
+        call("/api/project/p_heal", "PUT", {**heal, "docs": [{"id": "d1", "name": "PE.md", "kind": "pe", "text": "version two"}]})
+        (home / "projects" / "p_heal.json").write_text("{ this is not a world")
+        code, back = call("/api/project/p_heal")
+        ok("an unreadable world is put back from its newest backup, not taken for deleted", code == 200 and back["docs"][0]["text"] == "version one", str(back)[:120])
+        ok("and it is on disk again", json.loads((home / "projects" / "p_heal.json").read_text())["docs"][0]["text"] == "version one")
+        ok("the unreadable copy is kept beside it", (home / "projects" / "p_heal.json.unreadable").exists())
+        code, listing = call("/api/projects")
+        ok("the listing still has it", any(w["id"] == "p_heal" for w in listing["projects"]))
+        code, h = call("/api/house")
+        call("/api/house", "PUT", {**h, "personaFrame": "I am Eni, first save."})
+        call("/api/house", "PUT", {**h, "personaFrame": "I am Eni, second save."})
+        (home / "_house.json").write_text("{ broken")
+        code, h2 = call("/api/house")
+        ok("an unreadable house is put back from its backup, never replaced by an empty one", h2.get("personaFrame") == "I am Eni, first save.", str(h2)[:120])
+        ok("and the house on disk is whole again", json.loads((home / "_house.json").read_text()).get("personaFrame") == "I am Eni, first save.")
+
+        # --- backups are kept across time, not only the last few seconds -------
+        sys.path.insert(0, str(ROOT))
+        os.environ["COZYMAKER_HOME"] = str(home)
+        import importlib
+        srv = importlib.import_module("serve")
+        now = time.mktime(time.strptime("20260921-120000", "%Y%m%d-%H%M%S"))
+        stamps = [time.strftime("%Y%m%d-%H%M%S", time.localtime(now - s_)) for s_ in
+                  list(range(0, 20)) + [3600 + 5, 3600 + 60, 7200 + 5, 26 * 3600, 3 * 86400, 3 * 86400 + 60, 10 * 86400, 40 * 86400]]
+        names = [f"p_x.{st}.json.gz" for st in stamps]
+        kept = srv.keep_which(names, "p_x", ".json", now=now)
+        ago = lambda sec: f"p_x.{time.strftime('%Y%m%d-%H%M%S', time.localtime(now - sec))}.json.gz"
+        ok("the newest eight are kept", all(ago(s_) in kept for s_ in range(0, 8)))
+        ok("the rest of the last few seconds are let go", not any(ago(s_) in kept for s_ in range(8, 20)))
+        ok("the newest of each earlier hour is kept for two days", ago(3600 + 5) in kept and ago(7200 + 5) in kept and ago(3600 + 60) not in kept)
+        ok("the newest of each day is kept for a month", ago(3 * 86400) in kept and ago(10 * 86400) in kept and ago(3 * 86400 + 60) not in kept)
+        ok("older than a month is let go", ago(40 * 86400) not in kept)
+
         # --- it relights when its own file changes ---------------------------
         _, v1 = call("/api/version")
         src = (ROOT / "serve.py")
