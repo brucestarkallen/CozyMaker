@@ -79,6 +79,12 @@ class Model(http.server.BaseHTTPRequestHandler):
             calls.append({"who": "refuse", "body": sent})
             if any(k in sent for k in ("thinking", "reasoning_effort", "reasoning", "enable_thinking")):
                 return self.refuse(400, "Unrecognized request argument supplied: reasoning_effort")
+        if self.path.startswith("/small/"):
+            asked = sum(len(m.get("content") or "") for m in sent.get("messages", []) if m.get("role") != "system")
+            if asked > 30000:
+                calls.append({"who": "small-refused", "size": asked, "body": sent})
+                return self.refuse(400, "This model's maximum context length is 8192 tokens. However, your messages resulted in "
+                                        f"{asked // 4} tokens. Please reduce the length of the messages.")
         if self.path.startswith("/badkey/"):
             calls.append({"who": "badkey", "body": sent})
             return self.refuse(401, "Incorrect API key provided")
@@ -781,6 +787,39 @@ def main():
             said = page.locator("#toast").inner_text()
             ok("a Go on that fails says why, and the reply is left as it was", "did not go through" in said and last_maker().locator(".bubble").inner_text() == kept, said[:120])
             h["agentConnections"]["keeper"] = "c1"
+            api("/api/house", "PUT", h)
+            page.reload(wait_until="networkidle")
+            page.wait_for_timeout(600)
+
+            # ---------------------------------------- a model too small for the whole world
+            wd = world("p_new")
+            wd["docs"].append({"id": "dbig", "name": "Old Drafts.md", "kind": "notes",
+                               "text": "A long draft line that nobody needs right now, kept anyway.\n" * 1200})
+            api("/api/project/p_new", "PUT", wd)
+            h = api("/api/house")
+            h["connections"].append({"id": "c6", "name": "small", "url": f"http://127.0.0.1:{MODEL_PORT}/small/v1", "model": "test-model", "key": "k"})
+            h["agentConnections"]["editor"] = "c6"
+            api("/api/house", "PUT", h)
+            page.reload(wait_until="networkidle")
+            page.wait_for_timeout(600)
+            calls.clear()
+            page.fill("#say", "*edit move the scene to the Quay")
+            page.click("#sendBtn")
+            settle()
+            refused_small = [c for c in calls if c["who"] == "small-refused"]
+            eds = [c for c in calls if c["who"] == "editor"]
+            ok("a model too small for the whole world refuses it once", len(refused_small) == 1, [c["who"] for c in calls])
+            ok("the whole world was sent first, the long document with it", refused_small and "A long draft line" in refused_small[0]["body"]["messages"][-1]["content"]
+               and refused_small[0]["size"] > 70000, refused_small[0]["size"] if refused_small else None)
+            ok("and the worker is asked again with the outline, which fits", len(eds) == 1 and sum(len(m["content"]) for m in eds[0]["messages"]) < 30000
+               and "more characters of it are not shown" in eds[0]["messages"][0]["content"], [len(m["content"]) for m in eds[0]["messages"]] if eds else None)
+            ok("so the change still lands", where_line() == "WHERE: the Quay", where_line())
+            wd = world("p_new")
+            wd["docs"] = [d for d in wd["docs"] if d["id"] != "dbig"]
+            api("/api/project/p_new", "PUT", wd)
+            h = api("/api/house")
+            h["agentConnections"].pop("editor", None)
+            h["connections"] = [c for c in h["connections"] if c["id"] != "c6"]
             api("/api/house", "PUT", h)
             page.reload(wait_until="networkidle")
             page.wait_for_timeout(600)

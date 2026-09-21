@@ -25,7 +25,7 @@ import { craftFor } from '../engine/crafts.js';
 import { openingFor, personaOf, addressWriter } from './persona.js';
 import { pickConnection, FRONT } from './roster.js';
 import { callModel, streamModel, enqueue } from './call.js';
-import { parseDoc, brief, readNeed, stripNeed, resolveNeed } from '../doc/index.js';
+import { parseDoc, brief, readNeed, stripNeed, resolveNeed, LEAD_SHORT } from '../doc/index.js';
 import { route } from './router.js';
 import { parseEdits, stripEdits, stripThinking, applyRun, hash } from '../doc/edits.js';
 import { lint, lostSomething } from '../doc/lint.js';
@@ -114,8 +114,12 @@ export function docBriefs(project, opts) {
   const docs = docsOf(project);
   if (!docs.length) return 'Nothing has been written yet — there are no documents in this world so far.';
   const size = docs.reduce((n, d) => n + (d.text || '').length, 0);
-  const whole = !opts.forFront && size <= WHOLE_LIMIT;
-  return docs.map((d) => brief(parseDoc(d.text, d.kind), d.name, { ...opts, whole })).join('\n\n----\n\n');
+  const whole = !opts.forFront && !opts.partial && size <= WHOLE_LIMIT;
+  /* the text before a document's first section: the front and a model too
+   * small for the whole world read the start of it; any other worker reads
+   * it all, up to the same limit a whole world has */
+  const leadCap = opts.forFront || opts.partial ? LEAD_SHORT : WHOLE_LIMIT;
+  return docs.map((d) => brief(parseDoc(d.text, d.kind), d.name, { ...opts, whole, leadCap })).join('\n\n----\n\n');
 }
 
 /* --------------------------------------------------------------- a worker */
@@ -159,6 +163,11 @@ export function claimsAChange(notes) {
   return CLAIMED.test(bare);
 }
 
+/* A provider saying the request is longer than its model can take, in the
+ * words the houses use (OpenAI, Anthropic, DeepSeek, OpenRouter, local). */
+export const TOO_LONG = /(maximum context|context length|context window|context_length|too many tokens|prompt is too long|input is too long|reduce the length|exceeds? (?:the )?(?:model'?s? )?(?:maximum|max|context)|token limit)/i;
+export const TALK_WHEN_SMALL = 6000;
+
 async function runWorker({ worker, sections, conn, project, message, talk, fromHouse = false, onStatus, signal, stale, craft = null }) {
   /* a worker with a craft of its own reads that; the rest read their slice */
   const own = craft || sliceFor(sections, worker).text;
@@ -167,10 +176,15 @@ async function runWorker({ worker, sections, conn, project, message, talk, fromH
   let answer = null;
   let nudged = false;
   let nudge = '';
+  /* A MODEL TOO SMALL FOR THE WHOLE WORLD STILL GETS THE JOB DONE. When the
+   * provider says the request is too long, the same worker is asked once more
+   * with the outline and the parts in play (it can ask for more with <need>),
+   * and only the newest part of the talk. What it detects, the house repairs. */
+  let small = false;
 
   for (let round = 0; round <= MAX_NEED_ROUNDS + 1; round++) {
     if ((stale && stale()) || (signal && signal.aborted)) return { ok: false, error: 'stopped' };
-    const context = docBriefs(project, { message, recent: project.recentSections || [], asked });
+    const context = docBriefs(project, { message, recent: project.recentSections || [], asked, partial: small });
     /* The documents go last before the job — nearest the answer, where
      * copying from them word for word is surest. */
     const user = [
@@ -186,7 +200,16 @@ async function runWorker({ worker, sections, conn, project, message, talk, fromH
     ].filter(Boolean).join('\n');
 
     const out = await callModel(conn, { system, messages: [{ role: 'user', content: user }], maxTokens: 8000, signal, stale });
-    if (!out.ok) return { ok: false, error: out.error };
+    if (!out.ok) {
+      if (!small && TOO_LONG.test(out.error || '')) {
+        small = true;
+        if (talk && talk.length > TALK_WHEN_SMALL) talk = '(earlier talk left out: the model is small)\n' + talk.slice(-TALK_WHEN_SMALL);
+        onStatus && onStatus(`the whole world is too long for the ${worker}'s model \u2014 reading the outline instead`);
+        round--;
+        continue;
+      }
+      return { ok: false, error: out.error };
+    }
 
     const need = readNeed(out.text);
     if (need.length && round < MAX_NEED_ROUNDS) {

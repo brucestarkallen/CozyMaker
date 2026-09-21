@@ -775,6 +775,40 @@ ok('a block in the thinking channel is still a block', (() => {
   eq('and clean text has nothing to report', spacingReport('one\ntwo'), '');
 }
 
+/* --- what a worker reads is the document, all of it --- */
+{
+  const fx = JSON.parse((await import('node:fs')).readFileSync(new URL('./fixtures/transplant-lint.json', import.meta.url), 'utf8'));
+  const sc = fx.cases.find((c) => c.name === 'a sound transplant').text;
+  const w1 = { docs: [{ name: 'Harbour transplant.md', kind: 'transplant', text: sc }] };
+  const seen = docBriefs(w1, { message: '*audit' });
+  ok('a transplant reaches its worker whole, every marker in it', seen.includes(sc) && !/empty so far/.test(seen), seen.slice(0, 160));
+  const instr = 'You are the narrator.\nNever speak for the user.\nKeep replies under 300 words.';
+  ok('so does an instruction set with no headings', docBriefs({ docs: [{ name: 'Narrator.md', kind: 'instructions', text: instr }] }, {}).includes(instr));
+  const pe = '# PLOT ESSENTIAL — Harbour — V1.0\nA paragraph under the title, before any section.\n\n## WORLD\n- a rule\n';
+  ok('the text between a title and the first section reaches a worker', docBriefs({ docs: [{ name: 'PE.md', kind: 'pe', text: pe }] }, {}).includes('A paragraph under the title, before any section.'));
+  const outline = brief(parseDoc(pe, 'pe'), 'PE.md', {});
+  ok('and the outline shows it too, never dropping it', outline.includes('A paragraph under the title, before any section.'), outline);
+  const long = 'x'.repeat(9000);
+  const front = docBriefs({ docs: [{ name: 'Notes.md', kind: 'notes', text: long }] }, { forFront: true });
+  ok('the front reads the start of a long heading-less document, and is told the rest is there', front.includes('x'.repeat(4000)) && !front.includes('x'.repeat(4001)) && /more characters of it are not shown/.test(front));
+  eq('an empty document is still said to be empty', brief(parseDoc('', 'notes'), 'N.md', { whole: true }), 'N.md — it is empty so far.');
+}
+
+/* --- the words houses use for "too long" --- */
+{
+  const { TOO_LONG } = await import('../js/agents/run.js');
+  for (const said of [
+    "This model's maximum context length is 8192 tokens. However, your messages resulted in 20000 tokens.",
+    'prompt is too long: 250000 tokens > 200000 maximum',
+    'Input is too long for requested model.',
+    'This endpoint\'s maximum context length is 131072 tokens.',
+    'the request exceeds the model\'s context window',
+  ]) ok(`"${said.slice(0, 40)}…" is read as too long`, TOO_LONG.test(said));
+  for (const said of ['Incorrect API key provided', 'Unrecognized request argument supplied: reasoning_effort', 'rate limit reached']) {
+    ok(`"${said.slice(0, 40)}" is not`, !TOO_LONG.test(said));
+  }
+}
+
 /* --- a worldbook is repaired by code where code can read it --- */
 {
   const { lint, readWorldbook } = await import('../js/doc/lint.js');

@@ -367,6 +367,15 @@ out; the rest were found here and fixed. Each has a test.
 - **A Go on that failed vanished**; it says why. **A remade version kept its old cards** when some of its
   changes no longer fit; its cards now say what is in the documents.
 - **Leaving a document waited 0.9s to save**; leaving is a save point.
+- **A document with no `##` sections reached every worker as its name and "It is empty so far".**
+  `parseDoc` kept only `#` titles and text under sections, so a Summaryception transplant reached the
+  auditor empty, an instruction set with no headings reached its writer empty, and the paragraph under
+  a plot essential's title reached nobody. A whole reading is now the file itself, word for word; an
+  outline keeps everything before the first section (`lead`), trimmed only for the front or a model too
+  small for it, and says how much it left out. Whatever a worker's craft says it works on, check that
+  `docBriefs` really hands it over — a worker given nothing will invent.
+- **A model too small for the whole world failed the turn.** When a provider says a request is too long
+  (`TOO_LONG`), the worker is asked once more with the outline and the newest talk.
 
 ## Testing
 
@@ -374,18 +383,19 @@ out; the rest were found here and fixed. Each has a test.
 bash tests/all.sh           all seven, exit code intact
 ```
 
-    node tests/units.mjs         413 checks — the real modules on a real document
+    node tests/units.mjs         427 checks — the real modules on a real document
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       30 checks — the real serve.py, real files on disk
     python3 tests/browser.py      66 checks — real Chromium at 390x844, end to end
-    python3 tests/walk_worlds.py 125 checks — the drawer, conversations, swipes and versions, edit and
+    python3 tests/walk_worlds.py 129 checks — the drawer, conversations, swipes and versions, edit and
                                               send again, delete, branch, go on, re-quoting, crafts,
-                                              backup and restore, a real server killed mid-edit
+                                              backup and restore, a model too small for the world,
+                                              a real server killed mid-edit
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-688 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
+706 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

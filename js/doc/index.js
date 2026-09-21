@@ -35,6 +35,7 @@ export function parseDoc(text, kind = 'pe') {
 
   const lines = src.split('\n');
   const head = [];
+  const lead = [];
   const sections = [];
   let current = null;
   let inFence = false;
@@ -61,7 +62,12 @@ export function parseDoc(text, kind = 'pe') {
       continue;
     }
     if (!current && !inFence && /^#\s+\S/.test(l)) { head.push(l.trim()); continue; }
-    if (!current && l.trim() && head.length === 0 && /^#/.test(l)) head.push(l.trim());
+    if (!current && l.trim() && head.length === 0 && /^#/.test(l)) { head.push(l.trim()); continue; }
+    /* EVERYTHING BEFORE THE FIRST SECTION IS PART OF THE DOCUMENT. A marker
+     * file, an instruction set, a note, the paragraph under a title: none of
+     * it has a section heading, and all of it used to be dropped from what a
+     * worker read, so a transplant reached the auditor as an empty document. */
+    if (!current) lead.push(l);
   }
   close(lines.length);
 
@@ -75,7 +81,7 @@ export function parseDoc(text, kind = 'pe') {
     if (ev.length) s.events = ev;
   }
 
-  return { kind, head, sections, raw: src };
+  return { kind, head, lead: lead.join('\n').replace(/^\s+|\s+$/g, ''), sections, raw: src };
 }
 
 function parseWorldbook(src) {
@@ -189,13 +195,31 @@ export function inPlay(doc, { message = '', recent = [], asked = [], recentEvent
 /* What a worker actually reads about a document: its header, the whole shape,
  * and the bodies in play. Written the way one person describes a book to
  * another, because the front of the house reads this too. */
+/* how much of the text before the first section a partial reading shows */
+export const LEAD_SHORT = 4000;
+
 export function brief(doc, name, opts = {}) {
+  /* WHOLE MEANS THE FILE ITSELF, WORD FOR WORD (the Plot Essential Maker sends
+   * every document whole). Never a rebuilding of it from parsed pieces: what
+   * the worker quotes must be exactly what is there. */
+  if (opts.whole) {
+    const raw = String(doc.raw || '');
+    return raw.trim() ? `${name} — as it stands right now, whole, word for word:\n\n${raw}` : `${name} — it is empty so far.`;
+  }
   const parts = [];
   parts.push(`${name} — as it stands right now`);
   if (doc.head.length) parts.push(doc.head.join('\n'));
+  const lead = doc.lead || '';
+  const cap = Number.isFinite(opts.leadCap) ? opts.leadCap : Infinity;
+  const leadCut = lead.length > cap;
+  if (lead) {
+    parts.push(leadCut
+      ? `${lead.slice(0, cap)}\n\u2026 (${(lead.length - cap).toLocaleString()} more characters of it are not shown here)`
+      : lead);
+  }
   if (doc.sections.length) {
     parts.push(`Everything that is in it:\n${indexLines(doc).join('\n')}`);
-  } else {
+  } else if (!lead) {
     parts.push('It is empty so far.');
   }
   const bodies = inPlay(doc, opts);
@@ -206,7 +230,7 @@ export function brief(doc, name, opts = {}) {
    * is real and already written; only some of it is in front of the reader
    * right now. Without this sentence a worker shown eight of forty events can
    * hand back a "complete" document holding eight, and mean it honestly. */
-  const partial = bodies.length < doc.sections.length || bodies.some((b) => b.trimmed);
+  const partial = leadCut || bodies.length < doc.sections.length || bodies.some((b) => b.trimmed);
   /* The front of the house reads the book the way a friend would: what is in
    * it and what is in front of them. It is never taught the workers' tools —
    * a way to ask for pages it cannot use, a rule about rewriting it will never

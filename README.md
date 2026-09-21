@@ -149,7 +149,7 @@ of the whole. The cog, under the floor, shows exactly who reads what.
 Read `AGENTS.md` first.
 
 ```
-bash tests/all.sh    seven suites, 688 checks
+bash tests/all.sh    seven suites, 706 checks
 ```
 
 `docs/lineage.md` lists every version of Cozy Tavern and Cozy Chat and what
