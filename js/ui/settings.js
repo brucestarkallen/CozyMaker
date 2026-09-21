@@ -43,6 +43,21 @@ function draw() {
   body.append(crewSection(house));
   body.append(lookSection(house));
   body.append(underTheFloorSection());
+  body.append(versionLine());
+}
+
+/* THE VERSION, ALWAYS IN PLAIN SIGHT. It used to live only in a toast behind a
+ * button named for something else, so there was no way to just look it up —
+ * and a thing he cannot find is a thing that is not there. This sits at the
+ * foot of the house, always shown, and says the folder his work lives in too. */
+function versionLine() {
+  const g = el('div', 'group');
+  const line = el('p', 'hint', 'CozyMaker');
+  g.append(line);
+  fetch('/api/version', { cache: 'no-store' }).then((x) => x.json())
+    .then((r) => { line.textContent = `CozyMaker \u00b7 version ${r.version}` + (r.home ? ` \u00b7 your work is kept in ${r.home}` : ''); })
+    .catch(() => { line.textContent = 'CozyMaker \u2014 the little server did not answer, so the version could not be read'; });
+  return g;
 }
 
 /* ------------------------------------------------------- who you are with */
@@ -354,15 +369,5 @@ function underTheFloorSection() {
   keep.append(krow);
   g.append(keep);
 
-  const row = el('div', 'btnrow');
-  const where = el('button', 'btn quiet', 'Where the work lives');
-  where.addEventListener('click', async () => {
-    try {
-      const r = await fetch('/api/version', { cache: 'no-store' }).then((x) => x.json());
-      toast(`${r.home} — version ${r.version}`);
-    } catch (_) { toast('The little server did not answer.'); }
-  });
-  row.append(where);
-  g.append(row);
   return g;
 }

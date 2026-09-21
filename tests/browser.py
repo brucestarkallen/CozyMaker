@@ -332,6 +332,12 @@ def main():
             ok("the house shows who you are making it with", "What they are called" in body)
             ok("the house shows the connections", "the good one" in body)
             ok("the house shows the crew", "The one you talk to" in body)
+            import re as _re
+            ver = _re.search(r'VERSION = "([^"]+)"', (ROOT / "serve.py").read_text()).group(1)
+            page.wait_for_timeout(400)
+            body2 = page.locator("#houseBody").inner_text()
+            ok("the house shows the version in plain sight, not in a toast", f"version {ver}" in body2, [l for l in body2.splitlines() if "version" in l.lower()][:2])
+            ok("and there is no second, hidden way to read it", "Where the work lives" not in body2)
             page.locator("#houseBody .btn", has_text="Try it").first.click()
             page.wait_for_timeout(1200)
             ok("a connection can be tried for real", "Working" in page.locator("#toast").inner_text(),

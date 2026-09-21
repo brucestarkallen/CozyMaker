@@ -521,6 +521,14 @@ front can receive inside that harness.
   possessive — so not one brace ever reaches the model; setting the names is still better and the house still
   nudges for it. `<ask>` is also stripped from anything the front reads, defensively.
 
+### The version, findable (v1.1.11)
+
+- **There was no place to just look up the version.** It appeared only in a toast behind a button named
+  "Where the work lives", which vanished in a couple of seconds — a thing he could not find. A plain line now
+  sits at the foot of the house, always shown: "CozyMaker · version X · your work is kept in <folder>". The
+  toast button is gone (it was a second way to read what the line now shows). `browser.py` asserts the version
+  is in the house body.
+
 ## Testing
 
 ```
@@ -531,7 +539,7 @@ bash tests/all.sh           all seven, exit code intact
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       46 checks — the real serve.py, real files on disk, streams timed
-    python3 tests/browser.py      69 checks — real Chromium at 390x844, end to end
+    python3 tests/browser.py      71 checks — real Chromium at 390x844, end to end
     python3 tests/walk_worlds.py 147 checks — the drawer, conversations, swipes and versions, edit and
                                               send again, delete, branch, go on, re-quoting, crafts,
                                               the thinking box live, backup and restore, a model too
@@ -539,7 +547,7 @@ bash tests/all.sh           all seven, exit code intact
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-902 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
+904 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.
