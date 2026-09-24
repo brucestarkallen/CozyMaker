@@ -794,13 +794,22 @@ front can receive inside that harness.
   their look and take a touch 5px beyond it on every side. Measured with taps 4px outside each edge: 0 of 4 landed
   before, 4 of 4 now; the walk holds it.
 
+### Every test runs the thing (v1.2.14)
+
+- Every test file was scanned for tests that read the app's source instead of running it (his rule: a test that
+  would pass with the feature deleted is worse than none). One did: "the craft is fetched from the root" passed by
+  finding a string in `slices.js`. It now loads the craft through a fetcher that records what it was asked for, and
+  also proves a craft file that will not come is said, not left for every worker to read nothing; both fail when
+  the loading is broken. The other two tests that open files are sound — one edits `serve.py` to prove the server
+  relights, the other checks the worldbook craft, which is data the keeper reads. No test's condition is a constant.
+
 ## Testing
 
 ```
 bash tests/all.sh           all seven, exit code intact
 ```
 
-    node tests/units.mjs         758 checks — the real modules on a real document, and what the persona hears
+    node tests/units.mjs         759 checks — the real modules on a real document, and what the persona hears
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       46 checks — the real serve.py, real files on disk, streams timed
@@ -812,7 +821,7 @@ bash tests/all.sh           all seven, exit code intact
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-1,109 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
+1,110 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

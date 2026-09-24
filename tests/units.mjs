@@ -615,9 +615,21 @@ ok('putting back an aged-out record refuses honestly',
   !undoBatch([{ name: 'Plot Essential.md', text: PE }], batches[0]).ok);
 ok('capping twice changes nothing more', capUndo(netProject) === false);
 
-/* The craft file is asked for from the root, never relative to a caller. */
-ok('the craft is fetched from the root',
-  readFileSync(join(ROOT, 'js/engine/slices.js'), 'utf8').includes("fetcher('/engine/generalist.md'"));
+/* The craft file is asked for from the root, never relative to a caller — run,
+ * not read: a real load through a fetcher that records what it was asked for. */
+{
+  const { loadEngine } = await import('../js/engine/slices.js');
+  const asked = [];
+  setEngineForTests(null);
+  try {
+    const loaded = await loadEngine(async (url) => { asked.push(url); return { ok: true, text: async () => ENGINE }; });
+    eq('the craft is fetched from the root, and cut the same way', [asked, loaded.size], [['/engine/generalist.md'], SECTIONS.size]);
+    setEngineForTests(null);
+    let said = '';
+    try { await loadEngine(async () => ({ ok: false, text: async () => '' })); } catch (e) { said = e.message; }
+    ok('a craft file that will not come says so, rather than leaving every worker reading nothing', /could not be read/.test(said), said);
+  } finally { setEngineForTests(SECTIONS); }
+}
 
 /* ========== what the whole history of both frontends taught ============== */
 
