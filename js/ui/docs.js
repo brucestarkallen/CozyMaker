@@ -14,7 +14,7 @@ import { $, el, openSheet, closeSheet, toast, redraw, field, select, group, ask,
 import { lintTransplant } from '../doc/transplant.js';
 import { guessKind } from '../doc/kind.js';
 import { originalCraft, ownCraft } from '../engine/crafts.js';
-import { parseDoc, indexLines, estimateTokens } from '../doc/index.js';
+import { parseDoc, indexLines, estimateTokens, nameWorld } from '../doc/index.js';
 import { lint, readEvents, readWorldbook } from '../doc/lint.js';
 import { parseWorldbook, worldbookToST } from '../doc/worldbook.js';
 import { WHOLE_LIMIT } from '../agents/run.js';
@@ -79,10 +79,13 @@ export function tidyOnLeaving(id) {
   const his = openedFor === id && typed && openedText !== null && openedText !== text;
   if (his) recordHandEdit(id, doc.name, openedText, text);
   if (openedFor === id) forgetOpening();
+  const named = { ...store.getProject() };
+  const renamed = nameWorld(named);
+  if (renamed) store.setProject(named);
   /* leaving a document is a save point: what he wrote goes to the device now,
    * not a moment later, through the same line every save takes */
   store.flush();
-  if (r.changed || his) redraw();
+  if (r.changed || his || renamed) redraw();
 }
 
 export function currentDocId() { return openDocIdValue; }
@@ -343,6 +346,8 @@ export function bringIn() {
      * the one shape this house reads — its values exactly as they were */
     if (kind === 'worldbook') { const wb = readWorldbook(words); if (wb.ok && (wb.fixed || wb.reshaped)) words = JSON.stringify(wb.entries, null, 2); }
     await store.addDoc(clean, kind, words);
+    const named = { ...store.getProject() };
+    if (nameWorld(named)) await store.setProject(named, { now: true });
     toast(`${clean} is in, whole.`);
     redraw();
     openDocs();

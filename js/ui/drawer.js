@@ -14,6 +14,7 @@
 
 import * as store from '../store.js';
 import { $, el, toast, redraw, ask, when } from './kit.js';
+import { DEFAULT_WORLD_TITLE } from '../doc/index.js';
 import { openDocs, openDoc, newPlotEssential, bringIn } from './docs.js';
 import { openHouse } from './settings.js';
 
@@ -91,7 +92,7 @@ export async function draw() {
         if (!store.getProject()) {
           const left = (await store.listProjects()).sort((a, b) => (b.updated || 0) - (a.updated || 0));
           if (left.length) await store.openProject(left[0].id);
-          else await store.createProject('A new world');
+          else await store.createProject(DEFAULT_WORLD_TITLE);
         }
         redraw(); draw();
       }],
@@ -211,13 +212,16 @@ async function renameWorld(id, title) {
   await store.updateWorld(id, (w) => ({ ...w, title }));
 }
 
+/* A NEW WORLD IS SOMEWHERE TO START TALKING. The drawer used to stay open over
+ * it, so the first thing he had to do in a world he had just made was close
+ * something. It shuts, and he is in the empty room, where how to begin is said. */
 async function newWorld() {
-  const title = prompt('What is this world called?', 'A new world');
+  const title = prompt('What is this world called?', DEFAULT_WORLD_TITLE);
   if (title === null) return;
   await store.flush();
-  await store.createProject(title.trim() || 'A new world');
+  await store.createProject(title.trim() || DEFAULT_WORLD_TITLE);
   redraw();
-  draw();
+  closeDrawer();
 }
 
 /* --- the swipe from the left edge ---------------------------------------- */

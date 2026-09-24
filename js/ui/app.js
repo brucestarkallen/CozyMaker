@@ -5,6 +5,7 @@ import * as store from '../store.js';
 import { runTurn, capUndo, landTurn, commit, versionOf, FRONT_ONLY, GO_ON } from '../agents/run.js';
 import { onWork, stopWork, onLearn } from '../agents/call.js';
 import { undoBatch } from '../doc/edits.js';
+import { DEFAULT_WORLD_TITLE } from '../doc/index.js';
 import { personaOf, names } from '../agents/persona.js';
 import { $, el, escape, closeSheet, toast, applyTheme, onRedraw, onAsk, fold, copyText } from './kit.js';
 import { openDocs, tidyOnLeaving, currentDocId, newPlotEssential, bringIn } from './docs.js';
@@ -30,7 +31,7 @@ async function boot() {
   const want = store.lastOpenId();
   if (worlds.some((w) => w.id === want)) await store.openProject(want);
   else if (worlds.length) await store.openProject(worlds[0].id);
-  else await store.createProject('A new world');
+  else await store.createProject(DEFAULT_WORLD_TITLE);
   wire();
   draw();
 }

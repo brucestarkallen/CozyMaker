@@ -749,6 +749,25 @@ eq('an unescaped quote inside a change is read, not lost', salvageEdits('[{"find
   } catch (e) { ok('the whole-turn build tests ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
 }
 
+/* --- A NEW WORLD TAKES THE NAME ITS PLOT ESSENTIAL GIVES IT --- */
+{
+  const { nameWorld, plotEssentialTitle, DEFAULT_WORLD_TITLE } = await import('../js/doc/index.js');
+  const pe = (title) => ({ id: 'd', name: 'Plot Essential.md', kind: 'pe', text: `# PLOT ESSENTIAL — ${title} — V1.0\n# STATE: Monday\n\n## SCENE\nWHERE: x` });
+  eq('the title a plot essential gives itself', plotEssentialTitle([pe('The Leviathan Quarter')]), 'The Leviathan Quarter');
+  eq('a continuation file\'s heading is not the world\'s name', plotEssentialTitle([{ kind: 'continuity', text: '# PLOT ESSENTIAL CONTINUITY — X — FILE 2' }]), '');
+  eq('the template\'s own placeholder is not a name', plotEssentialTitle([{ kind: 'pe', text: '# PLOT ESSENTIAL — [TITLE] — V[X.X]' }]), '');
+  const fresh = { title: DEFAULT_WORLD_TITLE, docs: [pe('The Saltmarsh Court')] };
+  eq('a world still called "A new world" takes it', [nameWorld(fresh), fresh.title], [true, 'The Saltmarsh Court']);
+  const his = { title: 'My Tide Story', docs: [pe('The Saltmarsh Court')] };
+  eq('a name he gave is never touched', [nameWorld(his), his.title], [false, 'My Tide Story']);
+  /* through the real landing of a turn: the build arrives and the world is named */
+  const world = { id: 'pz', title: DEFAULT_WORLD_TITLE, docs: [], chats: [{ id: 'c1', turns: [{ role: 'writer', text: 'build it', at: 1 }] }] };
+  const out = landTurn(world, { chatId: 'c1', snapshot: new Map(), result: { project: { docs: [pe('The Saltmarsh Court')] } }, makerTurn: { role: 'maker', text: 'Built.', at: 2, cards: [], batches: [] } });
+  eq('a turn that builds the plot essential names the world', out.world.title, 'The Saltmarsh Court');
+  /* an old world opened: named, and written back (openProject writes an upgraded world back) */
+  eq('a world opened with the old name and a titled plot essential is named on opening', upgradeWorld({ title: DEFAULT_WORLD_TITLE, docs: [pe('Ashwood')], chats: [] }).title, 'Ashwood');
+}
+
 /* --- THE KIND OF A DOCUMENT IS ONE RULE, AND THE CREW'S DOCUMENTS FOLLOW IT --- */
 {
   eq('an instruction set its writer starts is an instruction set, whatever it is called', kindFor('Eni.md', 'You are Eni.', 'instructions'), 'instructions');

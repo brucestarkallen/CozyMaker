@@ -183,8 +183,9 @@ class Model(http.server.BaseHTTPRequestHandler):
                     '<ask>NORTH ARC PLAN: say the leviathan is dormant, not dead, so the arc stops reading as a funeral. Go ahead?</ask>')
         elif who == "builder":
             # the way a whole document is written now: plainly, its dialogue quotes bare
+            title = "The Saltmarsh Court" if "saltmarsh" in json.dumps(rest).lower() else "The Leviathan Quarter"
             body = ('I started the plot essential from what you described.\n\n<file name="Plot Essential.md">\n'
-                    '# PLOT ESSENTIAL — The Leviathan Quarter — V1.0\n\n'
+                    '# PLOT ESSENTIAL — ' + title + ' — V1.0\n\n'
                     '## WORLD\n### Rules\n- The city lives inside a dormant leviathan.\n\n'
                     '## SCENE\nWHERE: the Ribway / LAST: "Hold the rope," Mira said.\n'
                     '</file>')
@@ -1133,6 +1134,35 @@ def main():
             ok("Duplicate makes a copy beside it", len(copies) == 1 and copies[0]["text"] == pe_text() and copies[0]["kind"] == "pe")
             page.click("#docsSheet [data-close]")
             page.wait_for_timeout(300)
+            # ---------------------------------------- a new world takes the name its plot essential gives it
+            page.click("#menuBtn")
+            page.wait_for_timeout(400)
+            before_ids = {p["id"] for p in api("/api/projects")["projects"]}
+            # the walk's standing dialog handler (the essentials, above) accepts the
+            # prompt as offered: the name nobody chose, "A new world"
+            page.locator(".drawer-head .btn", has_text="New world").click()
+            page.wait_for_timeout(900)
+            ok("a new world begins with the placeholder name", page.locator("#worldName").inner_text() == "A new world")
+            ok("and he is in it, ready to talk: the drawer has shut", not page.locator("#drawer.open").count() and page.locator(".empty .btn", has_text="Start a plot essential").count() == 1)
+            new_id = [p["id"] for p in api("/api/projects")["projects"] if p["id"] not in before_ids]
+            ok("and it exists on the device", len(new_id) == 1, new_id)
+            page.fill("#say", "a saltmarsh court where the tide decides who rules")
+            page.click("#sendBtn")
+            page.wait_for_function("() => document.querySelectorAll('.turn.maker').length >= 1 && !document.querySelector('#sendBtn.stop')", timeout=30000)
+            page.fill("#say", "*new build the plot essential from what I said")
+            page.click("#sendBtn")
+            page.wait_for_function("() => document.querySelectorAll('.turn.maker').length >= 2 && !document.querySelector('#sendBtn.stop')", timeout=30000)
+            page.wait_for_timeout(1300)
+            ok("the world takes the name its plot essential gave it", page.locator("#worldName").inner_text() == "The Saltmarsh Court",
+               page.locator("#worldName").inner_text())
+            ok("on the device too", new_id and world(new_id[0])["title"] == "The Saltmarsh Court", new_id and world(new_id[0])["title"])
+            page.click("#menuBtn")
+            page.wait_for_timeout(400)
+            ok("and on the shelf", page.locator(".world-name", has_text=re.compile("^The Saltmarsh Court$")).count() == 1)
+            page.locator(".world-row", has_text=re.compile("^The Leviathan Quarter")).first.click()
+            page.wait_for_timeout(700)
+            ok("the other world is as it was", page.locator("#worldName").inner_text() == "The Leviathan Quarter")
+
             wd = world("p_new")
             wd["docs"] = [d for d in wd["docs"] if d["id"] != "dwb" and d["name"] != "Plot Essential (copy).md"]
             api("/api/project/p_new", "PUT", wd)

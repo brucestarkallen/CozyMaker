@@ -13,6 +13,8 @@
  * out, so a world is never a few seconds behind.
  */
 
+import { nameWorld, DEFAULT_WORLD_TITLE } from './doc/index.js';
+
 const SAVE_AFTER_MS = 900;
 
 let house = null;
@@ -145,6 +147,8 @@ export function upgradeWorld(w) {
   }
   for (const c of world.chats) { c.turns = c.turns || []; c.title = c.title || 'A conversation'; }
   if (!world.chats.some((c) => c.id === world.openChat)) world.openChat = newestChat(world).id;
+  /* a world still called "A new world" whose plot essential names it */
+  nameWorld(world);
   return world;
 }
 
@@ -240,7 +244,7 @@ export async function createProject(title) {
   const id = 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
   const fresh = upgradeWorld({
     id,
-    title: title || 'A new world',
+    title: title || DEFAULT_WORLD_TITLE,
     docs: [],
     chats: [],
     undo: [],

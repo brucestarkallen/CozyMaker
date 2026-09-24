@@ -17,6 +17,34 @@
 
 export const ALWAYS = ['SCENE', 'CURRENT SCENE', 'STATE', 'CALENDAR'];
 
+/* A NEW WORLD TAKES THE NAME ITS PLOT ESSENTIAL GIVES IT. A world begins as
+ * "A new world", and the plot essential names itself on its first line —
+ * "# PLOT ESSENTIAL — The Leviathan Quarter — V1.0" — but the world kept the
+ * placeholder for ever, so the shelf filled with worlds all called the same.
+ * While a world still has the name nobody chose, it takes the one its plot
+ * essential gives; a name he gave it is never touched. Done where a document
+ * arrives whole — a turn landing, one brought in, one he finishes typing, a
+ * world opened — never mid-keystroke, where half a title would stick. */
+export const DEFAULT_WORLD_TITLE = 'A new world';
+export function plotEssentialTitle(docs) {
+  for (const d of docs || []) {
+    if ((d.kind || 'pe') !== 'pe') continue;
+    const head = String(d.text || '').split('\n').slice(0, 5).join('\n');
+    const m = /^#\s*PLOT ESSENTIAL(?!\s+CONTINUITY)\s*[\u2014\u2013:-]+\s*(.+?)(?:\s*[\u2014\u2013-]+\s*V\s*[[\d][\w.\]]*)?\s*$/im.exec(head);
+    if (!m) continue;
+    const t = m[1].replace(/[[\]]/g, '').trim();
+    if (t && !/^title$/i.test(t)) return t.slice(0, 80);
+  }
+  return '';
+}
+export function nameWorld(world) {
+  if (!world || world.title !== DEFAULT_WORLD_TITLE) return false;
+  const t = plotEssentialTitle(world.docs);
+  if (!t) return false;
+  world.title = t;
+  return true;
+}
+
 export function estimateTokens(text) {
   return Math.ceil(String(text || '').length / 4);
 }

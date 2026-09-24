@@ -618,25 +618,37 @@ front can receive inside that harness.
   document is open), and a continuation that brings nothing stops the carrying on.
 - `__pycache__/serve.cpython-312.pyc` was committed, and every test run changed it. It is ignored now.
 
+### A new world, named and ready (v1.2.1)
+
+- **A world kept the name "A new world" for ever.** The plot essential names itself on its first line
+  (`# PLOT ESSENTIAL — The Leviathan Quarter — V1.0`), but the world never took it, so the shelf filled with
+  worlds all called the same. While a world still has the name nobody chose (`DEFAULT_WORLD_TITLE`), it takes
+  the one its plot essential gives (`nameWorld`, `js/doc/index.js`) — where a document arrives whole: a turn
+  landing (`landTurn`), one brought in, one he finishes typing (on leaving it, never mid-keystroke, where half a
+  title would stick), a world opened (`upgradeWorld`, written back at once). A name he gave is never touched;
+  a continuation file's heading and the template's own `[TITLE]` are never a name.
+- **Making a new world left the drawer open over it**, so the first thing to do in a world just made was close
+  something. It shuts; he is in the empty room, where how to begin is said. Found by the walk.
+
 ## Testing
 
 ```
 bash tests/all.sh           all seven, exit code intact
 ```
 
-    node tests/units.mjs         676 checks — the real modules on a real document, and what the persona hears
+    node tests/units.mjs         683 checks — the real modules on a real document, and what the persona hears
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       46 checks — the real serve.py, real files on disk, streams timed
     python3 tests/browser.py      74 checks — real Chromium at 390x844, end to end
-    python3 tests/walk_worlds.py 154 checks — the drawer, conversations, swipes and versions, edit and
+    python3 tests/walk_worlds.py 161 checks — the drawer, conversations, swipes and versions, edit and
                                               send again, delete, branch, go on, re-quoting, crafts,
                                               the thinking box live, backup and restore, a model too
                                               small for the world, a real server killed mid-edit
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-1,004 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
+1,018 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

@@ -25,7 +25,7 @@ import { craftFor } from '../engine/crafts.js';
 import { openingFor, personaOf, addressWriter } from './persona.js';
 import { pickConnection, FRONT } from './roster.js';
 import { callModel, streamModel, enqueue } from './call.js';
-import { parseDoc, brief, readNeed, stripNeed, resolveNeed, LEAD_SHORT } from '../doc/index.js';
+import { parseDoc, brief, readNeed, stripNeed, resolveNeed, LEAD_SHORT, nameWorld } from '../doc/index.js';
 import { route, confirmsOffer, offersIn, writtenCommand, justGreeting } from './router.js';
 import { listen, LISTENER, LISTEN_TALK } from './listener.js';
 import { parseEdits, stripEdits, stripThinking, applyRun, hash, openFileAtEnd } from '../doc/edits.js';
@@ -759,6 +759,7 @@ export function landTurn(world, { chatId, snapshot, result, makerTurn, replaceAt
     .filter((b) => b.items.length);
   const chat = next.chats.find((c) => c.id === chatId);
   if (result.project && result.project.recentSections) next.recentSections = result.project.recentSections;
+  nameWorld(next);
   if (!chat) return { world: next, landed: false, conflicts };
   const fresh = { ...makerTurn, cards, batches };
   const old = replaceAt !== null ? (chat.turns || [])[replaceAt] : null;
