@@ -182,10 +182,12 @@ class Model(http.server.BaseHTTPRequestHandler):
             body = ('I read the whole plot essential and the north arc.\n\n'
                     '<ask>NORTH ARC PLAN: say the leviathan is dormant, not dead, so the arc stops reading as a funeral. Go ahead?</ask>')
         elif who == "builder":
-            body = ('I started the plot essential from what you described.\n\n<edits>\n'
-                    '[{"create_file":"Plot Essential.md","replace":"# PLOT ESSENTIAL — The Leviathan Quarter — V1.0\\n\\n'
-                    '## WORLD\\n### Rules\\n- The city lives inside a dormant leviathan.\\n\\n## SCENE\\nWHERE: the Ribway\\n",'
-                    '"reason":"the premise"}]\n</edits>')
+            # the way a whole document is written now: plainly, its dialogue quotes bare
+            body = ('I started the plot essential from what you described.\n\n<file name="Plot Essential.md">\n'
+                    '# PLOT ESSENTIAL — The Leviathan Quarter — V1.0\n\n'
+                    '## WORLD\n### Rules\n- The city lives inside a dormant leviathan.\n\n'
+                    '## SCENE\nWHERE: the Ribway / LAST: "Hold the rope," Mira said.\n'
+                    '</file>')
         elif who == "showrunner":
             body = ('I tidied it: the rule now says what it means.\n\n<edits>\n'
                     '[{"file":"Plot Essential.md","find":"- The city lives inside a dormant leviathan.",'
@@ -373,6 +375,11 @@ def main():
             saved = world("p_new")
             pe = [d for d in saved["docs"] if d["name"] == "Plot Essential.md"]
             ok("the plot essential now exists on the device", pe and "dormant leviathan" in pe[0]["text"], json.dumps(saved["docs"])[:200])
+            ok("written plainly, its dialogue quotes arrive as they were written",
+               pe and 'LAST: "Hold the rope," Mira said.' in pe[0]["text"] and "<file" not in pe[0]["text"], json.dumps(saved["docs"])[:300])
+            builder_call = [c for c in calls if c["who"] == "builder"]
+            ok("the builder is told to write a whole document plainly",
+               builder_call and '<file name="which document.md">' in builder_call[0]["system"])
             ok("the conversation took its name from what was said",
                saved["chats"][0]["title"].startswith("Let's start a new plot"), saved["chats"][0]["title"])
 

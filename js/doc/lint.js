@@ -1,5 +1,5 @@
 import { lintTransplant } from './transplant.js';
-import { stripTrailingCommasOutsideStrings, escapeRawControlsInStrings } from './edits.js';
+import { stripTrailingCommasOutsideStrings, escapeRawControlsInStrings, escapeStrayQuotes } from './edits.js';
 import { parseWorldbook } from './worldbook.js';
 /* CozyMaker — js/doc/lint.js
  *
@@ -250,12 +250,62 @@ export function lint(text, { kind = 'pe', deliverable = true, keep = null } = {}
  * line break inside a value is put right by the same string-aware repairs the
  * edits use; a list wrapped as {entries:[…]} or SillyTavern's numbered map is
  * made one list. Only what no rule can read goes to the worldbook keeper. */
+/* A LIST AFTER A LIST IS ONE LIST. The keeper's own craft says to begin an
+ * empty worldbook with an append whose value is a list, and a model adding
+ * entries often appends another list after the one that is there: "[] [ … ]"
+ * or "[a] [b]". What that means is certain — more entries — so code joins
+ * them. Only lists and entries, one after another, with nothing but spaces
+ * and commas between; anything else is not ours to guess, and goes to the
+ * keeper as before. */
+function valuesInARow(text) {
+  const out = [];
+  let depth = 0, start = -1, inStr = false, esc = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inStr) { if (esc) esc = false; else if (c === '\\') esc = true; else if (c === '"') inStr = false; continue; }
+    if (c === '"') { if (depth === 0) return null; inStr = true; continue; }
+    if (c === '[' || c === '{') { if (depth === 0) start = i; depth++; continue; }
+    if (c === ']' || c === '}') { depth--; if (depth < 0) return null; if (depth === 0) out.push(text.slice(start, i + 1)); continue; }
+    if (depth === 0 && !/[\s,]/.test(c)) return null;
+  }
+  return depth === 0 && !inStr ? out : null;
+}
+function readOneValue(t) {
+  for (const c of [t, stripTrailingCommasOutsideStrings(t), escapeRawControlsInStrings(stripTrailingCommasOutsideStrings(t)),
+    stripTrailingCommasOutsideStrings(escapeRawControlsInStrings(escapeStrayQuotes(t)))]) {
+    try { return { ok: true, v: JSON.parse(c) }; } catch (_) { /* the next repair */ }
+  }
+  return { ok: false };
+}
+const LOOKS_LIKE_ENTRY = (o) => o && typeof o === 'object' && !Array.isArray(o) && ['name', 'keys', 'key', 'content', 'comment'].some((k) => k in o);
+function listsInARow(text) {
+  const pieces = valuesInARow(text);
+  if (!pieces || pieces.length < 2) return null;
+  const all = [];
+  for (const piece of pieces) {
+    const r = readOneValue(piece);
+    if (!r.ok) return null;
+    const v = r.v;
+    if (Array.isArray(v)) all.push(...v);
+    else if (v && Array.isArray(v.entries)) all.push(...v.entries);
+    else if (v && v.entries && typeof v.entries === 'object') all.push(...Object.values(v.entries));
+    else if (LOOKS_LIKE_ENTRY(v)) all.push(v);
+    else return null;
+  }
+  return all;
+}
+
 export function readWorldbook(src) {
   const text = String(src || '').trim() || '[]';
   let v, fixed = false;
   try { v = JSON.parse(text); } catch (_) {
     try { v = JSON.parse(escapeRawControlsInStrings(stripTrailingCommasOutsideStrings(text))); fixed = true; }
-    catch (e) { return { ok: false, why: 'it is not valid JSON right now' }; }
+    catch (e) {
+      const joined = listsInARow(text);
+      if (!joined) return { ok: false, why: 'it is not valid JSON right now' };
+      v = joined;
+      fixed = true;
+    }
   }
   let list = null, wrapped = false;
   if (Array.isArray(v)) list = v;

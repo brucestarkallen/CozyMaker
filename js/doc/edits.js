@@ -95,9 +95,84 @@ export function escapeRawControlsInStrings(s) {
   return out;
 }
 
+/* A DOUBLE QUOTE INSIDE A VALUE THAT NOBODY ESCAPED. A plot essential is full
+ * of them — its dialogue lines (> "…" —Claire), its LAST line, a nickname —
+ * and a model writing a document into a string very often leaves them bare.
+ * One bare quote ended the string early and the whole change was lost:
+ * a whole plot essential, unreadable, written again from nothing. So a quote
+ * inside a string is read for what it is by what follows it. It ends the
+ * string only where the data can go on from there: after a name, a colon;
+ * after a value in an object, the end of the object or a comma and the next
+ * name with its colon; in a list, the end of the list or a comma and the next
+ * value. Any other quote is part of the words, and is escaped. Structure
+ * outside strings is never touched, and this is only ever tried after every
+ * other repair has failed — valid data never reaches it. */
+export function escapeStrayQuotes(s) {
+  const src = String(s || '');
+  const stack = [];
+  let out = '', inStr = false, esc = false, isKey = false, expectKey = false;
+  const skip = (k) => { while (k < src.length && /\s/.test(src[k])) k++; return k; };
+  /* a quote that opens a name and its colon: "replace": */
+  const nameAt = (k) => {
+    if (src[k] !== '"') return false;
+    let m = k + 1;
+    while (m < src.length && /[A-Za-z0-9_]/.test(src[m])) m++;
+    return m > k + 1 && src[m] === '"' && src[skip(m + 1)] === ':';
+  };
+  /* 'end' — the string ends here; 'inner' — the quote is part of the words;
+   * 'lost' — a name and its colon begin right here, inside what should be a
+   * value: a closing quote went missing earlier, and where it belonged is a
+   * guess this does not make. */
+  const judge = (i) => {
+    const j = skip(i + 1);
+    if (isKey) return src[j] === ':' ? 'end' : 'inner';
+    if (nameAt(i)) return 'lost';
+    if (j >= src.length) return 'end';
+    const nx = src[j];
+    const top = stack[stack.length - 1];
+    if (nx === '}') return top === '{' ? 'end' : 'inner';
+    if (nx === ']') return top === '[' ? 'end' : 'inner';
+    if (nx === ',') {
+      const k = skip(j + 1);
+      if (top === '{') return nameAt(k) ? 'end' : 'inner';
+      return /["{[\-0-9tfn]/.test(src[k] || '') ? 'end' : 'inner';
+    }
+    /* the next name straight after, with no comma: the quote ends the string
+     * (the missing comma is not ours to add) */
+    if (nx === '"' && top === '{' && nameAt(j)) return 'end';
+    return 'inner';
+  };
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
+    if (inStr) {
+      if (esc) { esc = false; out += c; continue; }
+      if (c === '\\') { esc = true; out += c; continue; }
+      if (c === '"') {
+        const v = judge(i);
+        if (v === 'lost') return src;
+        if (v === 'end') { inStr = false; out += c; } else out += '\\"';
+        continue;
+      }
+      out += c;
+      continue;
+    }
+    if (c === '"') { inStr = true; isKey = stack[stack.length - 1] === '{' && expectKey; out += c; continue; }
+    if (c === '{') { stack.push('{'); expectKey = true; }
+    else if (c === '[') { stack.push('['); expectKey = false; }
+    else if (c === '}' || c === ']') { stack.pop(); expectKey = false; }
+    else if (c === ':') expectKey = false;
+    else if (c === ',') expectKey = stack[stack.length - 1] === '{';
+    out += c;
+  }
+  return out;
+}
+
 function repairs(t) {
   const e = escapeRawControlsInStrings(t);
-  return [t, stripTrailingCommasOutsideStrings(t), e, stripTrailingCommasOutsideStrings(e)];
+  /* the stray quotes first: with them escaped, the string the control
+   * repair walks is the real one */
+  const q = escapeRawControlsInStrings(escapeStrayQuotes(t));
+  return [t, stripTrailingCommasOutsideStrings(t), e, stripTrailingCommasOutsideStrings(e), q, stripTrailingCommasOutsideStrings(q)];
 }
 
 export function tolerantJson(body) {
@@ -199,9 +274,89 @@ function readOne(body) {
   };
 }
 
+/* A WHOLE DOCUMENT IS WRITTEN PLAINLY, NOT SQUEEZED INTO A STRING. A plot
+ * essential inside a JSON string needs every line break and every quote
+ * escaped, and one that was not lost the whole build (see escapeStrayQuotes).
+ * So a whole document — a new one, or one rebuilt from start to finish — is
+ * written between <file name="…"> and </file>, exactly as it should read.
+ *   — Blocks never nest: an opener met again before a closer means the first
+ *     one never finished, and it is set aside.
+ *   — The last one for a name is the answer; earlier ones are drafts.
+ *   — One left open at the end was cut off: it is reported, never written
+ *     (half a document written over a whole one is a loss).
+ *   — A document wrapped whole in a code fence is unwrapped. */
+const FILE_OPEN = /<file\s+(?:name|path)\s*=\s*(?:"([^"\n]*)"|'([^'\n]*)'|([^>\n]+?))\s*\/?>/gi;
+const FILE_CLOSE = /<\/file\s*>/i;
+export function readFiles(text) {
+  const src = String(text || '');
+  const opens = [...src.matchAll(FILE_OPEN)].map((m) => ({ at: m.index, end: m.index + m[0].length, name: (m[1] || m[2] || m[3] || '').trim() }));
+  const found = [];
+  const spans = [];
+  let open = null;
+  let skipTo = 0;
+  for (let n = 0; n < opens.length; n++) {
+    const o = opens[n];
+    if (o.at < skipTo) continue;
+    const next = opens.slice(n + 1).find((x) => x.at >= o.end);
+    const tail = src.slice(o.end, next ? next.at : src.length);
+    const close = FILE_CLOSE.exec(tail);
+    if (!close) {
+      if (!next) { open = { name: o.name, at: o.at }; spans.push([o.at, src.length]); }
+      else spans.push([o.at, next.at]);
+      continue;
+    }
+    let body = tail.slice(0, close.index).replace(/\r\n?/g, '\n').replace(/^[ \t]*\n/, '').replace(/\n[ \t]*$/, '');
+    const fenced = /^```[^\n]*\n([\s\S]*?)\n```[ \t]*$/.exec(body);
+    if (fenced) body = fenced[1];
+    const stop = o.end + close.index + close[0].length;
+    found.push({ name: o.name, text: body, at: o.at });
+    spans.push([o.at, stop]);
+    skipTo = stop;
+  }
+  /* the last one per name is the answer */
+  const last = new Map();
+  for (const f of found) last.set(f.name.toLowerCase(), f);
+  const files = found.filter((f) => last.get(f.name.toLowerCase()) === f && f.name);
+  return { files, open, spans, drafts: found.length - files.length };
+}
+
+/* The text with every document written plainly taken out — so nothing inside
+ * a document is ever read as a block of changes, or reaches anyone as notes. */
+function withoutFiles(src, spans) {
+  let out = src;
+  for (const [a, b] of [...spans].sort((x, y) => y[0] - x[0])) out = out.slice(0, a) + ' '.repeat(b - a) + out.slice(b);
+  return out;
+}
+
+/* The name of a document left open at the very end of an answer, or ''. */
+export function openFileAtEnd(text) {
+  const r = readFiles(String(text || '').replace(/<(\/?)docedits>/gi, '<$1edits>'));
+  return r.open ? (r.open.name || 'the document') : '';
+}
+
 export function parseEdits(text) {
   /* the extension's crafts name the block "docedits"; both are read */
-  const src = String(text || '').replace(/<(\/?)docedits>/gi, '<$1edits>');
+  const raw = String(text || '').replace(/<(\/?)docedits>/gi, '<$1edits>');
+  const files = readFiles(raw);
+  const got = parseBlock(withoutFiles(raw, files.spans));
+  if (!files.files.length && !files.open) return got;
+  /* in the order they were written: two changes to one document land the way
+   * the worker meant them to */
+  const items = files.files.map((f) => ({ at: f.at, edits: [{ file: f.name, whole: true, replace: f.text, reason: 'written whole' }] }));
+  if (got.edits.length) items.push({ at: got.at, edits: got.edits });
+  items.sort((a, b) => a.at - b.at);
+  const warns = [got.warn];
+  if (files.open) warns.push(`${files.open.name || 'a document'} was cut off before it finished, so it was not written`);
+  return {
+    edits: items.flatMap((x) => x.edits),
+    warn: warns.filter(Boolean).join('; '),
+    cut: Boolean(got.cut || files.open),
+    fileCut: files.open ? (files.open.name || 'the document') : '',
+    drafts: (got.drafts || 0) + files.drafts,
+  };
+}
+
+function parseBlock(src) {
   const blocks = findBlocks(src, 'edits');
   const lastOpen = src.toLowerCase().lastIndexOf('<edits>');
   const cutAfter = lastOpen !== -1 && (!blocks.length || lastOpen >= blocks[blocks.length - 1].to);
@@ -213,10 +368,10 @@ export function parseEdits(text) {
       const warn = got.length
         ? `${cut} — ${got.length === 1 ? 'the one complete change that arrived was' : `the ${got.length} complete changes that arrived were`} used and the rest were not`
         : `${cut}, and none of it arrived whole`;
-      return { edits: got, warn, cut: true, drafts: blocks.filter((b) => LOOKS_LIKE_DATA.test(b.body)).length };
+      return { edits: got, warn, cut: true, drafts: blocks.filter((b) => LOOKS_LIKE_DATA.test(b.body)).length, at: lastOpen };
     }
   }
-  if (!blocks.length) return { edits: [], warn: '' };
+  if (!blocks.length) return { edits: [], warn: '', at: 0 };
   let chosen = null;
   for (let k = blocks.length - 1; k >= 0; k--) if (LOOKS_LIKE_DATA.test(blocks[k].body)) { chosen = blocks[k]; break; }
   if (!chosen) chosen = blocks[blocks.length - 1];
@@ -224,7 +379,7 @@ export function parseEdits(text) {
   const set = blocks.filter((b) => b !== chosen && LOOKS_LIKE_DATA.test(b.body) && b.body.trim() !== chosen.body.trim()).length;
   /* a draft set aside is how the answer was written, not something that went
    * wrong: it is counted, never reported as a change that did not come through */
-  return { edits: one.edits, warn: one.warn, drafts: set };
+  return { edits: one.edits, warn: one.warn, drafts: set, at: chosen.from };
 }
 
 /* Thinking written on the page, taken out of what is shown and passed on
@@ -238,6 +393,8 @@ export function stripThinking(text) {
 
 export function stripEdits(text) {
   let out = String(text || '').replace(/<(\/?)docedits>/gi, '<$1edits>');
+  const files = readFiles(out);
+  for (const [a, b] of [...files.spans].sort((x, y) => y[0] - x[0])) out = out.slice(0, a) + out.slice(b);
   const blocks = findBlocks(out, 'edits');
   for (let i = blocks.length - 1; i >= 0; i--) out = out.slice(0, blocks[i].from) + out.slice(blocks[i].to);
   return out.replace(/\n{3,}/g, '\n\n').trim();
@@ -440,6 +597,26 @@ export function applyRun(docs, edits, { label = 'a change' } = {}) {
       }
       continue;
     }
+    /* A WHOLE DOCUMENT, WRITTEN PLAINLY: a new one is started (or an empty one
+     * of that name written); one with words in it is rebuilt whole, and the
+     * guard against losing things still stands over it (run.js commit). The
+     * very words it already has change nothing, and say nothing. */
+    if (e.whole === true && typeof e.file === 'string' && e.file.trim()) {
+      const body = typeof e.replace === 'string' ? e.replace : '';
+      const name = nameIn(texts, e.file.trim()) || e.file.trim();
+      if (!body.trim()) { cards.push({ status: 'refused', name, reason: e.reason || '', why: 'the document came back empty' }); continue; }
+      if (texts.has(name)) {
+        const old = String(texts.get(name) || '');
+        if (old === body) continue;
+        texts.set(name, body);
+        cards.push({ status: 'applied', name, reason: e.reason || '', how: old.trim() ? 'rewrote the whole thing' : 'wrote it', was: clip(old), now: clip(body) });
+        continue;
+      }
+      texts.set(name, body);
+      created.push(name);
+      cards.push({ status: 'applied', name, reason: e.reason || '', how: 'started it', was: '', now: clip(body) });
+      continue;
+    }
     if (typeof e.create_file === 'string' && e.create_file) {
       const name = e.create_file;
       if (texts.has(name) && String(texts.get(name) || '').trim()) {
@@ -460,6 +637,8 @@ export function applyRun(docs, edits, { label = 'a change' } = {}) {
     const name = e.file ? nameIn(texts, e.file) || e.file : (texts.size === 1 ? [...texts.keys()][0] : null);
     if (!name) { cards.push({ status: 'refused', name: '', reason: e.reason || '', why: 'the change did not say which document it belongs to' }); continue; }
     if (!texts.has(name)) { cards.push({ status: 'refused', name, reason: e.reason || '', why: 'there is no document by that name' }); continue; }
+    /* a full rewrite into the very words that are there changed nothing: no card saying it did */
+    if (e.replace_all === true && typeof e.replace === 'string' && e.replace === texts.get(name)) continue;
     const out = applyEdit(texts.get(name), e);
     if (!out.ok) { cards.push({ status: 'refused', name, reason: e.reason || '', why: out.why, find: e.find || e.insert_after || '' }); continue; }
     texts.set(name, out.text);

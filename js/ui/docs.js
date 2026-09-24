@@ -11,7 +11,8 @@
 
 import * as store from '../store.js';
 import { $, el, openSheet, closeSheet, toast, redraw, field, select, group, ask, fold, downloadText, copyText } from './kit.js';
-import { looksLikeTransplant, lintTransplant } from '../doc/transplant.js';
+import { lintTransplant } from '../doc/transplant.js';
+import { guessKind } from '../doc/kind.js';
 import { originalCraft, ownCraft } from '../engine/crafts.js';
 import { parseDoc, indexLines, estimateTokens } from '../doc/index.js';
 import { lint, readEvents, readWorldbook } from '../doc/lint.js';
@@ -195,7 +196,10 @@ async function newDoc() {
   if (name === null) return;
   const clean = (name.trim() || 'Untitled') + (/\.(md|json|txt)$/i.test(name.trim()) ? '' : '.md');
   if ((p.docs || []).some((d) => d.name === clean)) return toast('There is already one called that.');
-  await store.addDoc(clean, guessKind(clean), guessKind(clean) === 'worldbook' ? '[]' : '');
+  /* empty, whatever its kind: the worldbook keeper's own craft begins an empty
+   * worldbook with an append of a list, and "[]" with a list after it is not
+   * one list (the extension's worldbook starts empty too) */
+  await store.addDoc(clean, guessKind(clean), '');
   drawList();
   redraw();
 }
@@ -205,16 +209,6 @@ function suggestName(p) {
   if (!docs.some((d) => d.kind === 'pe')) return 'Plot Essential.md';
   const n = docs.filter((d) => d.kind === 'continuity').length + 1;
   return `Continuity File ${n}.md`;
-}
-
-/* A worldbook is known by what it IS — data that reads as a list of entries —
- * never by a first character: a pasted note that opens "[OOC: …]" is words. */
-function readsAsWorldbook(t) {
-  if (!/^[[{]/.test(t)) return false;
-  try {
-    const v = JSON.parse(t);
-    return Array.isArray(v) || Boolean(v && typeof v === 'object' && v.entries);
-  } catch (_) { return false; }
 }
 
 /* EACH KIND OF DOCUMENT GOES TO THE ONE WHO KNOWS IT. The same three named
@@ -296,17 +290,6 @@ export function craftNode(worker, label) {
   const f = fold(label, box, { className: 'fold thinking' });
   f.style.maxHeight = 'none';
   return f;
-}
-
-export function guessKind(name, text = '') {
-  const n = String(name).toLowerCase();
-  const t = String(text).trim();
-  if (looksLikeTransplant(t) || n.includes('transplant')) return 'transplant';
-  if (n.endsWith('.json') || n.includes('worldbook') || readsAsWorldbook(t)) return 'worldbook';
-  if (/instruction|system prompt|preset/.test(n)) return 'instructions';
-  if (n.includes('continuity') || n.includes('brief') || /file\s*\d/.test(n) || /^#\s*PLOT ESSENTIAL CONTINUITY/i.test(t)) return 'continuity';
-  if (n.includes('note')) return 'notes';
-  return 'pe';
 }
 
 /* BRING ONE IN — paste it, or pick the file. He already has plot essentials

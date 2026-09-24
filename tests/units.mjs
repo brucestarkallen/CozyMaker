@@ -23,7 +23,8 @@ import { route } from '../js/agents/router.js';
 import { buildRequest, readAnswer, readChunk, houseOf, alwaysThinks, thinkingFields, thinkingStyle, withoutThinking } from '../js/providers.js';
 import { personaOf, greeting, openingFor, voiceMacros, unfilledMacros, framePerson } from '../js/agents/persona.js';
 import { upgradeWorld } from '../js/store.js';
-import { worldbookToST, guessKind } from '../js/ui/docs.js';
+import { worldbookToST } from '../js/ui/docs.js';
+import { guessKind, kindFor } from '../js/doc/kind.js';
 import { when } from '../js/ui/kit.js';
 import { callModel } from '../js/agents/call.js';
 import { pickConnection } from '../js/agents/roster.js';
@@ -632,18 +633,150 @@ ok('a finished Anthropic reply is not called cut', readChunk('anthropic', { type
 }
 
 /* --- one stray quote never voids every change (Cozy Chat v5.14.0) --- */
-eq('every complete change survives a broken one', salvageEdits('[{"find":"a","replace":"1"},{"find":"b "broken" q","replace":"2"},{"find":"c","replace":"3"}]').map((e) => e.find), ['a', 'c']);
+/* a change no rule can read: a closing quote missing before the next name */
+eq('every complete change survives a broken one', salvageEdits('[{"find":"a","replace":"1"},{"find":"b "broken,"replace":"2"},{"find":"c","replace":"3"}]').map((e) => e.find), ['a', 'c']);
+/* a quote nobody escaped is not a broken change: it is read with the words it meant */
+eq('an unescaped quote inside a change is read, not lost', salvageEdits('[{"find":"a","replace":"1"},{"find":"b "broken" q","replace":"2"},{"find":"c","replace":"3"}]').map((e) => e.find), ['a', 'b "broken" q', 'c']);
 {
-  /* a stray quote inside the FIRST change inverts the scanner's idea of what
-   * is a string for everything after it; the second pass recovers the rest,
-   * and they must come back in the order they were written */
-  const block = '[\n  {"find":"one "x","replace":"1"},\n  {"find":"two","replace":"2"},\n  {"find":"three","replace":"3"},\n  {"find":"four","replace":"4"}\n]';
+  /* a FIRST change nobody can read (a closing quote missing before the next
+   * name) whose odd quote inverts the scanner's idea of what is a string for
+   * everything after it; the second pass recovers the rest, and they must
+   * come back in the order they were written */
+  const block = '[\n  {"find":"one "x" y,"replace":"1"},\n  {"find":"two","replace":"2"},\n  {"find":"three","replace":"3"},\n  {"find":"four","replace":"4"}\n]';
   eq('salvaged changes come back in the order they were written', salvageEdits(block).map((e) => e.find), ['two', 'three', 'four']);
   const r = parseEdits('<edits>' + block + '</edits>');
   eq('the loss is counted exactly', r.warn, 'one of the changes could not be read and was left out; the 3 that could were used');
-  const two = parseEdits('<edits>[\n{"find":"a "q","replace":"1"},\n{"find":"b "q","replace":"2"},\n{"find":"c","replace":"3"}\n]</edits>');
+  const two = parseEdits('<edits>[\n{"find":"a "q,"replace":"1"},\n{"find":"b "q,"replace":"2"},\n{"find":"c","replace":"3"}\n]</edits>');
   eq('two lost, one kept, said in grammar', two.warn, '2 of the changes could not be read and were left out; the one that could be read was used');
 }
+/* --- A WHOLE PLOT ESSENTIAL IN A STRING, ITS QUOTES LEFT BARE (it was lost whole) --- */
+{
+  const { escapeStrayQuotes } = await import('../js/doc/edits.js');
+  const PE_LINES = '# PLOT ESSENTIAL — The Ashwood Pact — V1.0\\n\\n## TIMELINE\\ne001 [Mon 14 Apr 247, 09:00] [setup]: The showcase opened.\\n  > "You don\'t get to decide when I\'m brave." —Claire\\n\\n## SCENE\\nWHERE: Hall / LAST: "Fine," he said.';
+  const WANT = '# PLOT ESSENTIAL — The Ashwood Pact — V1.0\n\n## TIMELINE\ne001 [Mon 14 Apr 247, 09:00] [setup]: The showcase opened.\n  > "You don\'t get to decide when I\'m brave." —Claire\n\n## SCENE\nWHERE: Hall / LAST: "Fine," he said.';
+  const escapedLines = parseEdits('I built it.\n\n<edits>\n[\n  {"create_file": "Plot Essential.md", "replace": "' + PE_LINES + '", "reason": "the premise"}\n]\n</edits>');
+  eq('a plot essential with its dialogue quotes bare arrives whole', [escapedLines.edits.length, escapedLines.edits[0] && escapedLines.edits[0].replace, escapedLines.warn], [1, WANT, '']);
+  const rawAll = parseEdits('<edits>\n[{"create_file": "Plot Essential.md", "replace": "' + WANT + '", "reason": "x"}]\n</edits>');
+  eq('and one with its line breaks bare as well', [rawAll.edits.length, rawAll.edits[0] && rawAll.edits[0].replace], [1, WANT]);
+  const valid = '[{"a": "x\\"y", "b": [1, "z", {"c": "d"}]}]';
+  eq('valid data is never touched by the quote repair', escapeStrayQuotes(valid), valid);
+  eq('a missing closing quote is not guessed at', escapeStrayQuotes('[{"find":"one "x,"replace":"1"}]'), '[{"find":"one "x,"replace":"1"}]');
+  eq('a missing comma is not turned into words', tolerantJson('[{"find":"b" "replace":"2"}]').ok, false);
+  eq('"no", "never" inside a value stays inside it',
+    ((tolerantJson('[{"replace": "He said "no", "never", and left", "reason": "r"}]').value || [])[0] || {}).replace, 'He said "no", "never", and left');
+}
+
+/* --- A WHOLE DOCUMENT, WRITTEN PLAINLY: <file name="…"> … </file> --- */
+{
+  const { readFiles, openFileAtEnd } = await import('../js/doc/edits.js');
+  const PE = '# PLOT ESSENTIAL — Harbour — V1.0\n\n## MC — Jovan (16)\nID: tall\nCORE: patient\n\n### Mira (captain | core | 24)\nID: scarred\nCORE: blunt, loyal\n→ Jovan: old crew (P:60 R:10 S:5)\n\n## SCENE\nLAST: "Fine," he said.';
+  const one = parseEdits('I built it from everything you said.\n\n<file name="Plot Essential.md">\n' + PE + '\n</file>\n');
+  eq('a document written plainly is one whole change, word for word', one.edits, [{ file: 'Plot Essential.md', whole: true, replace: PE, reason: 'written whole' }]);
+  eq('and nothing of it reaches the notes', stripEdits('I built it from everything you said.\n\n<file name="Plot Essential.md">\n' + PE + '\n</file>\n'), 'I built it from everything you said.');
+  const made = applyRun([], one.edits);
+  eq('a new one is started', [made.texts.get('Plot Essential.md'), made.cards.map((c) => [c.status, c.how])], [PE, [['applied', 'started it']]]);
+  const re = applyRun([{ name: 'Plot Essential.md', text: 'old' }], one.edits);
+  eq('one with words in it is rebuilt whole', [re.texts.get('Plot Essential.md'), (re.cards[0] || {}).how], [PE, 'rewrote the whole thing']);
+  const blank = applyRun([{ name: 'plot essential.md', text: '' }], one.edits);
+  eq('an empty one by that name (any case) is written, not doubled', [[...blank.texts.keys()], (blank.cards[0] || {}).how], [['plot essential.md'], 'wrote it']);
+  const same = applyRun([{ name: 'Plot Essential.md', text: PE }], one.edits);
+  eq('the very words it already has change nothing and make no card', [same.cards.length, same.batch], [0, null]);
+  const sameAll = applyRun([{ name: 'Plot Essential.md', text: PE }], [{ file: 'Plot Essential.md', replace_all: true, replace: PE }]);
+  eq('a full rewrite into the same words makes no card either', sameAll.cards.length, 0);
+  const drafts = parseEdits('<file name="A.md">\nfirst try\n</file>\nbetter:\n<file name="A.md">\nsecond try\n</file>');
+  eq('the last one for a name is the answer, the earlier a draft', [drafts.edits.map((e) => e.replace), drafts.drafts || 0, drafts.warn], [['second try'], 1, '']);
+  const cut = parseEdits('Here it is.\n<file name="A.md">\n# half a docu');
+  eq('one left open at the end is cut, reported, and never written', [cut.edits.length, cut.fileCut, /A\.md was cut off before it finished/.test(cut.warn)], [0, 'A.md', true]);
+  eq('the house sees which one was left open', [openFileAtEnd('x <file name="A.md">\n# half'), openFileAtEnd('<file name="A.md">\nall\n</file>')], ['A.md', '']);
+  const nested = readFiles('<file name="A.md">\nstarted over\n<file name="A.md">\nthe whole of it\n</file>');
+  eq('an opener met again before a closer sets the first aside', nested.files.map((f) => f.text), ['the whole of it']);
+  const fenced = parseEdits('<file name="Lore.json">\n```json\n[{"name":"A"}]\n```\n</file>');
+  eq('a document wrapped whole in a code fence is unwrapped', (fenced.edits[0] || {}).replace, '[{"name":"A"}]');
+  const both = parseEdits('<file name="Continuity File 1.md">\n# FILE 1\n</file>\n<edits>[{"file":"Plot Essential.md","find":"a","replace":"b"}]</edits>');
+  eq('a file and a block land in the order they were written', both.edits.map((e) => e.whole ? 'file' : 'edit'), ['file', 'edit']);
+  const inner = parseEdits('<file name="Rules.md">\nWrite changes like <edits>[{"find":"x","replace":"y"}]</edits> in the game.\n</file>');
+  eq('a block written inside a document is words, not a change', inner.edits.map((e) => e.whole === true), [true]);
+  const single = parseEdits("<file name='B.md'>\nsingle quotes\n</file>");
+  eq('a name in single quotes is read too', (single.edits[0] || {}).file, 'B.md');
+  const bare = parseEdits('<file name=Plot Essential.md>\r\n# PE\r\nline two\r\n</file>');
+  eq('a name written with no quotes, spaces and all, is read — and Windows line endings are made plain',
+    [(bare.edits[0] || {}).file, (bare.edits[0] || {}).replace, stripEdits('Done.\n<file name=Plot Essential.md>\n# PE\n</file>')], ['Plot Essential.md', '# PE\nline two', 'Done.']);
+  /* the loss guard still stands over a document rebuilt whole */
+  const loses = commit({ id: 'p', docs: [{ id: 'd', name: 'Plot Essential.md', kind: 'pe', text: PE }], chats: [] },
+    parseEdits('<file name="Plot Essential.md">\n# PLOT ESSENTIAL — Harbour — V1.0\n\n## MC — Jovan (16)\nID: tall\nCORE: patient\n</file>').edits, 'test');
+  eq('a whole rebuild that would lose a person is refused, and the document is kept', [(loses.cards[0] || {}).status, /would have lost 1 dossiers/.test((loses.cards[0] || {}).why), loses.project.docs[0].text === PE], ['refused', true, true]);
+}
+
+/* --- A BUILD, THROUGH THE REAL TURN: the plain form lands, and one left open is carried on --- */
+{
+  const { runTurn, fileLeftOpen } = await import('../js/agents/run.js');
+  const PE = '# PLOT ESSENTIAL — The Leviathan Quarter — V1.0\n\n## WORLD\n### Rules\n- The city lives inside a dormant leviathan.\n\n## SCENE\nWHERE: the Ribway / LAST: "Hold the rope," Mira said.';
+  const house = { connections: [{ id: 'c1', url: 'https://relay.example/v1', model: 'm', key: 'k' }], agentConnections: {}, settings: { yourName: 'Bruce' }, personaFrame: '' };
+  const empty = () => ({ id: 'pb', docs: [], chats: [], recentSections: [] });
+  let builder = () => '';
+  const asked = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    const req = JSON.parse(init.body);
+    if (req.stream) {
+      const sse = 'data: ' + JSON.stringify({ choices: [{ delta: { content: 'Built.' } }] }) + '\n\ndata: [DONE]\n\n';
+      return new Response(new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(sse)); c.close(); } }), { status: 200 });
+    }
+    const sys = (req.body.messages.find((m) => m.role === 'system') || {}).content || '';
+    const msgs = req.body.messages.filter((m) => m.role !== 'system');
+    asked.push(msgs[msgs.length - 1].content);
+    const out = /PROACTIVE CO-WRITER/.test(sys) ? builder(msgs) : 'Read it all back; nothing else needed changing.';
+    return new Response(JSON.stringify({ choices: [{ message: { content: out }, finish_reason: 'stop' }] }), { status: 200 });
+  };
+  try {
+    builder = () => 'I built it from everything you said.\n\n<file name="Plot Essential.md">\n' + PE + '\n</file>';
+    let r = await runTurn({ house, project: empty(), message: 'Build the plot essential now.', forceWorker: 'builder' });
+    const doc = r.project.docs.find((d) => d.name === 'Plot Essential.md');
+    eq('a build written plainly lands whole, bare quotes and all', [doc && doc.text, doc && doc.kind], [PE, 'pe']);
+    ok('the build is a change he can put back', r.batches.length >= 1 && r.cards.some((c) => c.status === 'applied' && c.how === 'started it'));
+
+    asked.length = 0;
+    builder = (msgs) => (msgs.length === 1 ? 'Here it is.\n\n<file name="Plot Essential.md">\n' + PE.slice(0, 60) : PE.slice(60) + '\n</file>');
+    r = await runTurn({ house, project: empty(), message: 'Build the plot essential now.', forceWorker: 'builder' });
+    const doc2 = r.project.docs.find((d) => d.name === 'Plot Essential.md');
+    ok('a document left open is carried on, not asked for again from nothing', asked.includes(fileLeftOpen('Plot Essential.md')), JSON.stringify(asked.slice(0, 3)).slice(0, 300));
+    eq('and it lands whole once finished', doc2 && doc2.text, PE);
+
+    builder = (msgs) => (msgs.length === 1 ? 'I wrote it all.\n<file name="Plot Essential.md">\n' + PE + '\n' : '');
+    r = await runTurn({ house, project: empty(), message: 'Build the plot essential now.', forceWorker: 'builder' });
+    ok('a document never finished is never written', !r.project.docs.length, JSON.stringify(r.project.docs.map((d) => d.name)));
+    ok('and he is told plainly, on a card', r.cards.some((c) => c.status === 'refused' && /cut off before it finished/.test(c.why || '')), JSON.stringify(r.cards));
+  } catch (e) { ok('the whole-turn build tests ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
+}
+
+/* --- THE KIND OF A DOCUMENT IS ONE RULE, AND THE CREW'S DOCUMENTS FOLLOW IT --- */
+{
+  eq('an instruction set its writer starts is an instruction set, whatever it is called', kindFor('Eni.md', 'You are Eni.', 'instructions'), 'instructions');
+  eq('a transplant the auditor starts is a transplant', kindFor('Harbour.md', 'notes', 'auditor'), 'transplant');
+  eq('a continuation file the scribe starts is one', kindFor('The Siege.md', '# THE SIEGE', 'scribe'), 'continuity');
+  eq('the builder\'s documents are read by their names and words', [kindFor('Plot Essential.md', '# PLOT ESSENTIAL', 'builder'), kindFor('Continuity File 1.md', '# FILE 1', 'builder')], ['pe', 'continuity']);
+  eq('an instruction set named for what it is, by anyone', kindFor('System Prompt.md', 'Be kind.', 'editor'), 'instructions');
+  /* the real consequence: an instruction set is never tidied like a plot essential */
+  const HIS = 'You are Eni.\n\n## Rules\nTBD: the tone for battles\n\n## Voice\n';
+  const made = commit({ id: 'p', docs: [], chats: [] }, [{ file: 'Eni.md', whole: true, replace: HIS }], 'test', 'instructions');
+  eq('a document the instructions writer starts is kept as instructions', made.project.docs[0].kind, 'instructions');
+  const swept = sweep(made.project, new Set(['Eni.md']), new Map());
+  eq('and the plot essential checks never touch it (its TBD line and its empty heading stay)', swept.project.docs[0].text, HIS);
+}
+
+/* --- A NEW WORLDBOOK, AND THE KEEPER'S OWN FIRST RULE --- */
+{
+  const { readWorldbook } = await import('../js/doc/lint.js');
+  const first = applyRun([{ name: 'Lore.json', text: '' }], [{ file: 'Lore.json', append: true, replace: '[\n  {"name": "Aldric", "keys": ["Aldric"], "content": "A general.", "strategy": "green"}\n]' }]);
+  eq('an empty worldbook begun the way its keeper\'s craft says is one readable list', (readWorldbook(first.texts.get('Lore.json')).entries || []).map((e) => e.name), ['Aldric']);
+  const old = lint('[]\n[{"name":"Aldric","keys":["Aldric"],"content":"A general.","strategy":"green"}]', { kind: 'worldbook' });
+  const names = (t) => { try { return JSON.parse(t).map((e) => e.name); } catch (_) { return 'unreadable'; } };
+  eq('a list written after the old "[]" is joined into one, by code', [names(old.text), old.found.every((f) => f.repaired)], [['Aldric'], true]);
+  eq('two lists one after another are one', (readWorldbook('[{"name":"A","keys":["a"],"content":"x"}]\n[{"name":"B","keys":["b"],"content":"y"}]').entries || []).map((e) => e.name), ['A', 'B']);
+  eq('a list and then an entry are one', (readWorldbook('[] {"name":"C","keys":["c"],"content":"z"}').entries || []).map((e) => e.name), ['C']);
+  eq('words around them are not guessed at', readWorldbook('hello [1]').ok, false);
+}
+
 ok('a block in the thinking channel is still a block', (() => {
   const r = parseEdits('<edits>[{"find":"a","replace":"b"}]</edits>');
   return r.edits.length === 1;

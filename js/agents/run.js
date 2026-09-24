@@ -28,8 +28,9 @@ import { callModel, streamModel, enqueue } from './call.js';
 import { parseDoc, brief, readNeed, stripNeed, resolveNeed, LEAD_SHORT } from '../doc/index.js';
 import { route, confirmsOffer, offersIn, writtenCommand, justGreeting } from './router.js';
 import { listen, LISTENER, LISTEN_TALK } from './listener.js';
-import { parseEdits, stripEdits, stripThinking, applyRun, hash } from '../doc/edits.js';
+import { parseEdits, stripEdits, stripThinking, applyRun, hash, openFileAtEnd } from '../doc/edits.js';
 import { lint, lostSomething } from '../doc/lint.js';
+import { kindFor } from '../doc/kind.js';
 
 export const MAX_NEED_ROUNDS = 2;
 export const MAX_AUTO_REPAIRS = 2;
@@ -103,7 +104,7 @@ If they are just talking, just talk. Not every sentence is a job.`;
 /* Strip the crew's working shorthand out of anything the front will read. */
 /* One change, as a key: the same document, the same place, the same words. */
 function editKey(e) {
-  return JSON.stringify([e.file || e.create_file || '', e.find || '', e.insert_after || '', e.append === true, e.replace_all === true, e.all === true, e.replace || '']);
+  return JSON.stringify([e.file || e.create_file || '', e.find || '', e.insert_after || '', e.append === true, e.replace_all === true, e.all === true, e.whole === true, e.replace || '']);
 }
 
 export function naturalize(text) {
@@ -111,6 +112,7 @@ export function naturalize(text) {
     /* the engine's command words, said as plain words */
     .replace(/(^|[\s(])[*#](source_new|hybrid_new|new|import|q|p|summari[sz]e|continuity|edit|retcon|delete|cleanup|optimi[sz]e|skip|ooc|show_full_file|show_spoilers|hide_spoilers|regress|next|audit|fix|brief)\b/gi, '$1$2')
     .replace(/<\/?(?:edits|docedits|need|ask)>?/gi, '')
+    .replace(/<file\b[^>]*>|<\/file\s*>/gi, '')
     .replace(/\bM-[A-Z]{3,}\b/g, '')
     .replace(/\[[A-Z][A-Z0-9_]{4,}\]/g, '')
     .replace(/\b(?:section|§)\s*\d+(?:\.\d+)*\b/gi, '')
@@ -178,26 +180,32 @@ const RETURN_CONTRACT = `When you are done, write these and nothing else.
 
 First, in plain sentences — a short paragraph at most — what you did and what you found while you were in there. Write it for a person, not for a form.
 
-Second, if a document should change, exactly one block of changes:
+Second, if a document should change, the change itself.
+
+A change to part of a document goes in exactly one block of changes:
 
 <edits>
 [
   {"file": "which document.md", "find": "words copied exactly from the document", "replace": "what they become", "reason": "why"},
   {"file": "which document.md", "insert_after": "an exact line to put it under", "replace": "the new text", "reason": "why"},
-  {"file": "which document.md", "append": true, "replace": "text added at the very end", "reason": "why"},
-  {"create_file": "a new document.md", "replace": "everything it should contain", "reason": "why"},
-  {"file": "which document.md", "replace_all": true, "replace": "the complete new document", "reason": "only for a full rebuild"}
+  {"file": "which document.md", "append": true, "replace": "text added at the very end", "reason": "why"}
 ]
 </edits>
 
-How the block must behave:
+A whole document \u2014 a new one, or one rebuilt from start to finish \u2014 is never put inside the block. Write it out plainly, exactly as it should read, with nothing escaped:
+
+<file name="which document.md">
+the whole document, word for word
+</file>
+
+How they must behave:
 - "find" and "insert_after" are copied character for character out of the document. Never paraphrased. Quote the shortest stretch that appears only once.
-- Valid data only: newlines inside a string written as \\n, no trailing commas.
+- The block is valid data: a newline inside a string written as \\n, a double quote inside a string written as \\", no trailing commas.
 - "file" names which document. With only one document open it may be left out.
-- Use replace_all only when the whole document is genuinely being rebuilt. Every part that should survive must be present in it — anything left out is deleted.
-- A change you only describe in words does not happen. It happens in the block or it does not happen.
-- Nothing you write in the block may be a note, a flag, a marker or an instruction. What goes into a document is what the story is, and nothing else.
-- If nothing should change, send no block.
+- Rebuild a document whole only when the whole of it is genuinely being rebuilt. Every part that should survive must be in what you write \u2014 anything left out is deleted.
+- A change you only describe in words does not happen. It happens in the block or in a file, or it does not happen.
+- Nothing you write into a document may be a note, a flag, a marker or an instruction. What goes into a document is what the story is, and nothing else.
+- If nothing should change, send neither.
 
 Last, and only if the job cannot be finished until he decides something — the craft tells you to get his go-ahead first, or there is a question only he can answer — put everything he has to decide between <ask> and </ask>: the plan or the options, and the questions, complete enough to answer with nothing else in front of him. Make only the changes that do not wait on his answer. His answer will come back to you together with what you asked, word for word.`;
 
@@ -243,6 +251,13 @@ export const TALK_WHEN_SMALL = 6000;
  * joined where they meet. */
 export const MAX_CARRY_ON = 4;
 export const CARRY_ON = 'You were cut off by the length limit partway through that answer. Carry on from the exact character where it stopped \u2014 no repeating, no starting over, nothing before it.';
+/* A DOCUMENT LEFT OPEN IS CARRIED ON TOO. A model that stops inside
+ * <file name="…"> without its closer either finished and forgot it, or was
+ * cut; either way the next words finish it, and written half-way it would
+ * never be written at all. */
+export function fileLeftOpen(name) {
+  return `Your answer stopped inside <file name="${name}"> without its closing </file>. If the document was finished, send only </file>. If it was not, carry on from the exact character where it stopped \u2014 no repeating, no starting over, nothing before it.`;
+}
 const CUT_FINISH = /^(?:length|max_tokens)$/i;
 export function joinSeam(a, b) {
   const head = String(a || '');
@@ -287,13 +302,17 @@ async function runWorker({ worker, sections, conn, project, message, talk, fromH
     ].filter(Boolean).join('\n');
 
     let out = await callModel(conn, { system, messages: [{ role: 'user', content: user }], maxTokens: 8000, signal, stale });
-    for (let more = 0; out.ok && CUT_FINISH.test(out.finish || '') && (out.text || '').trim() && more < MAX_CARRY_ON; more++) {
+    for (let more = 0; out.ok && more < MAX_CARRY_ON; more++) {
+      const cutAtLimit = CUT_FINISH.test(out.finish || '') && (out.text || '').trim();
+      const leftOpen = openFileAtEnd(out.text);
+      if (!cutAtLimit && !leftOpen) break;
       if ((stale && stale()) || (signal && signal.aborted)) break;
       onStatus && onStatus(`the ${worker}'s answer ran long \u2014 asking for the rest`);
       const rest = await callModel(conn, { system, messages: [
-        { role: 'user', content: user }, { role: 'assistant', content: out.text }, { role: 'user', content: CARRY_ON },
+        { role: 'user', content: user }, { role: 'assistant', content: out.text }, { role: 'user', content: cutAtLimit ? CARRY_ON : fileLeftOpen(leftOpen) },
       ], maxTokens: 8000, signal, stale });
-      if (!rest.ok) break;
+      /* nothing more came: asking again would only bring nothing again */
+      if (!rest.ok || !String(rest.text || '').trim()) break;
       out = { ...rest, text: joinSeam(out.text, rest.text), thinking: [out.thinking, rest.thinking].filter(Boolean).join('\n\n') };
     }
     if (!out.ok) {
@@ -321,7 +340,7 @@ async function runWorker({ worker, sections, conn, project, message, talk, fromH
      * changes there; ignoring them would report "nothing changed" when the
      * work was done. The visible answer wins when both have one. */
     let parsed = parseEdits(out.text);
-    if (!parsed.edits.length && !parsed.warn && out.thinking && /<edits>/i.test(out.thinking)) {
+    if (!parsed.edits.length && !parsed.warn && out.thinking && /<(?:doc)?edits>|<file\s/i.test(out.thinking)) {
       parsed = parseEdits(out.thinking);
     }
     const fromAsk = readAsk(stripThinking(out.text));
@@ -342,10 +361,12 @@ async function runWorker({ worker, sections, conn, project, message, talk, fromH
         /* A turn spent entirely on fetching (Cozy Tavern M221): its last
          * round asked to read more and did nothing else. */
         why = 'You have been shown everything that can be shown this time. Do the job now with what is in front of you: a few plain sentences, then the block of changes.';
+      } else if (parsed.fileCut && !parsed.edits.length) {
+        why = `${parsed.fileCut} was cut off before it finished, so it was not written. Write it again whole, between <file name="${parsed.fileCut}"> and </file>.`;
       } else if (parsed.warn && !parsed.edits.length) {
-        why = `Your block of changes could not be used (${parsed.warn}). Send the whole block again as valid data — newlines inside strings written as \\n, no trailing commas.`;
+        why = `Your block of changes could not be used (${parsed.warn}). Send the whole block again as valid data \u2014 newlines inside strings written as \\n, a double quote inside a string written as \\", no trailing commas. A whole document goes between <file name="\u2026"> and </file> instead, written plainly.`;
       } else if (!parsed.edits.length && claimsAChange(notes)) {
-        why = 'You said you changed something, but no block of changes came back — a change only happens inside the block. Send the block now.';
+        why = 'You said you changed something, but no change came back \u2014 a change only happens inside the block of changes or a file. Send it now.';
       }
       if (why) { nudged = true; nudge = why; onStatus && onStatus(`asking the ${worker} again`); continue; }
     }
@@ -520,10 +541,10 @@ export async function runTurn({
     /* a change already made this turn is not made again: a re-quote that
      * repeats one that landed would only come back as a false "not done" */
     const fresh = (res.edits || []).map((e) => { const own = { ...e }; delete own.house; return own; }).filter((e) => !landed.has(editKey(e)));
-    const applied = commit(working, fresh, label);
+    const applied = commit(working, fresh, label, worker);
     working = applied.project;
     fresh.forEach((e, i) => { if (applied.cards[i] && applied.cards[i].status === 'applied') landed.add(editKey(e)); });
-    if (fresh.length) turnEdits.push({ label, edits: fresh });
+    if (fresh.length) turnEdits.push({ label, edits: fresh, maker: worker });
     if (applied.batch) batches.push(applied.batch);
     /* a re-quote's own words add nothing: it is the same work, placed again */
     crew.push({ worker, notes: requoting ? '' : res.notes, cards: applied.cards, guard: applied.guard, warn: res.warn, fromHouse });
@@ -768,7 +789,7 @@ function short(s) {
  * quietly loses things. A full rebuild that comes back with fewer characters,
  * fewer events or fewer bonds than it started with is not a rebuild; it is a
  * loss, and it is refused before it lands. */
-export function commit(project, edits, label) {
+export function commit(project, edits, label, maker = null) {
   if (!edits || !edits.length) return { project, cards: [], batch: null, guard: null };
   const docs = docsOf(project);
   const before = new Map(docs.map((d) => [d.name, d]));
@@ -809,19 +830,13 @@ export function commit(project, edits, label) {
   const byName = new Map(next.docs.map((d) => [d.name, d]));
   for (const [name, text] of run.texts) {
     if (byName.has(name)) byName.get(name).text = text;
-    else next.docs.push({ id: 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), name, kind: kindFromName(name), text });
+    /* a document the crew starts is the kind its maker makes, else what its
+     * name and words say it is — the one rule the screen uses (doc/kind.js) */
+    else next.docs.push({ id: 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), name, kind: kindFor(name, text, maker), text });
   }
   const touched = run.cards.filter((c) => c.status === 'applied').map((c) => c.name);
   next.recentSections = recentFrom(next, touched, project.recentSections || []);
   return { project: next, cards: run.cards, batch, guard };
-}
-
-function kindFromName(name) {
-  const n = String(name).toLowerCase();
-  if (n.includes('worldbook') || n.endsWith('.json')) return 'worldbook';
-  if (n.includes('continuity') || n.includes('file ') || n.includes('brief')) return 'continuity';
-  if (n.includes('note')) return 'notes';
-  return 'pe';
 }
 
 function recentFrom(project, touchedNames, prior) {

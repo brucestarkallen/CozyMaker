@@ -195,6 +195,10 @@ Its laws hold here too:
 - **The last block is the answer.** Models draft on the page; applying every block applies a change
   twice or nests a replacement inside itself. Earlier blocks are set aside and that is said. `<docedits>`
   (the extension's name) is read as `<edits>`.
+- **A whole document is written plainly, never inside a string** (v1.2.0). `<file name="…">` … `</file>`:
+  a new document is started, one with words in it is rebuilt whole under the loss guard, the same words
+  make no card, the last one per name wins, one left open is carried on and never written half-way.
+  `create_file` / `replace_all` in the block are still read, but no worker is taught them any more.
 - **Documents go whole, last.** A worker reads every document in full when the world fits in
   `WHOLE_LIMIT` characters, placed after the talk and just before the job.
 - **Native widgets failed on his phone.** No `<details>` anywhere: every fold is `kit.fold`, a button.
@@ -586,25 +590,53 @@ front can receive inside that harness.
 - **The same failure is one card.** A worker that sends one failing change several times makes one card, not one
   per copy (`allCards` keeps each refusal once).
 
+### Found making a new world fast and whole (v1.2.0)
+
+- **A whole plot essential was lost to one bare quote.** The builder wrote the document inside a JSON string;
+  a plot essential is full of double quotes (the template's own dialogue lines, `> "…" —Claire`, and `LAST:`),
+  and a model leaves them bare very often. Proven on the old code: both shapes (line breaks escaped, quotes
+  bare; both bare) parsed to **0 changes** — the worker was asked for the whole document again, minutes, and
+  could fail the same way. Two fixes. A whole document is now written plainly between `<file name="…">` and
+  `</file>`, nothing escaped (`readFiles`), and every worker is taught that form. And a quote inside a value is
+  read for what it is by what follows it (`escapeStrayQuotes`): it ends the string only where the data can go
+  on from there; a closing quote gone missing before the next name is refused, never guessed. Only tried after
+  every older repair fails, so valid data never reaches it. Proven both ways: taken out, 4 checks fail.
+- **A document the crew started was given its kind by a second, thinner guess.** `kindFromName` in run.js knew
+  nothing of instruction sets or transplants, so an instruction set its writer started as "Eni.md" became a
+  plot essential, and the plot essential's checks took out its "TBD:" line and its empty heading. One rule now,
+  `js/doc/kind.js`, shared by the screen and the crew; a document is first the kind its maker makes (the
+  instructions writer, the worldbook keeper, the auditor, the scribe), else what its name and words say. The
+  maker travels with every version of an answer, so walking versions makes it the same kind again.
+- **A new worldbook could not be begun the way its keeper's craft says.** The craft (the extension's, carried
+  over as it is): "Empty document -> initialize with an append edit whose replace value is a JSON array". The
+  house seeded a new worldbook as `[]`, so the first entries made `[]\n[…]` — not readable, and a second worker
+  was sent to repair it. New documents start empty, as the extension's did; and a list written after a list
+  (or an entry after a list) is joined by code, because what it means is certain.
+- **A full rewrite into the very words that were there made a card saying it changed**, and the persona was told
+  so. It makes no card now, in either form.
+- **An answer left open inside `<file>` is carried on** (the same carry-on as a cut answer, told plainly that the
+  document is open), and a continuation that brings nothing stops the carrying on.
+- `__pycache__/serve.cpython-312.pyc` was committed, and every test run changed it. It is ignored now.
+
 ## Testing
 
 ```
 bash tests/all.sh           all seven, exit code intact
 ```
 
-    node tests/units.mjs         634 checks — the real modules on a real document, and what the persona hears
+    node tests/units.mjs         676 checks — the real modules on a real document, and what the persona hears
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       46 checks — the real serve.py, real files on disk, streams timed
     python3 tests/browser.py      74 checks — real Chromium at 390x844, end to end
-    python3 tests/walk_worlds.py 152 checks — the drawer, conversations, swipes and versions, edit and
+    python3 tests/walk_worlds.py 154 checks — the drawer, conversations, swipes and versions, edit and
                                               send again, delete, branch, go on, re-quoting, crafts,
                                               the thinking box live, backup and restore, a model too
                                               small for the world, a real server killed mid-edit
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-960 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
+1,004 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

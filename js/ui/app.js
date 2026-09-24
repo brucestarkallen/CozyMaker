@@ -429,7 +429,7 @@ async function walkVersion(index, dir) {
   const remade = [];
   let refused = 0;
   for (const g of target.edits || []) {
-    const c = commit(world, g.edits, g.label);
+    const c = commit(world, g.edits, g.label, g.maker || null);
     world = c.project;
     remade.push(...c.cards);
     refused += c.cards.filter((x) => x.status === 'refused').length;
