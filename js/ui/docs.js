@@ -18,6 +18,7 @@ import { parseDoc, indexLines, estimateTokens, nameWorld, hasPlotEssential } fro
 import { lint, readEvents, readWorldbook } from '../doc/lint.js';
 import { parseWorldbook, worldbookToST } from '../doc/worldbook.js';
 import { WHOLE_LIMIT } from '../agents/run.js';
+import { isStoryCard } from '../agents/router.js';
 export { worldbookToST };
 
 const KINDS = [
@@ -119,9 +120,11 @@ function drawList() {
     const row = el('div', 'btnrow');
     const start = el('button', 'btn', 'Start a plot essential');
     start.addEventListener('click', () => { closeSheet('docsSheet'); newPlotEssential(); });
+    const card = el('button', 'btn quiet', 'Build from a story card');
+    card.addEventListener('click', storyCardIn);
     const bring = el('button', 'btn quiet', 'Bring one in');
     bring.addEventListener('click', bringIn);
-    row.append(start, bring);
+    row.append(start, card, bring);
     g.append(row);
     body.append(g);
   }
@@ -257,11 +260,19 @@ function jobsFor(doc) {
       ['Check it', 'instructions', check],
     ];
   }
-  return [
+  const jobs = [
     ['Tidy it up', 'showrunner', `Tidy up ${n}.`],
     ['Make it shorter', 'compressor', `Make ${n} shorter without losing anything that matters.`],
     ['Check it', 'eye', `Check ${n} for anything wrong or contradictory, and put it right.`],
   ];
+  /* a plot essential's world, as a SillyTavern worldbook: the keeper writes it
+   * (its own craft: blue always on, green on keys and vectors, chain on vectors
+   * only) and Export for SillyTavern on the worldbook hands it over */
+  if ((doc.kind || 'pe') === 'pe') {
+    jobs.push(['Make a worldbook from it', 'worldbook',
+      `Make a worldbook for SillyTavern from ${n}: an entry for every character, place, faction, item and piece of lore a scene could name \u2014 green, with generous keys \u2014 and blue only for the few facts the story can never be without. Put it in the worldbook here, or start one if there is none.`]);
+  }
+  return jobs;
 }
 
 /* HOW EACH KEEPER WORKS IS HIS TO CHANGE (the extension's presets: Edit, and
@@ -293,6 +304,40 @@ export function craftNode(worker, label) {
   const f = fold(label, box, { className: 'fold thinking' });
   f.style.maxHeight = 'none';
   return f;
+}
+
+/* BUILD FROM A STORY CARD. A community story from a roleplay platform — its
+ * premise, plot, characters and opening — pasted whole and built into a plot
+ * essential ready to play. One door: what is pasted is sent as *card, exactly
+ * as if he had typed it (js/agents/router.js holds what the builder is told). */
+export function storyCardIn() {
+  openSheet('docsSheet');
+  if (openDocIdValue) tidyOnLeaving(openDocIdValue);
+  openDocIdValue = null;
+  $('docsTitle').textContent = 'Build from a story card';
+  const action = $('docsAction');
+  action.textContent = 'All documents';
+  action.onclick = () => openDocs();
+  const body = $('docsBody');
+  body.innerHTML = '';
+  body.style.padding = '';
+  const g = group('Paste the story card',
+    'A story from Isekai Zero, AI Dungeon or anywhere like them \u2014 its title, premise, plot, characters and opening, as much as the page shows. It is built into a plot essential ready to play, with whatever makes it more immersive added, in a world of its own. To say who you play, put it on the first line.');
+  const area = document.createElement('textarea');
+  area.className = 'plain';
+  area.style.minHeight = '260px';
+  area.placeholder = 'Paste the story card here.';
+  const row = el('div', 'btnrow');
+  const go = el('button', 'btn', 'Build it');
+  go.addEventListener('click', () => {
+    const text = area.value.trim();
+    if (!text) return toast('There is nothing in it yet.');
+    closeSheet('docsSheet');
+    ask(isStoryCard(text) ? text : `*card\n${text}`);
+  });
+  row.append(go);
+  g.append(area, row);
+  body.append(g);
 }
 
 /* BRING ONE IN — paste it, or pick the file. He already has plot essentials

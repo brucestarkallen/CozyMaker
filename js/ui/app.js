@@ -3,12 +3,13 @@
 
 import * as store from '../store.js';
 import { runTurn, capUndo, landTurn, commit, versionOf, FRONT_ONLY, GO_ON } from '../agents/run.js';
+import { isStoryCard } from '../agents/router.js';
 import { stopWork, onLearn } from '../agents/call.js';
 import { undoBatch } from '../doc/edits.js';
 import { DEFAULT_WORLD_TITLE, hasPlotEssential } from '../doc/index.js';
 import { personaOf, names } from '../agents/persona.js';
 import { $, el, escape, closeSheet, toast, applyTheme, onRedraw, onAsk, fold, copyText } from './kit.js';
-import { openDocs, tidyOnLeaving, currentDocId, newPlotEssential, bringIn } from './docs.js';
+import { openDocs, tidyOnLeaving, currentDocId, newPlotEssential, bringIn, storyCardIn } from './docs.js';
 import { openHouse } from './settings.js';
 import { openDrawer, closeDrawer, drawerIsOpen, wireSwipe, setBusyCheck, draw as drawDrawer } from './drawer.js';
 
@@ -140,13 +141,15 @@ function emptyRoom(p) {
   box.append(el('b', '', p.title));
   if (!hasPlotEssential(p.docs)) {
     /* this room goes once he speaks, so it says where the button stays */
-    box.append(el('p', '', `Talk the world through with ${them} — the place, the people, the trouble. Nothing is written until you ask: when you're ready, say \u201cbuild it\u201d or tap Start a plot essential (it stays in The documents), and it's built from everything you said. Or bring in one you already have.`));
+    box.append(el('p', '', `Talk the world through with ${them} — the place, the people, the trouble. Nothing is written until you ask: when you're ready, say \u201cbuild it\u201d or tap Start a plot essential (it stays in The documents), and it's built from everything you said. Or bring in one you already have, or build one from a story card you found on Isekai Zero, AI Dungeon or the like.`));
     const row = el('div', 'btnrow center');
     const start = el('button', 'btn', 'Start a plot essential');
     start.addEventListener('click', newPlotEssential);
+    const card = el('button', 'btn quiet', 'Build from a story card');
+    card.addEventListener('click', storyCardIn);
     const bring = el('button', 'btn quiet', 'Bring one in');
     bring.addEventListener('click', bringIn);
-    row.append(start, bring);
+    row.append(start, card, bring);
     box.append(row);
   } else {
     box.append(el('p', '', `A fresh conversation about ${p.title}. Everything in the documents is still here — ask ${them} anything, or give the plot essential a job.`));
@@ -586,6 +589,13 @@ async function send(text, forceWorker, opts = {}) {
   const house = store.getHouse();
   if (!house.connections.length) { openHouse(); toast('Set up a connection first \u2014 in the house, under Connections.'); return; }
   closeDrawer();
+  /* A STORY CARD GETS A WORLD OF ITS OWN. It is a whole new story: built into a
+   * world that already has a plot essential, it would be written over that one. */
+  if (opts.from === undefined && opts.continueAt === undefined && isStoryCard(text) && hasPlotEssential((store.getProject() || {}).docs)) {
+    await store.flush();
+    await store.createProject(DEFAULT_WORLD_TITLE);
+    toast('A story card gets a world of its own \u2014 this one is new, and takes the card\u2019s name once it is built.');
+  }
 
   const world = store.getProject();
   const chat = store.openChat();

@@ -90,7 +90,12 @@ documents — and its documents. Every world and conversation can be renamed or
 deleted from its ⋯.
 
 **Start a plot essential** (or just saying "build it") starts one with the crew: talk the world through first
-— nothing is written until you ask — and it is built from everything you said. **Bring one in** takes a plot essential,
+— nothing is written until you ask — and it is built from everything you said. **Build from a story card**
+(or `*card` followed by the paste) takes a community story from Isekai Zero, AI Dungeon or the like — its
+premise, plot, characters and opening — and builds a plot essential ready to play, in a world of its own, with
+whatever makes it more immersive added. On a plot essential, **Make a worldbook from it** has the worldbook keeper
+write its world as SillyTavern World Info — blue always on, green on keywords and vectors, chain on vectors
+only — and **Export for SillyTavern** on the worldbook hands it over. **Bring one in** takes a plot essential,
 continuation file or worldbook you already have — paste it or pick the file —
 and tidies it on the way in.
 

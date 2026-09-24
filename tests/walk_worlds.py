@@ -196,7 +196,9 @@ class Model(http.server.BaseHTTPRequestHandler):
                     '<ask>NORTH ARC PLAN: say the leviathan is dormant, not dead, so the arc stops reading as a funeral. Go ahead?</ask>')
         elif who == "builder":
             # the way a whole document is written now: plainly, its dialogue quotes bare
-            title = "The Saltmarsh Court" if "saltmarsh" in json.dumps(rest).lower() else "The Leviathan Quarter"
+            said_all = json.dumps(rest).lower()
+            title = ("Her Highness Needs A Minute" if "her highness" in said_all else "The Ember Crown" if "ember crown" in said_all
+                     else "The Saltmarsh Court" if "saltmarsh" in said_all else "The Leviathan Quarter")
             body = ('I started the plot essential from what you described.\n\n<file name="Plot Essential.md">\n'
                     '# PLOT ESSENTIAL — ' + title + ' — V1.0\n\n'
                     '## WORLD\n### Rules\n- The city lives inside a dormant leviathan.\n\n'
@@ -1311,6 +1313,45 @@ def main():
             page.wait_for_function("() => !document.querySelector('#sendBtn.stop')", timeout=30000)
             ok("plain talk: the reply is written while the listener reads — the wait is the slower of the two, not both", took < 3.4, round(took, 2))
             ok("and one reply was asked for, beside one listener", sorted(c["who"] for c in calls) == ["front", "listener"], [c["who"] for c in calls])
+
+            # ---------------------------------------- a story card, pasted, becomes a world ready to play
+            page.click("#menuBtn")
+            page.wait_for_timeout(400)
+            page.locator(".drawer-head .btn", has_text="New world").click()     # the standing handler takes the offered name
+            page.wait_for_timeout(900)
+            ok("an empty world offers to build from a story card", page.locator(".empty .btn", has_text="Build from a story card").count() == 1)
+            page.locator(".empty .btn", has_text="Build from a story card").click()
+            page.wait_for_timeout(400)
+            ok("it opens a box to paste the card into", page.locator("#docsTitle").inner_text() == "Build from a story card" and page.locator("#docsBody textarea").count() == 1)
+            calls.clear()
+            page.locator("#docsBody textarea").fill("Her Highness Needs A Minute\n\nIn public: flawless. In private: a disaster. You saw. You're hired.\n\n"
+                                                   "Your job: clean up her messes before the court sees them.\n\nOpening: The door slams. \"Close it,\" she hisses.")
+            page.locator("#docsBody .btn", has_text="Build it").click()
+            page.wait_for_function("() => document.querySelectorAll('.turn.maker').length >= 1 && !document.querySelector('#sendBtn.stop')", timeout=30000)
+            page.wait_for_timeout(1300)
+            workers = [c["who"] for c in calls if c["who"] not in ("front", "eye")]
+            ok("the card goes to the builder alone — no listener, and no showrunner for \"clean up her messes\"", workers == ["builder"], workers)
+            b_call = [c for c in calls if c["who"] == "builder"]
+            ok("the builder is given the whole card, framed as the craft's *new",
+               b_call and "The card, as he pasted it:" in b_call[0]["messages"][0]["content"] and "clean up her messes" in b_call[0]["messages"][0]["content"]
+               and "Blueprint Ingestion Protocol" in b_call[0]["messages"][0]["content"])
+            ok("and the world is ready, named for its story", page.locator("#worldName").inner_text() == "Her Highness Needs A Minute", page.locator("#worldName").inner_text())
+            card_world = [p for p in api("/api/projects")["projects"] if p["title"] == "Her Highness Needs A Minute"]
+            ok("its plot essential is on the device", card_world and any(d["name"] == "Plot Essential.md" for d in world(card_world[0]["id"])["docs"]))
+            # typed into a world that already has a plot essential: a world of its own, the first left as it was
+            before_worlds = {p["id"] for p in api("/api/projects")["projects"]}
+            first_pe = [d["text"] for d in world(card_world[0]["id"])["docs"] if d["name"] == "Plot Essential.md"][0] if card_world else ""
+            page.fill("#say", "*card\nThe Ember Crown\n\nA smith's apprentice finds a crown that burns.")
+            page.click("#sendBtn")
+            page.wait_for_function("() => !document.querySelector('#sendBtn.stop') && document.querySelectorAll('.turn.maker').length >= 1", timeout=30000)
+            page.wait_for_timeout(1300)
+            added = [p for p in api("/api/projects")["projects"] if p["id"] not in before_worlds]
+            ok("a card typed in a world that has a plot essential gets a world of its own", len(added) == 1 and added[0]["title"] == "The Ember Crown", added)
+            ok("and the world it was typed in keeps its plot essential exactly", card_world and [d["text"] for d in world(card_world[0]["id"])["docs"] if d["name"] == "Plot Essential.md"][0] == first_pe)
+            page.click("#menuBtn")
+            page.wait_for_timeout(400)
+            page.locator(".world-row", has_text=re.compile("^The Leviathan Quarter")).first.click()
+            page.wait_for_timeout(700)
 
             # ---------------------------------------- a connection's last test result, and removing one
             h = api("/api/house")

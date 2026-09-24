@@ -15,7 +15,7 @@
 import * as store from '../store.js';
 import { $, el, toast, redraw, ask, when } from './kit.js';
 import { DEFAULT_WORLD_TITLE, hasPlotEssential } from '../doc/index.js';
-import { openDocs, openDoc, newPlotEssential, bringIn } from './docs.js';
+import { openDocs, openDoc, newPlotEssential, bringIn, storyCardIn } from './docs.js';
 import { openHouse } from './settings.js';
 
 let busyElsewhere = () => false;
@@ -171,7 +171,9 @@ function openWorldParts(world) {
   if (!hasPlotEssential(world.docs)) {
     const start = el('button', 'btn small', 'Start a plot essential');
     start.addEventListener('click', () => { closeDrawer(); newPlotEssential(); });
-    acts.append(start);
+    const card = el('button', 'btn quiet small', 'Build from a story card');
+    card.addEventListener('click', () => { closeDrawer(); storyCardIn(); });
+    acts.append(start, card);
   }
   const bring = el('button', 'btn quiet small', 'Bring one in');
   bring.addEventListener('click', () => { closeDrawer(); bringIn(); });

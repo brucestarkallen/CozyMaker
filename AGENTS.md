@@ -816,25 +816,43 @@ front can receive inside that harness.
   error marked passing (a worker asks again), and ends the stream properly. `tests/server.py` drops a provider's
   line partway: on the old relay all three checks fail.
 
+### A story card, pasted, becomes a world ready to play (v1.3.0)
+
+- **`*card`** (and **Build from a story card**, a paste box in the empty room, The documents and the drawer — one
+  door: the box sends `*card` + the paste). For community stories from Isekai Zero, AI Dungeon and the like, whose
+  hidden prompt cannot be copied but whose premise, plot, characters and opening can. It is the craft's own `*new`,
+  reading the card as a blueprint (7.1's Blueprint Ingestion Protocol) — `storyCardTask` in router.js holds what
+  the builder is told: his standing leave to add what makes it more immersive and leave nothing a storyteller needs
+  blank (all of it current fact, never contradicting the card, said in the notes); the card's notes to its own AI
+  kept out of the plot essential; "you" is his character; the first opening unless he names another; finished in
+  one answer. What he writes before `*card` (who he plays) travels with it.
+- **The whole message is one job.** Read clause by clause like other messages, a card saying "clean up her messes"
+  sent the showrunner too, in any world with documents; and the builder got only the first paragraph as its task.
+- **A card gets a world of its own**: sent in a world that already has a plot essential, a new world is made first,
+  so nothing is written over; it takes the card's title when built.
+- **Make a worldbook from it**, on every plot essential: the worldbook keeper writes its world as SillyTavern World
+  Info (its own craft: blue always on, green on keywords and — through the export — vectors too, chain on vectors
+  only), and Export for SillyTavern hands it over.
+
 ## Testing
 
 ```
 bash tests/all.sh           all seven, exit code intact
 ```
 
-    node tests/units.mjs         762 checks — the real modules on a real document, and what the persona hears
+    node tests/units.mjs         773 checks — the real modules on a real document, and what the persona hears
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       49 checks — the real serve.py, real files on disk, streams timed
     python3 tests/browser.py      75 checks — real Chromium at 390x844, end to end
-    python3 tests/walk_worlds.py 180 checks — the drawer, conversations, swipes and versions, edit and
+    python3 tests/walk_worlds.py 188 checks — the drawer, conversations, swipes and versions, edit and
                                               send again, delete, branch, go on, re-quoting, crafts,
                                               the thinking box live, backup and restore, a model too
                                               small for the world, a real server killed mid-edit
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-1,120 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
+1,139 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

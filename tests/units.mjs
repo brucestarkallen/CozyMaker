@@ -1159,6 +1159,54 @@ eq('"I" overrules a second-person frame', personaOf({ settings: { person: 'first
   } finally { globalThis.fetch = realFetch; }
 }
 
+/* --- A STORY CARD (*card): the whole paste is one job for the builder, framed as *new --- */
+{
+  const { isStoryCard, storyCardTask } = await import('../js/agents/router.js');
+  const { writtenCommand } = await import('../js/agents/router.js');
+  const CARD = 'Her Highness Needs A Minute\n\nIn public: flawless. In private: a disaster. You saw. You\'re hired.\n\nYou are hereby appointed Special Liaison to the Crown. Your job: clean up her messes before the court sees them.\n\nOpening: The door slams. "Close it," she hisses. "Now."';
+  const r = route('*card\n\n' + CARD, { hasPlotEssential: false, hasDocs: false });
+  eq('a story card is one job, for the builder — never a worker per paragraph', r.map((x) => x.worker), ['builder']);
+  eq('even in a world with documents, where "clean up her messes" once sent the showrunner too',
+    route('*card\n\n' + CARD, { hasPlotEssential: true, hasDocs: true }).map((x) => x.worker), ['builder']);
+  ok('and the builder is given the whole card, every paragraph', r[0] && r[0].about.includes('clean up her messes') && r[0].about.endsWith('"Close it," she hisses. "Now."'), r[0] && r[0].about.slice(-80));
+  ok('framed as the craft\'s *new, reading the card as a blueprint', r[0] && /the craft's \*new, reading the card as a blueprint \(the Blueprint Ingestion Protocol in 7\.1\)/.test(r[0].about));
+  ok('with his leave to add what makes it more immersive, and never to stop and ask', r[0] && /add whatever makes it more immersive/.test(r[0].about) && /do not stop to ask/.test(r[0].about));
+  const said = route('I play Jovan, 24, a disgraced knight.\n*card\n' + CARD, { hasPlotEssential: true, hasDocs: true });
+  ok('what he says before the card travels with it', said.length === 1 && /What he said with it:\nI play Jovan, 24, a disgraced knight\./.test(said[0].about));
+  eq('it is a written command: the listener is not asked', [writtenCommand('*card ' + CARD), isStoryCard('*CARD x'), isStoryCard('a card game')], [true, true, false]);
+  ok('a bare *card still reaches the builder, which asks for the card', /ask him to paste the story card/.test(storyCardTask('')));
+}
+
+/* --- a story card, through the real turn --- */
+{
+  const { runTurn } = await import('../js/agents/run.js');
+  const { LISTENER_MARK } = await import('../js/agents/listener.js');
+  const seen = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    const req = JSON.parse(init.body);
+    const sys = (req.body.messages.find((m) => m.role === 'system') || {}).content || '';
+    const user = (req.body.messages.filter((m) => m.role === 'user').pop() || {}).content || '';
+    if (forFront(req)) { seen.push(['front', user]); return sseAnswer([{ choices: [{ delta: { content: 'It is built.' }, finish_reason: 'stop' }] }, '[DONE]']); }
+    const who = sys.includes(LISTENER_MARK) ? 'listener' : /PROACTIVE CO-WRITER/.test(sys) ? 'builder' : 'worker';
+    seen.push([who, user]);
+    const out = who === 'builder'
+      ? 'Built it from the card. I added a calendar, the palace, and named the steward.\n<file name="Plot Essential.md">\n# PLOT ESSENTIAL — Her Highness Needs A Minute — V1.0\n\n## SCENE\nWHERE: the Rose Antechamber\nLAST: "Close it," she hisses. "Now."\n</file>'
+      : 'Read it all back.';
+    return wholeAnswer({ choices: [{ message: { content: out }, finish_reason: 'stop' }] });
+  };
+  try {
+    const house = { connections: [{ id: 'c1', url: 'https://relay.example/v1', model: 'm', key: 'k' }], agentConnections: {}, settings: { yourName: 'Bruce' }, personaFrame: '' };
+    const r = await runTurn({ house, project: { id: 'pcard', title: 'A new world', docs: [], chats: [], recentSections: [] },
+      message: '*card\nHer Highness Needs A Minute\n\nIn public: flawless. In private: a disaster.\n\nYour job: clean up her messes.\n\nOpening: "Close it," she hisses. "Now."' });
+    const builder = seen.find(([w]) => w === 'builder');
+    eq('a story card goes straight to the builder: no listener, no other worker', seen.filter(([w]) => w !== 'front' && w !== 'worker').map(([w]) => w), ['builder']);
+    ok('the builder is told what the job is, and given the whole card as he pasted it',
+      builder && /What the author just asked for:\nBuild a plot essential from a story card/.test(builder[1]) && /The card, as he pasted it:\nHer Highness Needs A Minute/.test(builder[1]) && /Your job: clean up her messes\./.test(builder[1]));
+    ok('and the plot essential lands, ready', r.project.docs.some((d) => d.name === 'Plot Essential.md' && /Rose Antechamber/.test(d.text)));
+  } catch (e) { ok('the story-card turn ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
+}
+
 /* --- his everyday phrases reach the right one --- */
 {
   const pick = (m) => route(m).map((r) => r.worker).join(',');
