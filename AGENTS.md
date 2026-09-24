@@ -723,6 +723,10 @@ front can receive inside that harness.
   offered nothing to start one again. One rule, `hasPlotEssential` (js/doc/index.js), everywhere. (The name the
   documents list suggests for a new document still asks whether any such document exists — to avoid a clash.)
 - The README still said a world "gets built as you talk" — false since v1.1.12. Corrected.
+- **The same search, across every button (v1.2.7):** going back to the documents list was "All documents" at the
+  top of the sheet from a document and from Bring one in, but a second button, "Back to the documents", in the
+  body of Side by side — where the top still said "New document". Side by side goes back the same way now. No other
+  action in the app has two names (every button label listed and compared).
 
 ## Testing
 
@@ -735,14 +739,14 @@ bash tests/all.sh           all seven, exit code intact
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       46 checks — the real serve.py, real files on disk, streams timed
     python3 tests/browser.py      75 checks — real Chromium at 390x844, end to end
-    python3 tests/walk_worlds.py 168 checks — the drawer, conversations, swipes and versions, edit and
+    python3 tests/walk_worlds.py 169 checks — the drawer, conversations, swipes and versions, edit and
                                               send again, delete, branch, go on, re-quoting, crafts,
                                               the thinking box live, backup and restore, a model too
                                               small for the world, a real server killed mid-edit
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-1,089 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
+1,090 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

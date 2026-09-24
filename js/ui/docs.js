@@ -536,9 +536,13 @@ function openCompare(chosen = null) {
   const pick = (chosen || docs.slice(0, 2).map((x) => x.id)).filter((id) => docs.some((x) => x.id === id));
   const body = $('docsBody');
   body.innerHTML = '';
-  const back = el('button', 'btn quiet small', 'Back to the documents');
-  back.addEventListener('click', () => drawList());
-  body.append(back, group('Side by side', 'Read only. Tap a name to show or hide it \u2014 up to four at once.'));
+  /* back to the list the same way as from anywhere in here: All documents, at
+   * the top (it used to be a second button with a second name, down here) */
+  $('docsTitle').textContent = 'Side by side';
+  const action = $('docsAction');
+  action.textContent = 'All documents';
+  action.onclick = () => openDocs();
+  body.append(group('Side by side', 'Read only. Tap a name to show or hide it \u2014 up to four at once.'));
   const names = el('div', 'btnrow');
   for (const x of docs) {
     const on = pick.includes(x.id);

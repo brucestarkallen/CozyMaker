@@ -1084,7 +1084,9 @@ def main():
             page.locator("#docsBody .btnrow .btn.small:not(.quiet)").first.click()
             page.wait_for_timeout(300)
             ok("a tap on a shown name puts it away", page.locator("#docsBody .compare .pane").count() == 1)
-            page.locator("#docsBody .btn", has_text="Back to the documents").click()
+            ok("Side by side goes back the way everywhere in here does: All documents, at the top",
+               page.locator("#docsAction").inner_text().strip() == "All documents" and page.locator("#docsBody .btn", has_text="Back to the documents").count() == 0)
+            page.click("#docsAction")
             page.wait_for_timeout(300)
             ok("and Back returns to the documents", page.locator("#docsBody .btn", has_text="Side by side").count() == 1)
 
