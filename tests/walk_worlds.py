@@ -100,6 +100,15 @@ class Model(http.server.BaseHTTPRequestHandler):
         who = which(system)
         calls.append({"who": who, "system": system, "messages": rest, "stream": bool(sent.get("stream")), "body": sent})
 
+        if sent.get("stream") and who == "front" and self.path.startswith("/dropped/"):
+            # a provider that breaks off partway: part of a reply, then an error in the stream
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.end_headers()
+            self.wfile.write(("data: " + json.dumps({"choices": [{"delta": {"content": "The lighthouse keeper once "}}]}) + "\n\n").encode())
+            self.wfile.write(("data: " + json.dumps({"error": {"message": "upstream went away", "code": 502}}) + "\n\n").encode())
+            self.wfile.flush()
+            return
         if sent.get("stream") and who == "front" and self.path.startswith("/cut/"):
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
@@ -751,6 +760,23 @@ def main():
             page.wait_for_timeout(800)
             ok("a reply cut at the limit says where it was cut", page.locator(".turn.maker").last.locator(".cutnote").count() == 1)
             ok("a finished reply does not", page.locator(".turn.maker").nth(0).locator(".cutnote").count() == 0)
+            ok("and it says why: out of room", "ran out of room" in page.locator(".turn.maker").last.locator(".cutnote").inner_text())
+            # a reply the provider breaks off partway is kept as cut, says so, and can be carried on
+            h["connections"].append({"id": "cflaky", "name": "flaky", "url": f"http://127.0.0.1:{MODEL_PORT}/dropped/v1",
+                                     "model": "test-model", "key": "k"})
+            h["agentConnections"]["keeper"] = "cflaky"
+            api("/api/house", "PUT", h)
+            page.reload(wait_until="networkidle")
+            page.wait_for_timeout(600)
+            page.fill("#say", "tell me about the lighthouse")
+            page.click("#sendBtn")
+            page.wait_for_function("() => !document.querySelector('#sendBtn.stop')", timeout=30000)
+            page.wait_for_timeout(800)
+            last_turn = page.locator(".turn.maker").last
+            ok("a reply the provider broke off shows what arrived", "The lighthouse keeper once" in last_turn.locator(".bubble").inner_text())
+            ok("and says it was cut by the provider, not that it ran out of room",
+               last_turn.locator(".cutnote").count() == 1 and "provider stopped partway" in last_turn.locator(".cutnote").inner_text())
+            ok("and offers Go on, never passing it off as finished", last_turn.locator(".btn", has_text="Go on").count() == 1)
             h["agentConnections"]["keeper"] = "c1"
             api("/api/house", "PUT", h)
 

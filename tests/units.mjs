@@ -1849,6 +1849,22 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
     const front = await call.streamModel(conn, { system: 's', messages: [{ role: 'user', content: 'q' }], onText: (t) => said.push(t) });
     eq('the front reads a whole answer too, and shows it', [front.text, said.join('')], ['The harbour wall was paid for by the guild.', 'The harbour wall was paid for by the guild.']);
 
+    /* a reply the provider breaks off partway is kept as cut — never passed off as finished */
+    script = [() => sseAnswer([{ choices: [{ delta: { content: 'The harbour wall was paid for by' } }] }, { error: { message: 'upstream went away', code: 502 } }])];
+    const broken = await call.streamModel(conn, { system: 's', messages: [{ role: 'user', content: 'q' }] });
+    eq('a reply the provider breaks off partway is kept as cut, by the provider', [broken.text, broken.cut, broken.cutBy], ['The harbour wall was paid for by', true, 'provider']);
+    script = [() => sseAnswer([{ choices: [{ delta: { content: 'Whole.' }, finish_reason: 'length' }] }, '[DONE]'])];
+    const long = await call.streamModel(conn, { system: 's', messages: [{ role: 'user', content: 'q' }] });
+    eq('one cut at its limit is still cut, and not blamed on the provider', [long.cut, long.cutBy], [true, undefined]);
+    globalThis.fetch = async (url, init) => {
+      const req = JSON.parse(init.body);
+      if (forFront(req)) return sseAnswer([{ choices: [{ delta: { content: 'It was paid for by the' } }] }, { error: { message: 'upstream went away', code: 502 } }]);
+      return wholeAnswer({ choices: [{ message: { content: '{"jobs":[]}' }, finish_reason: 'stop' }] });
+    };
+    const turn = await runTurn({ house: { connections: [{ id: 'c1', url: 'https://relay.example/v1', model: 'm', key: 'k' }], agentConnections: {}, settings: {}, personaFrame: '' },
+      project: { id: 'pc2', docs: [], chats: [], recentSections: [] }, message: 'who paid for the harbour wall?' });
+    eq('through the real turn: the reply is kept, cut, with the reason, and no failure', [turn.reply, turn.cut, turn.cutBy, turn.error], ['It was paid for by the', true, 'provider', null]);
+
     /* the status line: who is on what, and how far along, through the real turn */
     const statuses = [];
     globalThis.fetch = async (url, init) => {

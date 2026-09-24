@@ -246,6 +246,11 @@ async function streamOnce(conn, opts, dropThinking) {
   });
   if (!res.ok || !res.body) throw new Error('the connection did not open');
   const out = await readReply(req.house, res, { onText: opts.onText, onThinking: opts.onThinking });
+  /* A REPLY BROKEN OFF PARTWAY IS A CUT REPLY. A provider that says it went
+   * wrong in the middle of an answer (or a line that dropped) left what had
+   * arrived looking finished — no failure, no Go on, a truncated answer passing
+   * for a whole one. It is kept as what it is: cut, by the provider. */
+  if (out.finish === 'error' && out.text) return { text: out.text, thinking: out.thinking || '', cut: true, cutBy: 'provider' };
   if (out.finish === 'error' && !out.text) {
     const err = new Error(out.error || 'the provider was not happy with that');
     err.status = Number(out.status) || 0;

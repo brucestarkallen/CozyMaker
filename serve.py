@@ -33,7 +33,7 @@ import urllib.error
 import subprocess
 from pathlib import Path
 
-VERSION = "1.2.14"
+VERSION = "1.2.15"
 ROOT = Path(__file__).resolve().parent
 HOME = Path(os.environ.get("COZYMAKER_HOME", Path.home() / ".cozymaker"))
 PROJECTS = HOME / "projects"
@@ -460,19 +460,34 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.send_header("Transfer-Encoding", "chunked")
         self.end_headers()
+
+        def put(chunk):
+            self.wfile.write(b"%X\r\n" % len(chunk))
+            self.wfile.write(chunk)
+            self.wfile.write(b"\r\n")
+            self.wfile.flush()
+
         try:
             while True:
-                chunk = resp.read1(2048)
+                # THE PROVIDER'S SIDE BREAKING IS NOT THE PAGE'S. A line that drops
+                # partway, a read that times out, a broken handshake: once, any of
+                # them escaped this handler and left the page's stream without its
+                # end, a bare network error in the middle of reading. It is said on
+                # the stream now, as an error the page reads, marked as passing so a
+                # worker asks again; the stream then ends properly.
+                try:
+                    chunk = resp.read1(2048)
+                except Exception as e:
+                    said = {"error": {"message": "the provider's line dropped partway through the answer (" + str(e)[:200] + ")", "code": 503}}
+                    put(("\n\ndata: " + json.dumps(said) + "\n\n").encode())
+                    break
                 if not chunk:
                     break
-                self.wfile.write(b"%X\r\n" % len(chunk))
-                self.wfile.write(chunk)
-                self.wfile.write(b"\r\n")
-                self.wfile.flush()
+                put(chunk)
             self.wfile.write(b"0\r\n\r\n")
             self.wfile.flush()
         except (BrokenPipeError, ConnectionResetError):
-            pass
+            pass  # the page went away — Stop, or it was closed
 
 
 class Server(socketserver.ThreadingMixIn, http.server.HTTPServer):

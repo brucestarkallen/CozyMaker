@@ -726,7 +726,7 @@ export async function runTurn({
         onThinking, signal,
       });
     reply = endAtControlToken(out.text || reply);
-    if (out.cut) return { project: working, reply, cards: allCards, batches, crew, edits: turnEdits, asks, error: null, cut: true };
+    if (out.cut) return { project: working, reply, cards: allCards, batches, crew, edits: turnEdits, asks, error: null, cut: true, cutBy: out.cutBy || 'length' };
   } catch (e) {
     const aborted = (e && e.name === 'AbortError') || stopped();
     return {
@@ -801,7 +801,7 @@ export function waitingBrief(asks, p) {
  * cards and the changes it made, never its undo payload, because a version
  * that is not shown has had its changes put back. */
 export function versionOf(t) {
-  return { text: t.text, thinking: t.thinking || '', thinkingMs: t.thinkingMs, cards: t.cards || [], edits: t.edits || [], asks: t.asks || [], cut: Boolean(t.cut), failed: Boolean(t.failed), at: t.at, batches: [] };
+  return { text: t.text, thinking: t.thinking || '', thinkingMs: t.thinkingMs, cards: t.cards || [], edits: t.edits || [], asks: t.asks || [], cut: Boolean(t.cut), cutBy: t.cutBy || '', failed: Boolean(t.failed), at: t.at, batches: [] };
 }
 
 export function landTurn(world, { chatId, snapshot, result, makerTurn, replaceAt = null }) {

@@ -250,7 +250,9 @@ function turnNode(t, index) {
   if (t.thinking) wrap.append(thinkingBox(t.thinking, t.thinkingMs).node);
   wrap.append(bubble);
   if (t.cut) {
-    wrap.append(el('div', 'cutnote', 'Cut off here — the reply ran out of room before it finished.'));
+    wrap.append(el('div', 'cutnote', t.cutBy === 'provider'
+      ? 'Cut off here \u2014 the provider stopped partway, before it finished.'
+      : 'Cut off here \u2014 the reply ran out of room before it finished.'));
     if (last && !running) {
       const on = el('button', 'btn quiet small again', 'Go on');
       on.addEventListener('click', () => goOn(index));
@@ -655,6 +657,7 @@ async function send(text, forceWorker, opts = {}) {
     edits: result.edits || [],
     asks: result.asks || [],
     cut: Boolean(result.cut && words),
+    cutBy: result.cut && words ? (result.cutBy || 'length') : '',
     at: Date.now(),
   };
 
@@ -668,9 +671,9 @@ async function send(text, forceWorker, opts = {}) {
       if (!t || !words) return null;
       const joined = t.text + (/\s$/.test(t.text) || /^\s/.test(words) ? '' : ' ') + words;
       c.turns = c.turns.map((x, i) => (i !== opts.continueAt ? x : {
-        ...x, text: joined, cut: makerTurn.cut, thinking: [x.thinking, thinking].filter(Boolean).join('\n\n'),
+        ...x, text: joined, cut: makerTurn.cut, cutBy: makerTurn.cutBy, thinking: [x.thinking, thinking].filter(Boolean).join('\n\n'),
         thinkingMs: ((x.thinkingMs || 0) + (makerTurn.thinkingMs || 0)) || undefined,
-        versions: x.versions ? x.versions.map((v, j) => (j === x.shown ? { ...v, text: joined, cut: makerTurn.cut } : v)) : undefined,
+        versions: x.versions ? x.versions.map((v, j) => (j === x.shown ? { ...v, text: joined, cut: makerTurn.cut, cutBy: makerTurn.cutBy } : v)) : undefined,
       }));
       c.updated = Date.now();
       landed = { landed: true };

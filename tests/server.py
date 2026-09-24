@@ -82,6 +82,22 @@ class FakeProvider(http.server.BaseHTTPRequestHandler):
             self.wfile.write(b"data: [DONE]\n\n")
             self.wfile.flush()
             return
+        if self.path.endswith("/dropstream"):
+            # a provider whose line drops partway: part of an answer, then the socket just closes
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Transfer-Encoding", "chunked")
+            self.end_headers()
+            piece = ("data: " + json.dumps({"choices": [{"delta": {"content": "The harbour wall was"}}]}) + "\n\n").encode()
+            self.wfile.write(b"%X\r\n" % len(piece) + piece + b"\r\n")
+            self.wfile.flush()
+            import socket as _s
+            try:
+                self.connection.shutdown(_s.SHUT_RDWR)
+            except OSError:
+                pass
+            self.connection.close()
+            return
         if self.path.endswith("/stream"):
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
@@ -263,6 +279,25 @@ def main():
         hc.close()
         ok("a slow stream reaches the page event by event, as it is written",
            len(arrivals) == 5 and arrivals[0] < 0.6 and arrivals[-1] - arrivals[0] > 0.9, str(arrivals))
+
+        # a provider whose line drops partway: the page's stream still ends properly, and says what happened
+        hc = http.client.HTTPConnection("127.0.0.1", PORT, timeout=15)
+        hc.request("POST", "/api/call", body=json.dumps({"url": f"http://127.0.0.1:{FAKE_PROVIDER_PORT}/dropstream",
+                                                        "headers": {}, "body": {}, "stream": True}),
+                   headers={"Content-Type": "application/json"})
+        hr = hc.getresponse()
+        whole, clean = b"", True
+        try:
+            whole = hr.read()
+        except Exception:
+            clean = False
+        hc.close()
+        text = whole.decode("utf-8", "replace")
+        events = [json.loads(l[5:].strip()) for l in text.splitlines() if l.startswith("data: {")]
+        ok("a line that drops partway: what arrived still arrives", any(e.get("choices") for e in events), text[:200])
+        ok("and the stream ends properly, never a bare network error", clean)
+        ok("and says the line dropped, as a passing fault a worker asks again for",
+           any((e.get("error") or {}).get("code") == 503 and "dropped partway" in (e.get("error") or {}).get("message", "") for e in events), text[-300:])
 
         code, r = call("/api/call", "POST", {
             "url": "http://127.0.0.1:9/nothing-listening", "headers": {}, "body": {},
