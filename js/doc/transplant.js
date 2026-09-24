@@ -1,8 +1,11 @@
 /* CozyMaker — js/doc/transplant.js
  * The Plot Essential and Instructions Maker's lintTransplant (v0.14.1),
- * carried over unchanged. It mirrors Summaryception's parseTransplant importer
- * move for move and reports what that importer would silently drop or
- * misfile: marker integrity is checked by code, never left to a model.
+ * carried over — and held since v1.2.12 against Summaryception's own
+ * parseTransplant (v5.122.0, vendored in tests/fixtures), which it must mirror
+ * move for move: it reports what that importer would silently drop or
+ * misfile, so marker integrity is checked by code, never left to a model.
+ * Two moves it had missed are marked where they are: a closer carrying a
+ * payload, and a dossier whose fields are all empty.
  * Every scan is linear — it runs on the phone's one thread. */
 
 export function looksLikeTransplant(text) {
@@ -70,6 +73,10 @@ export function lintTransplant(text) {
     for (const mk of marks) {
         if (mk.exact) {
             if (mk.kind === 'DETAIL' && !mk.closer && mk.json) issue('error', 'SC-DETAIL must carry no payload — the importer will not recognize this marker, the detail merges into the snippet text', mk.idx);
+            // CozyMaker v1.2.12, from Summaryception's own parseTransplant (v5.122.0): a block
+            // closes only on a bare closer, <!-- /SC-KIND -->; one carrying a payload is not a
+            // closer to the importer, so the block runs on and swallows what lies between
+            else if (mk.closer && mk.json && KINDS.includes(mk.kind)) issue('error', 'Closer /SC-' + mk.kind + ' carries a payload — the importer does not recognize it as a closer, so the block runs on to the next one and swallows what lies between', mk.idx);
             continue;
         }
         const up = mk.kind.toUpperCase();
@@ -78,7 +85,7 @@ export function lintTransplant(text) {
             : 'Unknown marker ' + mk.prefix + '-' + mk.kind + ' — the importer ignores it; the block it was meant to open/close is lost or swallowed', mk.idx);
     }
     const openers = marks.filter(k => !k.closer && k.exact && KINDS.includes(k.kind));
-    const closers = marks.filter(k => k.closer && k.exact && KINDS.includes(k.kind));
+    const closers = marks.filter(k => k.closer && k.exact && KINDS.includes(k.kind) && !k.json);
     const usedClosers = new Set();
     const reportedClosers = new Set();
     const seenLedger = new Set();
@@ -112,8 +119,17 @@ export function lintTransplant(text) {
             if (payBroken) { issue('error', 'SC-LEDGER payload JSON is broken — the importer DROPS this entire dossier', op.idx); continue; }
             const name = pay && typeof pay.name === 'string' ? pay.name.trim() : '';
             if (!name) { issue('error', 'SC-LEDGER has no "name" in its payload — the importer DROPS this entire dossier', op.idx); continue; }
-            const hasField = body.split('\n').some(l => /^(CORE|STATE|ARC|THREADS):/.test(l));
-            if (!hasField) { issue('error', 'Ledger "' + name + '" has none of CORE:/STATE:/ARC:/THREADS: — the importer DROPS it', op.idx); continue; }
+            // read as the importer reads it (CozyMaker v1.2.12, Summaryception v5.122.0): the
+            // block is trimmed first, each field runs on over the lines after it, and a
+            // dossier whose fields all come out empty is dropped like one with none
+            const fields = {};
+            let cur = null;
+            for (const line of body.trim().split('\n')) {
+                const f = /^(CORE|STATE|ARC|THREADS):[ \t]*/.exec(line);
+                if (f) { cur = f[1]; fields[cur] = line.slice(f[0].length); } else if (cur) fields[cur] += '\n' + line;
+            }
+            if (!Object.keys(fields).length) { issue('error', 'Ledger "' + name + '" has none of CORE:/STATE:/ARC:/THREADS: — the importer DROPS it', op.idx); continue; }
+            if (!Object.values(fields).some(v => v.trim())) { issue('error', 'Ledger "' + name + '" has only empty fields — the importer DROPS it', op.idx); continue; }
             if (seenLedger.has(name)) issue('error', 'Duplicate ledger name "' + name + '" — the later dossier silently OVERWRITES the earlier on import', op.idx);
             seenLedger.add(name);
             out.counts.ledger++;

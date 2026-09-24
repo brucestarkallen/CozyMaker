@@ -883,6 +883,43 @@ ok('a block in the thinking channel is still a block', (() => {
   return r.edits.length === 1;
 })());
 
+/* --- THE TRANSPLANT CHECK ANSWERS TO SUMMARYCEPTION'S OWN IMPORTER --- */
+{
+  const { parseTransplant } = await import('./fixtures/summaryception-import.js');
+  const { lintTransplant } = await import('../js/doc/transplant.js');
+  const fx = JSON.parse(readFileSync(new URL('./fixtures/transplant-lint.json', import.meta.url), 'utf8'));
+  const extra = [
+    ['a dossier whose fields are all empty', '<!-- SC-TRANSPLANT {"v":1} -->\n<!-- SC-LEDGER {"name":"Mira"} -->\nCORE:\nSTATE:   \n<!-- /SC-LEDGER -->\n'],
+    ['a closer carrying a payload', '<!-- SC-SNIPPET {"turns":"1-4"} -->\nMira stole the token.\n<!-- /SC-SNIPPET {"turns":"1-4"} -->\n## Notes\nprose that is not a snippet\n<!-- SC-PIN {"label":"x"} -->\n"Count again."\n<!-- /SC-PIN -->\n'],
+    ['a dossier whose first field is indented', '<!-- SC-LEDGER {"name":"Oren"} -->\n   CORE: keeps the lamp\n<!-- /SC-LEDGER -->\n'],
+    ['one empty field and one full', '<!-- SC-LEDGER {"name":"Dace"} -->\nCORE:\nSTATE: counting his tray\n<!-- /SC-LEDGER -->\n'],
+  ];
+  const cases = fx.cases.map((c) => [c.name, c.text]).concat(extra);
+  const count = (t, kind) => (t.match(new RegExp('<!--\\s*SC-' + kind + '\\b', 'g')) || []).length;
+  const missed = [];
+  for (const [name, text] of cases) {
+    const imp = parseTransplant(text);
+    const lin = lintTransplant(text);
+    const errors = lin.issues.filter((i) => i.sev === 'error').length;
+    const lost = count(text, 'LEDGER') > Object.keys(imp.ledger).length || count(text, 'SNIPPET') > imp.snippets.length || count(text, 'PIN') > imp.pins.length;
+    const bodies = [imp.notepad, ...Object.values(imp.ledger).flatMap((e) => Object.values(e)), ...imp.snippets.flatMap((s) => [s.text, s.detail || '']), ...imp.pins.map((p) => p.excerpt)].join('\n');
+    const swallowed = /<!--\s*\/?SC-/i.test(bodies);
+    if (lost && !errors) missed.push(`${name}: the importer drops something and the check calls it sound`);
+    if (swallowed && !lin.issues.length) missed.push(`${name}: the importer swallows a marker into a block and the check says nothing`);
+  }
+  ok(`every loss Summaryception's importer makes is caught by the check (${cases.length} transplants)`, !missed.length, missed.join('; '));
+  eq('a dossier whose fields are all empty: the importer drops it, and the check says so',
+    [Object.keys(parseTransplant(extra[0][1]).ledger).length, lintTransplant(extra[0][1]).issues.some((i) => i.sev === 'error' && /only empty fields/.test(i.msg))], [0, true]);
+  eq('a closer carrying a payload: the importer runs the block on, and the check says so',
+    [/prose that is not a snippet/.test(parseTransplant(extra[1][1]).snippets[0].text), lintTransplant(extra[1][1]).issues.some((i) => i.sev === 'error' && /carries a payload/.test(i.msg))], [true, true]);
+  eq('a dossier whose first field is indented: the importer keeps it, and the check raises no false alarm',
+    [Object.keys(parseTransplant(extra[2][1]).ledger), lintTransplant(extra[2][1]).issues.filter((i) => i.sev === 'error').length], [['Oren'], 0]);
+  eq('one empty field beside a full one is kept, and passes', lintTransplant(extra[3][1]).ok, true);
+  /* the loss guard reads the same check: a rewrite that empties a dossier is refused */
+  eq('a rewrite that empties a dossier\'s fields is a loss the guard refuses',
+    Boolean(lostSomething('<!-- SC-LEDGER {"name":"Mira"} -->\nCORE: patient\n<!-- /SC-LEDGER -->\n', extra[0][1], 'transplant')), true);
+}
+
 /* --- the transplant check is the extension's own, answer for answer --- */
 {
   const { lintTransplant, looksLikeTransplant } = await import('../js/doc/transplant.js');

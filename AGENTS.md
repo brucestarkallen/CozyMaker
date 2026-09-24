@@ -770,13 +770,27 @@ front can receive inside that harness.
   Both read the house's way now (`readWorldbook`); on the old readers the four new checks fail, the guard's by
   letting the loss through.
 
+### The transplant check answers to Summaryception's own importer (v1.2.12)
+
+- `lintTransplant` (carried from the Plot Essential Maker, v0.14.1) exists to say what Summaryception's importer
+  would silently drop. Held against the importer itself — `parseTransplant` from Summaryception v5.122.0, copied
+  verbatim into `tests/fixtures/summaryception-import.js` — it missed two drops and raised one false alarm:
+  **a dossier whose fields are all empty** (the importer keeps an entry only if some field has words — the check
+  only looked for the field names); **a closer carrying a payload** (`<!-- /SC-SNIPPET {…} -->` is not a closer to
+  the importer, so the block runs on and swallows what follows — the check counted it as one); and **a dossier whose
+  first field line is indented** (the importer trims the block first; the check did not, and called it fieldless).
+  Both drops also went past the loss guard, which reads this check: an auditor's rewrite that emptied a dossier
+  landed. Mirrored now, move for move; a unit runs every transplant through both and fails if the importer loses
+  anything the check calls sound. The extension's 16 recorded answers are unchanged.
+- The Plot Essential Maker extension in SillyTavern carries the same `lintTransplant`, with the same two gaps.
+
 ## Testing
 
 ```
 bash tests/all.sh           all seven, exit code intact
 ```
 
-    node tests/units.mjs         752 checks — the real modules on a real document, and what the persona hears
+    node tests/units.mjs         758 checks — the real modules on a real document, and what the persona hears
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       46 checks — the real serve.py, real files on disk, streams timed
@@ -788,7 +802,7 @@ bash tests/all.sh           all seven, exit code intact
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-1,102 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
+1,108 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.
