@@ -96,17 +96,27 @@ function asWorkerConnection(conn, { maxTokens }) {
   return c;
 }
 
+/* THE CREW'S CALLS STREAM, the way Cozy Tavern's workers ride the same streamed
+ * path as its storyteller (M28, M270). Asked for all at once, a worker writing a
+ * whole plot essential sat silent for minutes — only a clock showed it was
+ * alive — and a provider behind a gateway that closes a silent connection
+ * could cut it off and lose the lot. Streamed, the words arrive as they are
+ * written, the house can say how far along it is (onProgress), and a silent
+ * gateway never sees silence. The answer is still read whole before anything
+ * is done with it. "Try it" asks all at once, because only a whole answer
+ * reports the thinking tokens it spent (opts.stream === false). */
 export async function callModel(conn, opts = {}) {
   if (!conn || !conn.url || !conn.model) {
     return { ok: false, text: '', thinking: '', error: 'no connection is set for this' };
   }
   const c = opts.asWorker === false ? conn : asWorkerConnection(conn, opts);
+  const stream = opts.stream !== false;
   const shape = {
     system: opts.system,
     messages: opts.messages || [{ role: 'user', content: opts.user || '' }],
     maxTokens: c.maxTokens,
     room: WORKER_ROOM,
-    stream: false,
+    stream,
   };
   const req = buildRequest(c, shape);
 
@@ -118,17 +128,16 @@ export async function callModel(conn, opts = {}) {
       const res = await fetch('/api/call', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: req.url, headers: req.headers, body: req.body }),
+        body: JSON.stringify(stream ? { url: req.url, headers: req.headers, body: req.body, stream: true } : { url: req.url, headers: req.headers, body: req.body }),
         signal: opts.signal,
       });
-      const data = await res.json();
-      const out = readAnswer(req.house, data);
+      const out = await readReply(req.house, res, { onProgress: opts.onProgress });
       if (out.finish === 'error') {
         lastError = out.error || 'the provider was not happy with that';
-        const status = Number(data.status) || 0;
+        const status = Number(out.status) || 0;
         /* A REFUSED THINKING FIELD STEPS DOWN AND GOES AGAIN, ONCE — the
          * message is not eaten because the model does not take a level. */
-        if (lessons < MAX_LESSONS && status >= 400 && status < 500 && REASONING_REFUSAL.test(lastError) &&
+        if (lessons < MAX_LESSONS && !out.midStream && status >= 400 && status < 500 && REASONING_REFUSAL.test(lastError) &&
             THINKING_FIELDS.some((f) => f in req.body)) {
           req.body = learnFromRefusal(c, lastError, req.body, () => buildRequest(c, shape).body);
           if (conn !== c) conn.learned = c.learned;
@@ -142,7 +151,7 @@ export async function callModel(conn, opts = {}) {
          * seconds of silence. Only "slow down" and "try later" are retried. */
         const transient = status === 0 || status === 408 || status === 429 || status >= 500;
         if (!transient) return { ok: false, text: '', thinking: '', error: lastError };
-        const retryAfter = Number(data.retryAfter) * 1000;
+        const retryAfter = Number(out.retryAfter) * 1000;
         const wait = Number.isFinite(retryAfter) && retryAfter > 0
           ? retryAfter : BACKOFF_MS[Math.min(attempt, BACKOFF_MS.length - 1)];
         if (attempt < MAX_RETRIES) { await sleep(wait); continue; }
@@ -171,7 +180,7 @@ export async function callModel(conn, opts = {}) {
  * words. A refused level is learned from and asked again on the way (M350). */
 export async function testConnection(conn) {
   const level = conn && conn.thinking ? String(conn.thinking) : '';
-  const ask = (c) => callModel(c, { user: 'Answer with one word: ready.', maxTokens: 2000 });
+  const ask = (c) => callModel(c, { user: 'Answer with one word: ready.', maxTokens: 2000, stream: false });
   const first = await ask(conn);
   if (!first.ok) return { ok: false, words: `No \u2014 ${first.error}` };
   const said = first.text.trim() ? ` It answered \u201c${first.text.trim().slice(0, 24)}\u201d.` : '';
@@ -236,67 +245,108 @@ async function streamOnce(conn, opts, dropThinking) {
     signal: opts.signal,
   });
   if (!res.ok || !res.body) throw new Error('the connection did not open');
-
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let text = '';
-  let thinking = '';
-  let failed = null;
-  let failedStatus = 0;
-  let cut = false;
-
-  const handle = (raw) => {
-    const line = raw.trim();
-    if (!line) return;
-    if (!line.startsWith('data:')) {
-      /* A provider that answered with a plain error object rather than a
-       * stream: say what it said instead of showing nothing. */
-      if (line.startsWith('{')) {
-        try {
-          const o = JSON.parse(line);
-          if (o && o.error) { failed = o.detail || o.error; failedStatus = Number(o.status) || 0; }
-        } catch (_) { /* not ours */ }
-      }
-      return;
-    }
-    const payload = line.slice(5).trim();
-    if (payload === '[DONE]') return;
-    let obj;
-    try { obj = JSON.parse(payload); } catch (_) { return; }
-    if (obj && obj.error) { failed = obj.error.message || JSON.stringify(obj.error); return; }
-    const part = readChunk(req.house, obj);
-    if (!part) return;
-    if (part.text) { text += part.text; opts.onText && opts.onText(part.text); }
-    if (part.thinking) { thinking += part.thinking; opts.onThinking && opts.onThinking(part.thinking); }
-    if (part.cut) cut = true;
-  };
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    let nl;
-    while ((nl = buffer.indexOf('\n')) !== -1) {
-      handle(buffer.slice(0, nl));
-      buffer = buffer.slice(nl + 1);
-    }
-  }
-  /* WHAT IS LEFT WHEN THE STREAM ENDS IS STILL PART OF IT. A refusal comes
-   * back as one line of JSON with no newline after it, and a provider's last
-   * piece can end without one too. The first version only read lines that
-   * ended in a newline, so a refused call — a bad key, a wrong model, a level
-   * the model will not take — came back as an empty reply with no error. */
-  buffer += decoder.decode();
-  handle(buffer);
-  if (failed && !text) {
-    const err = new Error(typeof failed === 'string' ? failed : JSON.stringify(failed));
-    err.refusedThinking = !dropThinking && failedStatus >= 400 && failedStatus < 500 &&
+  const out = await readReply(req.house, res, { onText: opts.onText, onThinking: opts.onThinking });
+  if (out.finish === 'error' && !out.text) {
+    const err = new Error(out.error || 'the provider was not happy with that');
+    err.refusedThinking = !dropThinking && !out.midStream && out.status >= 400 && out.status < 500 &&
       REASONING_REFUSAL.test(err.message) && THINKING_FIELDS.some((f) => f in req.body);
     err.body = req.body;
     throw err;
   }
-  return { text, thinking, cut };
+  return { text: out.text || '', thinking: out.thinking || '', cut: out.finish === 'length' };
+}
+
+/* ONE READER FOR EVERY ANSWER, streamed or not.
+ *
+ * A stream is read line by line as it arrives; the words and the thinking go to
+ * whoever is listening, each on its own channel. What is left when the stream
+ * ends is still part of it: a refusal comes back as one line of JSON with no
+ * newline after it, and a provider's last piece can end without one too (the
+ * first version read only lines ending in a newline, and a refused call — a bad
+ * key, a wrong model, a level the model will not take — came back as an empty
+ * reply with no error).
+ *
+ * An answer that is not a stream at all is read too, whole: the device's own
+ * word that the provider refused (it answers every refusal with one JSON
+ * object), or a provider that ignored "stream" and answered in one piece —
+ * which used to reach him as an empty reply.
+ *
+ * An error that arrives in the middle of a stream is an error, never a finished
+ * answer; and a stream that ends having said nothing at all, and never said it
+ * was done, did not finish — both are tried again like any passing fault. */
+const TRANSIENT_WORDS = /overload|rate.?limit|too many requests|timed? ?out|try again|temporar|unavailable|capacity|busy/i;
+/* An error said in the middle of an answer: the provider was reached and said
+ * what went wrong, so it is not a lost connection. What reads as passing
+ * (overloaded, rate-limited, try again) is tried again; anything else is said
+ * as it is, once — and it never teaches the house a lesson about thinking,
+ * because the request itself was taken. */
+function errorOf(e) {
+  const err = e && typeof e === 'object' ? e : { message: String(e || '') };
+  const message = typeof err.message === 'string' && err.message ? err.message : JSON.stringify(err);
+  let status = Number(err.code) || Number(err.status) || 0;
+  if (!status) status = TRANSIENT_WORDS.test(message + ' ' + String(err.type || '')) ? 503 : 422;
+  return { message, status };
+}
+export async function readReply(house, res, { onText, onThinking, onProgress } = {}) {
+  const reader = res && res.body && typeof res.body.getReader === 'function' ? res.body.getReader() : null;
+  const whole = (data) => {
+    if (data && data.error) {
+      const d = data.detail || data.error;
+      return { finish: 'error', error: typeof d === 'string' ? d : JSON.stringify(d), status: Number(data.status) || 0, retryAfter: data.retryAfter, text: '', thinking: '' };
+    }
+    const a = readAnswer(house, data);
+    if (a.text && onText) onText(a.text);
+    if (a.thinking && onThinking) onThinking(a.thinking);
+    return a;
+  };
+  if (!reader) {
+    let data = null;
+    try { data = await res.json(); } catch (_) { return { finish: 'error', error: 'the answer could not be read', status: 0, text: '', thinking: '' }; }
+    return whole(data);
+  }
+  const decoder = new TextDecoder();
+  let buffer = '', raw = '', sse = false, text = '', thinking = '', cut = false, ended = false, midError = null, told = 0;
+  const handle = (line) => {
+    const l = line.trim();
+    if (!l.startsWith('data:')) return;
+    sse = true;
+    const payload = l.slice(5).trim();
+    if (payload === '[DONE]') { ended = true; return; }
+    let obj;
+    try { obj = JSON.parse(payload); } catch (_) { return; }
+    if (!obj || typeof obj !== 'object') return;
+    if (obj.error) { midError = obj.error; return; }
+    if (obj.type === 'message_stop' || (obj.type === 'message_delta' && obj.delta && obj.delta.stop_reason)) ended = true;
+    const choice = obj.choices && obj.choices[0];
+    if (choice && choice.finish_reason) ended = true;
+    const part = readChunk(house, obj);
+    if (!part) return;
+    if (part.text) { text += part.text; if (onText) onText(part.text); }
+    if (part.thinking) { thinking += part.thinking; if (onThinking) onThinking(part.thinking); }
+    if (part.cut) cut = true;
+  };
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const piece = decoder.decode(value, { stream: true });
+    if (!sse) raw += piece;
+    buffer += piece;
+    let nl;
+    while ((nl = buffer.indexOf('\n')) !== -1) { handle(buffer.slice(0, nl)); buffer = buffer.slice(nl + 1); }
+    if (onProgress && Date.now() - told >= 400) { told = Date.now(); onProgress({ text, thinking }); }
+  }
+  const tail = decoder.decode();
+  if (!sse) raw += tail;
+  handle(buffer + tail);
+  if (!sse) {
+    let data = null;
+    try { data = JSON.parse(raw); } catch (_) { return { finish: 'error', error: raw.trim() ? 'the answer could not be read' : 'nothing came back', status: 0, text: '', thinking: '' }; }
+    return whole(data);
+  }
+  if (onProgress) onProgress({ text, thinking });
+  if (midError) { const e = errorOf(midError); return { finish: 'error', error: e.message, status: e.status, midStream: true, text, thinking }; }
+  if (!text && !thinking && !ended) return { finish: 'error', error: 'the answer stopped before anything came', status: 0, text: '', thinking: '' };
+  return { text, thinking, finish: cut ? 'length' : 'stop', thinkTokens: 0, hiddenThought: false };
 }
 
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }

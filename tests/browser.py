@@ -69,9 +69,10 @@ class Model(http.server.BaseHTTPRequestHandler):
         for m in sent.get("messages", []):
             if m.get("role") == "user":
                 user = m.get("content", "")
-        seen_prompts.append({"system": system, "user": user, "stream": bool(sent.get("stream"))})
+        crew = "This is craft work on a piece of fiction" in system or "You are the one who listens." in system
+        seen_prompts.append({"system": system, "user": user, "stream": bool(sent.get("stream")), "crew": crew})
 
-        if sent.get("stream"):
+        if sent.get("stream") and not crew:
             # the one the writer hears
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
@@ -83,8 +84,21 @@ class Model(http.server.BaseHTTPRequestHandler):
             self.wfile.flush()
             return
 
-        # a worker
+        # a worker: its call streams, as a real provider's does
         body = EYE_REPLY if "THE EXPERT EYE" in system else WORKER_REPLY
+        if sent.get("stream"):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.end_headers()
+            third = max(1, len(body) // 3)
+            pieces = [body[:third], body[third:2 * third], body[2 * third:]]
+            for i, piece in enumerate(pieces):
+                chunk = {"choices": [{"delta": {"content": piece}, "finish_reason": "stop" if i == len(pieces) - 1 else None}]}
+                self.wfile.write(("data: " + json.dumps(chunk) + "\n\n").encode())
+                self.wfile.flush()
+            self.wfile.write(b"data: [DONE]\n\n")
+            self.wfile.flush()
+            return
         out = {"choices": [{"message": {"content": body}, "finish_reason": "stop"}]}
         raw = json.dumps(out).encode()
         self.send_response(200)
@@ -221,8 +235,9 @@ def main():
             ok("the card names the document", "Plot Essential.md" in page.locator(".cards").last.inner_text())
 
             # -- the right people were sent, with the right reading ------------
-            workers = [p for p in seen_prompts if not p["stream"]]
-            fronts = [p for p in seen_prompts if p["stream"]]
+            workers = [p for p in seen_prompts if p["crew"]]
+            fronts = [p for p in seen_prompts if not p["crew"]]
+            ok("the crew's calls stream, like the front's", workers and all(p["stream"] for p in workers), [p["stream"] for p in workers])
             ok("a worker was sent", len(workers) >= 1, f"{len(workers)} worker calls")
             ok("the one at the front spoke once", len(fronts) == 1, f"{len(fronts)} front calls")
             ok("a one-field edit is not followed by a full read-back (the craft's *edit: required scan only)",

@@ -42,6 +42,23 @@ function eq(name, got, want) {
   ok(name, a === b, `got ${a} want ${b}`);
 }
 
+/* THE STAND-IN MODEL, AS THE WIRE CARRIES IT. Every call streams now — the
+ * crew's as well as the front's — so a stand-in tells them apart by who is
+ * asking: the crew's and the listener's instructions open with the house's own
+ * frame. A stand-in that answers a worker with one whole JSON body is a
+ * provider that ignored "stream", which the house reads too. */
+const CREW_MARK = /This is craft work on a piece of fiction|You are the one who listens\./;
+function forFront(req) {
+  const b = req.body || {};
+  const sys = typeof b.system === 'string' ? b.system : ((b.messages || []).find((m) => m.role === 'system') || {}).content || '';
+  return Boolean(req.stream) && !CREW_MARK.test(sys);
+}
+function wholeAnswer(obj) { return new Response(JSON.stringify(obj), { status: 200 }); }
+function sseAnswer(lines) {
+  const text = lines.map((l) => 'data: ' + (typeof l === 'string' ? l : JSON.stringify(l)) + '\n\n').join('');
+  return new Response(new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(text)); c.close(); } }), { status: 200 });
+}
+
 /* =================================================== the craft, cut up */
 
 const ENGINE = readFileSync(join(ROOT, 'engine/generalist.md'), 'utf8');
@@ -718,7 +735,7 @@ eq('an unescaped quote inside a change is read, not lost', salvageEdits('[{"find
   const realFetch = globalThis.fetch;
   globalThis.fetch = async (url, init) => {
     const req = JSON.parse(init.body);
-    if (req.stream) {
+    if (forFront(req)) {
       const sse = 'data: ' + JSON.stringify({ choices: [{ delta: { content: 'Built.' } }] }) + '\n\ndata: [DONE]\n\n';
       return new Response(new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(sse)); c.close(); } }), { status: 200 });
     }
@@ -1006,12 +1023,12 @@ eq('"I" overrules a second-person frame', personaOf({ settings: { person: 'first
   const realFetch = globalThis.fetch;
   globalThis.fetch = async (url, init) => {
     const req = JSON.parse(init.body);
-    if (req.stream) {
+    if (forFront(req)) {
       sent.push(req.body);
       const sse = 'data: ' + JSON.stringify({ choices: [{ delta: { content: 'Mm.' } }] }) + '\n\ndata: [DONE]\n\n';
       return new Response(new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(sse)); c.close(); } }), { status: 200 });
     }
-    return { ok: true, json: async () => ({ choices: [{ message: { content: 'fine' }, finish_reason: 'stop' }] }) };
+    return wholeAnswer({ choices: [{ message: { content: 'fine' }, finish_reason: 'stop' }] });
   };
   const world = { id: 'pn', docs: [{ id: 'd1', name: 'Plot Essential.md', kind: 'pe', text: '# PE\n\n## SCENE\nWHERE: the Ribway\n' }], chats: [], recentSections: [] };
   const conn = [{ id: 'c1', url: 'https://relay.example/v1', model: 'm', key: 'k' }];
@@ -1066,14 +1083,14 @@ eq('"I" overrules a second-person frame', personaOf({ settings: { person: 'first
   const realFetch = globalThis.fetch;
   globalThis.fetch = async (url, init) => {
     const req = JSON.parse(init.body);
-    if (req.stream) {
+    if (forFront(req)) {
       fronts.push(req.body);
       const sse = 'data: ' + JSON.stringify({ choices: [{ delta: { content: 'All right.' } }] }) + '\n\ndata: [DONE]\n\n';
       return new Response(new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(sse)); c.close(); } }), { status: 200 });
     }
     const user = (req.body.messages.find((m) => m.role === 'user') || {}).content || '';
     const out = answer(user);
-    return { ok: true, json: async () => (typeof out === 'string' ? { choices: [{ message: { content: out }, finish_reason: 'stop' }] } : out) };
+    return wholeAnswer(typeof out === 'string' ? { choices: [{ message: { content: out }, finish_reason: 'stop' }] } : out);
   };
   const MACHINERY = /<\/?(?:edits|docedits|need)>|replace_all|\bthe (?:builder|chronicler|scribe|editor|eye|showrunner|compressor|novelist|diagnostician|worldbook keeper|memory auditor|instructions writer)\b|\bworkers?\b|\bcrew\b|backstage|people working behind|\bslice\b|§|\bM-[A-Z]{3,}\b|\bapi\b|\b40[13]\b|sk-abc|set aside as a draft|\bdraft\b|\bJSON\b|\bcraft\b|could not finish/i;
   const heard = () => { const b = fronts[fronts.length - 1]; return [b.messages.map((m) => m.content).join('\n')].join('\n'); };
@@ -1468,7 +1485,7 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
   const realFetch = globalThis.fetch;
   globalThis.fetch = async (url, init) => {
     const req = JSON.parse(init.body);
-    if (req.stream) {
+    if (forFront(req)) {
       calls.push({ who: 'front', url: req.url, body: req.body });
       const sse = 'data: ' + JSON.stringify({ choices: [{ delta: { content: 'Mm.' } }] }) + '\n\ndata: [DONE]\n\n';
       return new Response(new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(sse)); c.close(); } }), { status: 200 });
@@ -1478,7 +1495,7 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
     const who = sys.includes(LISTENER_MARK) ? 'listener' : 'worker';
     calls.push({ who, url: req.url, sys, user });
     const out = who === 'listener' ? listenerSays(user) : workerSays(user, sys);
-    return { ok: true, json: async () => ({ choices: [{ message: { content: out }, finish_reason: 'stop' }] }) };
+    return wholeAnswer({ choices: [{ message: { content: out }, finish_reason: 'stop' }] });
   };
   const house = { connections: [{ id: 'c1', url: 'https://one.example/v1', model: 'm', key: 'k' }, { id: 'c2', url: 'https://two.example/v1', model: 'm2', key: 'k' }],
     agentConnections: {}, settings: { makerName: 'Eni', yourName: 'Bruce' }, personaFrame: 'You are Eni.' };
@@ -1579,7 +1596,7 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
   let n = 0;
   globalThis.fetch = async (url, init) => {
     const req = JSON.parse(init.body);
-    if (req.stream) {
+    if (forFront(req)) {
       const sse = 'data: ' + JSON.stringify({ choices: [{ delta: { content: 'Mm.' } }] }) + '\n\ndata: [DONE]\n\n';
       return new Response(new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(sse)); c.close(); } }), { status: 200 });
     }
@@ -1592,7 +1609,9 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
       if (n === 1) { content = 'Moved it.\n<edits>[{"file":"Plot Essential.md","find":"WHERE: the Rib'; finish = 'length'; }
       else content = 'way","replace":"WHERE: the Quay","reason":"he asked"}]</edits>';
     }
-    return { ok: true, json: async () => ({ choices: [{ message: { content }, finish_reason: finish }] }) };
+    /* the way a provider streams it: the words in pieces, the reason it stopped on the last */
+    const half = Math.ceil(content.length / 2);
+    return sseAnswer([{ choices: [{ delta: { content: content.slice(0, half) } }] }, { choices: [{ delta: { content: content.slice(half) }, finish_reason: finish }] }, '[DONE]']);
   };
   try {
     const house = { connections: [{ id: 'c1', url: 'https://one.example/v1', model: 'm', key: 'k' }], agentConnections: {}, settings: { yourName: 'Bruce' }, personaFrame: '' };
@@ -1617,6 +1636,108 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
     const quick = await call.enqueue('ceiling', 'y', async () => ({ ok: true, value: 1 }));
     ok('a job that finishes in time is untouched', quick.ok === true && quick.value === 1);
   } finally { call.setCallTimeoutForTests(30 * 60 * 1000); }
+}
+
+/* ============================ THE CREW'S CALLS STREAM, AND EVERY SHAPE OF ANSWER IS READ */
+{
+  const call = await import('../js/agents/call.js');
+  const { runTurn } = await import('../js/agents/run.js');
+  const conn = { url: 'https://api.deepseek.com', model: 'deepseek-chat', key: 'k' };
+  const realFetch = globalThis.fetch;
+  let script = [];
+  const specs = [];
+  globalThis.fetch = async (url, init) => { specs.push(JSON.parse(init.body)); const next = script.shift(); return typeof next === 'function' ? next() : next; };
+  try {
+    /* a worker's call is streamed, words and thinking each on their own channel */
+    const seen = [];
+    script = [() => sseAnswer([{ choices: [{ delta: { reasoning_content: 'Let me see. ' } }] }, { choices: [{ delta: { content: 'I built ' } }] },
+      { choices: [{ delta: { content: 'it whole.' }, finish_reason: 'stop' }] }, '[DONE]'])];
+    let r = await call.callModel(conn, { user: 'x', onProgress: (p) => seen.push(p.text) });
+    eq('a worker\'s call goes out streamed', [specs[0].stream, specs[0].body.stream], [true, true]);
+    eq('its words and its thinking come back apart', [r.ok, r.text, r.thinking, r.finish], [true, 'I built it whole.', 'Let me see. ', 'stop']);
+    ok('how far along it is was told as it arrived', seen.length >= 1 && seen[seen.length - 1] === 'I built it whole.', JSON.stringify(seen));
+
+    script = [() => sseAnswer([{ choices: [{ delta: { content: 'half a docu' }, finish_reason: 'length' }] }, '[DONE]'])];
+    r = await call.callModel(conn, { user: 'x' });
+    eq('an answer cut at its limit says so', [r.text, r.finish], ['half a docu', 'length']);
+
+    /* the device's word that the provider refused comes as one JSON object, not a stream */
+    script = [wholeAnswer({ error: 'provider', status: 401, detail: 'Incorrect API key provided' })];
+    let t0 = Date.now();
+    r = await call.callModel(conn, { user: 'x' });
+    ok('a refusal is read from a streamed call, and a bad key is not waited on', !r.ok && /Incorrect API key/.test(r.error) && Date.now() - t0 < 1500, JSON.stringify(r));
+
+    /* a provider that ignored "stream" and answered in one piece */
+    script = [wholeAnswer({ choices: [{ message: { content: 'all at once', reasoning_content: 'thought' }, finish_reason: 'stop' }] })];
+    r = await call.callModel(conn, { user: 'x' });
+    eq('a provider that answered in one piece is read too', [r.ok, r.text, r.thinking], [true, 'all at once', 'thought']);
+
+    /* an error in the middle of a stream is an error, and a passing one is tried again */
+    script = [() => sseAnswer([{ choices: [{ delta: { content: 'I bu' } }] }, { error: { message: 'Overloaded, try again', type: 'overloaded_error' } }]),
+      () => sseAnswer([{ choices: [{ delta: { content: 'I built it.' }, finish_reason: 'stop' }] }, '[DONE]'])];
+    t0 = Date.now();
+    r = await call.callModel(conn, { user: 'x' });
+    eq('an error mid-stream is never taken for a finished answer: it is asked again whole', [r.ok, r.text], [true, 'I built it.']);
+    script = [() => sseAnswer([{ choices: [{ delta: { content: 'I bu' } }] }, { error: { message: 'content policy', code: 400 } }])];
+    r = await call.callModel(conn, { user: 'x' });
+    ok('a mid-stream refusal that waiting cannot fix is said, not retried', !r.ok && /content policy/.test(r.error), JSON.stringify(r));
+    script = [() => sseAnswer([{ choices: [{ delta: { content: 'I bu' } }] }, { error: { message: 'the reasoning went wrong in the middle' } }])];
+    t0 = Date.now();
+    const thinker = { url: 'https://api.deepseek.com', model: 'deepseek-chat', key: 'k', thinking: 'high' };
+    r = await call.callModel(thinker, { user: 'x' });
+    ok('an uncoded error mid-answer is said once, at once — not retried as a lost connection', !r.ok && Date.now() - t0 < 1500 && script.length === 0, `${Date.now() - t0}ms`);
+    ok('and it teaches the house nothing about thinking: the request itself was taken', !thinker.learned, JSON.stringify(thinker.learned));
+
+    /* a stream that ended having said nothing, and never said it was done */
+    script = [() => new Response(new ReadableStream({ start(c) { c.close(); } }), { status: 200 }),
+      () => sseAnswer([{ choices: [{ delta: { content: 'there now' }, finish_reason: 'stop' }] }, '[DONE]'])];
+    r = await call.callModel(conn, { user: 'x' });
+    eq('a stream that ended before anything came is asked again', [r.ok, r.text], [true, 'there now']);
+    script = [() => sseAnswer([{ choices: [{ delta: { role: 'assistant' } }] }]),
+      () => sseAnswer([{ choices: [{ delta: { content: 'there now' }, finish_reason: 'stop' }] }, '[DONE]'])];
+    r = await call.callModel(conn, { user: 'x' });
+    eq('a stream that opened, said nothing and dropped is asked again', [r.ok, r.text], [true, 'there now']);
+    script = [() => sseAnswer([{ choices: [{ delta: { role: 'assistant' }, finish_reason: 'stop' }] }, '[DONE]'])];
+    r = await call.callModel(conn, { user: 'x' });
+    eq('but one that said it was done with nothing is an empty answer, for the worker to judge', [r.ok, r.text], [true, '']);
+
+    /* Claude's own stream shape */
+    script = [() => sseAnswer([{ type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: 'hm' } },
+      { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Claude ' } }, { type: 'content_block_delta', delta: { type: 'text_delta', text: 'wrote this' } },
+      { type: 'message_delta', delta: { stop_reason: 'max_tokens' } }, { type: 'message_stop' }])];
+    r = await call.callModel({ url: 'https://api.anthropic.com', model: 'claude-x', key: 'k' }, { user: 'x' });
+    eq('Claude\'s stream is read the same way, its cut included', [r.text, r.thinking, r.finish], ['Claude wrote this', 'hm', 'length']);
+
+    /* "Try it" asks all at once: only a whole answer reports its thinking tokens */
+    specs.length = 0;
+    script = [wholeAnswer({ choices: [{ message: { content: 'ready' }, finish_reason: 'stop' }], usage: { completion_tokens_details: { reasoning_tokens: 120 } } })];
+    const tried = await call.testConnection({ id: 'x', url: 'https://api.openai.com/v1', model: 'o3', key: 'k', thinking: 'high' });
+    ok('"Try it" asks all at once, and still hears thinking the address keeps to itself', specs[0] && !specs[0].stream && !specs[0].body.stream && tried.thinks && tried.hidden, JSON.stringify([specs[0] && specs[0].stream, tried]));
+
+    /* the front: a provider that ignored "stream" used to reach him as an empty reply */
+    script = [wholeAnswer({ choices: [{ message: { content: 'The harbour wall was paid for by the guild.' }, finish_reason: 'stop' }] })];
+    const said = [];
+    const front = await call.streamModel(conn, { system: 's', messages: [{ role: 'user', content: 'q' }], onText: (t) => said.push(t) });
+    eq('the front reads a whole answer too, and shows it', [front.text, said.join('')], ['The harbour wall was paid for by the guild.', 'The harbour wall was paid for by the guild.']);
+
+    /* the status line: who is on what, and how far along, through the real turn */
+    const statuses = [];
+    globalThis.fetch = async (url, init) => {
+      const req = JSON.parse(init.body);
+      if (forFront(req)) return sseAnswer([{ choices: [{ delta: { content: 'Built.' } }] }, '[DONE]']);
+      const sys = (req.body.messages.find((m) => m.role === 'system') || {}).content || '';
+      if (/PROACTIVE CO-WRITER/.test(sys)) {
+        const words = '<file name="Plot Essential.md">\n# PLOT ESSENTIAL — Tide — V1.0\n\n## SCENE\nWHERE: the salt flats, where the tide decides who rules\n</file>';
+        return sseAnswer([{ choices: [{ delta: { content: 'I built it. ' } }] }, { choices: [{ delta: { content: words }, finish_reason: 'stop' }] }, '[DONE]']);
+      }
+      return sseAnswer([{ choices: [{ delta: { content: 'Read it all back.' }, finish_reason: 'stop' }] }, '[DONE]']);
+    };
+    const out = await runTurn({ house: { connections: [{ id: 'c1', url: 'https://relay.example/v1', model: 'm', key: 'k' }], agentConnections: {}, settings: {}, personaFrame: '' },
+      project: { id: 'ps', docs: [], chats: [], recentSections: [] }, message: 'build it', forceWorker: 'builder', onStatus: (label, detail) => statuses.push([label, detail || '']) });
+    ok('the build still lands, streamed', out.project.docs.some((d) => /the tide decides who rules/.test(d.text)), JSON.stringify(out.project.docs.map((d) => d.name)));
+    ok('the status says who is on it, with how far along beside it', statuses.some(([l, d]) => l === 'the builder is on it' && /^\d[\d,]* words so far$/.test(d)), JSON.stringify(statuses));
+    ok('and the words-so-far never replaces the label', !statuses.some(([l]) => /words so far/.test(l)));
+  } catch (e) { ok('the streaming tests ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
 }
 
 /* ============================ the save line: deletes and house saves (v1.1.8) */
@@ -1729,7 +1850,7 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
   const realFetch = globalThis.fetch;
   globalThis.fetch = async (url, init) => {
     const req = JSON.parse(init.body);
-    if (req.stream) {
+    if (forFront(req)) {
       calls.push({ who: 'front' });
       const sse = 'data: ' + JSON.stringify({ choices: [{ delta: { content: 'Mm.' } }] }) + '\n\ndata: [DONE]\n\n';
       return new Response(new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(sse)); c.close(); } }), { status: 200 });
@@ -1739,7 +1860,7 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
     const who = sys.includes(LISTENER_MARK) ? 'listener' : /THE EXPERT EYE/.test(sys) ? 'eye' : /PROACTIVE CO-WRITER/.test(sys) ? 'builder' : 'worker';
     calls.push({ who, user });
     const out = who === 'listener' ? listenerSays(user) : workerSays(user, sys);
-    return { ok: true, json: async () => ({ choices: [{ message: { content: out }, finish_reason: 'stop' }] }) };
+    return wholeAnswer({ choices: [{ message: { content: out }, finish_reason: 'stop' }] });
   };
   const house = { connections: [{ id: 'c1', url: 'https://one.example/v1', model: 'm', key: 'k' }], agentConnections: {}, settings: { makerName: 'Eni', yourName: 'Bruce' }, personaFrame: 'You are Eni.' };
   /* a plot essential with leftover findings: undated events, a name inside a trait */
@@ -1901,7 +2022,7 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
   const realFetch = globalThis.fetch;
   globalThis.fetch = async (url, init) => {
     const req = JSON.parse(init.body);
-    if (req.stream) {
+    if (forFront(req)) {
       const sse = 'data: ' + JSON.stringify({ choices: [{ delta: { content: 'Mm.' } }] }) + '\n\ndata: [DONE]\n\n';
       return new Response(new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(sse)); c.close(); } }), { status: 200 });
     }
@@ -1909,7 +2030,7 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
     const out = sys.includes(LISTENER_MARK) ? '{"jobs":[{"worker":"builder","task":"Build the plot essential again from the talk."}],"clear":["Plot Essential.md"]}'
       : /PROACTIVE CO-WRITER/.test(sys) ? 'Built it.\n<edits>[{"create_file":"Plot Essential.md","replace":"# PLOT ESSENTIAL — Anew — V1.0\\n\\n## SCENE\\nWHERE: the lighthouse\\n"}]</edits>'
       : 'Read it all back.';
-    return { ok: true, json: async () => ({ choices: [{ message: { content: out }, finish_reason: 'stop' }] }) };
+    return wholeAnswer({ choices: [{ message: { content: out }, finish_reason: 'stop' }] });
   };
   try {
     const house = { connections: [{ id: 'c1', url: 'https://one.example/v1', model: 'm', key: 'k' }], agentConnections: {}, settings: { yourName: 'Bruce' }, personaFrame: '' };
@@ -1928,7 +2049,7 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
   const realFetch = globalThis.fetch;
   globalThis.fetch = async (url, init) => {
     const req = JSON.parse(init.body);
-    if (req.stream) {
+    if (forFront(req)) {
       const m = req.body.messages; front = m[m.length - 1].content;
       const sse = 'data: ' + JSON.stringify({ choices: [{ delta: { content: 'Mm.' } }] }) + '\n\ndata: [DONE]\n\n';
       return new Response(new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(sse)); c.close(); } }), { status: 200 });
@@ -1938,7 +2059,7 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
     let out = 'Read it all back.';
     if (sys.includes(LISTENER_MARK)) out = '{"jobs":[{"worker":"editor","task":"Make Rukia a lieutenant."}]}';
     else if (/Edit Mode Discipline/.test(sys)) { calls.push(user); out = editorSays(user, calls.length); }
-    return { ok: true, json: async () => ({ choices: [{ message: { content: out }, finish_reason: 'stop' }] }) };
+    return wholeAnswer({ choices: [{ message: { content: out }, finish_reason: 'stop' }] });
   };
   const BLEACH = '# PLOT ESSENTIAL — Bleach — V1.0\n\n### Rukia (shinigami | active | 150)\nRANK: unseated officer\nID: a quiet shinigami\n\n### Renji (shinigami | active | 150)\nRANK: lieutenant\n';
   const world = () => ({ id: 'pbl', docs: [{ id: 'd1', name: 'Bleach.md', kind: 'pe', text: BLEACH }], chats: [], recentSections: [] });

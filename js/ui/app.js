@@ -3,7 +3,7 @@
 
 import * as store from '../store.js';
 import { runTurn, capUndo, landTurn, commit, versionOf, FRONT_ONLY, GO_ON } from '../agents/run.js';
-import { onWork, stopWork, onLearn } from '../agents/call.js';
+import { stopWork, onLearn } from '../agents/call.js';
 import { undoBatch } from '../doc/edits.js';
 import { DEFAULT_WORLD_TITLE } from '../doc/index.js';
 import { personaOf, names } from '../agents/persona.js';
@@ -55,7 +55,9 @@ function wire() {
     });
   }
   stream.addEventListener('scroll', () => { pinned = nearBottom(); }, { passive: true });
-  onWork((state) => { if (state.busy && running) setStatus(state.label); });
+  /* The turn says what the crew is doing, in words ("the builder is on it"). The
+   * channel's own announcement carries only a worker's id, and used to land a
+   * moment later and write "builder" or "listener" over those words. */
   store.watch(({ trouble }) => {
     drawHeader();
     $('saveNote').hidden = !trouble;
@@ -711,13 +713,20 @@ async function send(text, forceWorker, opts = {}) {
  * a real provider; past a few seconds the line says how long it has run, so a
  * job that is working never looks like one that froze. */
 let statusLabel = '';
+let statusDetail = '';
 let statusSince = 0;
 let statusTick = null;
+/* who is on what, how far along (a streamed answer's words so far), and past
+ * fifteen seconds how long it has run — the clock belongs to the label, so a
+ * word count arriving never starts it again */
 function statusWords() {
   const s = Math.floor((Date.now() - statusSince) / 1000);
-  return s >= 15 ? `${statusLabel} \u00b7 ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` : statusLabel;
+  const bits = [statusLabel];
+  if (statusDetail) bits.push(statusDetail);
+  if (s >= 15) bits.push(`${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`);
+  return bits.join(' \u00b7 ');
 }
-function setStatus(label) {
+function setStatus(label, detail = '') {
   if (!label) return clearStatus();
   if (!statusEl) {
     statusEl = el('div', 'status');
@@ -725,6 +734,7 @@ function setStatus(label) {
     statusEl.append(el('span', 'label'));
   }
   if (label !== statusLabel) { statusLabel = label; statusSince = Date.now(); }
+  statusDetail = detail || '';
   if (!statusTick) statusTick = setInterval(() => { if (statusEl) keepPlace(() => { statusEl.querySelector('.label').textContent = statusWords(); }); }, 1000);
   const p = store.getProject(), chat = store.openChat();
   keepPlace(() => {
@@ -736,6 +746,7 @@ function clearStatus() {
   if (statusEl) { statusEl.remove(); statusEl = null; }
   if (statusTick) { clearInterval(statusTick); statusTick = null; }
   statusLabel = '';
+  statusDetail = '';
 }
 
 boot().catch((e) => {

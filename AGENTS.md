@@ -630,25 +630,48 @@ front can receive inside that harness.
 - **Making a new world left the drawer open over it**, so the first thing to do in a world just made was close
   something. It shuts; he is in the empty room, where how to begin is said. Found by the walk.
 
+### The crew's calls stream (v1.2.2)
+
+- **A worker's call was asked for all at once**, where Cozy Tavern's workers ride the same streamed path as its
+  storyteller (M28, M270). A worker writing a whole plot essential sat silent for minutes with only a clock to
+  show it was alive, and a provider behind a gateway that closes a silent connection could cut it and lose the
+  lot. Every call now streams (`callModel`, `stream` defaults on); "Try it" alone asks all at once, because only
+  a whole answer reports the thinking tokens an address keeps to itself.
+- **One reader for every answer** (`readReply`), for the front and the crew: a stream line by line, what is left
+  when it ends, and an answer that is not a stream at all — the device's one-object refusal, or a provider that
+  ignored "stream" and answered whole. **The front used to show that last one as an empty reply.** An error in
+  the middle of a stream is an error, never a finished answer: what reads as passing is tried again, anything else
+  is said once and at once, and it never teaches the house a lesson about thinking (the request was taken). A
+  stream that ends having said nothing and never said it was done is tried again.
+- **How far along it is, on the status line**: "the builder is on it · 1,240 words so far" (`onProgress`, counted
+  over every piece of a carried-on answer). The label keeps its own clock; a word count arriving never restarts
+  it. The walk watches it on screen while a slow builder writes.
+- **The status line was overwritten by a bare worker id.** The channel announced each job's label ("builder",
+  "listener") a moment after the turn had said "the builder is on it", and the room showed the id. The room no
+  longer listens to it; the turn says what is happening, in words.
+- Every stand-in model in the suites now tells the front from the crew by who is asking, not by whether the call
+  streams, and the browser suites' stand-ins stream the crew's answers — so the real browser reads the crew
+  through the streamed path end to end.
+
 ## Testing
 
 ```
 bash tests/all.sh           all seven, exit code intact
 ```
 
-    node tests/units.mjs         683 checks — the real modules on a real document, and what the persona hears
+    node tests/units.mjs         702 checks — the real modules on a real document, and what the persona hears
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       46 checks — the real serve.py, real files on disk, streams timed
-    python3 tests/browser.py      74 checks — real Chromium at 390x844, end to end
-    python3 tests/walk_worlds.py 161 checks — the drawer, conversations, swipes and versions, edit and
+    python3 tests/browser.py      75 checks — real Chromium at 390x844, end to end
+    python3 tests/walk_worlds.py 162 checks — the drawer, conversations, swipes and versions, edit and
                                               send again, delete, branch, go on, re-quoting, crafts,
                                               the thinking box live, backup and restore, a model too
                                               small for the world, a real server killed mid-edit
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-1,018 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
+1,039 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

@@ -30,7 +30,7 @@ MODEL_PORT = 8806
 passed = 0
 failed = []
 calls = []
-DELAY = {"front": 0.0, "worker": 0.0}
+DELAY = {"front": 0.0, "worker": 0.0, "piece": 0.0}
 
 
 def ok(name, cond, detail=""):
@@ -88,7 +88,8 @@ class Model(http.server.BaseHTTPRequestHandler):
                 return self.refuse(400, "This model's maximum context length is 8192 tokens. However, your messages resulted in "
                                         f"{asked // 4} tokens. Please reduce the length of the messages.")
         if self.path.startswith("/badkey/"):
-            calls.append({"who": "badkey", "body": sent})
+            asker = which(next((m["content"] for m in sent.get("messages", []) if m.get("role") == "system"), ""))
+            calls.append({"who": "badkey", "asker": asker, "body": sent})
             return self.refuse(401, "Incorrect API key provided")
         msgs = sent.get("messages", [])
         system = next((m["content"] for m in msgs if m.get("role") == "system"), "")
@@ -96,7 +97,7 @@ class Model(http.server.BaseHTTPRequestHandler):
         who = which(system)
         calls.append({"who": who, "system": system, "messages": rest, "stream": bool(sent.get("stream")), "body": sent})
 
-        if sent.get("stream") and self.path.startswith("/cut/"):
+        if sent.get("stream") and who == "front" and self.path.startswith("/cut/"):
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.end_headers()
@@ -105,7 +106,7 @@ class Model(http.server.BaseHTTPRequestHandler):
             self.wfile.write(b"data: [DONE]\n\n")
             return
 
-        if sent.get("stream") and sent.get("model") == "thinker":
+        if sent.get("stream") and who == "front" and sent.get("model") == "thinker":
             # a model that thinks out loud first, slowly enough to be watched, then answers
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
@@ -124,7 +125,7 @@ class Model(http.server.BaseHTTPRequestHandler):
                 pass
             return
 
-        if sent.get("stream") and "tell me something long" in json.dumps(rest[-1:] if rest else []):
+        if sent.get("stream") and who == "front" and "tell me something long" in json.dumps(rest[-1:] if rest else []):
             # a fast model: two hundred small pieces, 5ms apart -- the way tokens really arrive
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
@@ -140,7 +141,7 @@ class Model(http.server.BaseHTTPRequestHandler):
                 pass
             return
 
-        if sent.get("stream"):
+        if sent.get("stream") and who == "front":
             time.sleep(DELAY["front"])
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
@@ -225,8 +226,24 @@ class Model(http.server.BaseHTTPRequestHandler):
         else:
             body = "Read it all back; nothing else needed changing."
         calls[-1]["reply"] = body
-        raw = json.dumps({"choices": [{"message": {"content": body}, "finish_reason": "stop"}]}).encode()
         try:
+            if sent.get("stream"):
+                # the crew's calls stream, as a real provider's do: the words in pieces,
+                # the reason it stopped on the last
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.end_headers()
+                third = max(1, len(body) // 3)
+                pieces = [body[:third], body[third:2 * third], body[2 * third:]]
+                for i, piece in enumerate(pieces):
+                    chunk = {"choices": [{"delta": {"content": piece}, "finish_reason": "stop" if i == len(pieces) - 1 else None}]}
+                    self.wfile.write(("data: " + json.dumps(chunk) + "\n\n").encode())
+                    self.wfile.flush()
+                    time.sleep(DELAY["piece"] if who == "builder" else 0)
+                self.wfile.write(b"data: [DONE]\n\n")
+                self.wfile.flush()
+                return
+            raw = json.dumps({"choices": [{"message": {"content": body}, "finish_reason": "stop"}]}).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(raw)))
@@ -625,7 +642,7 @@ def main():
             ok("a refused call says what the provider said", "did not go through" in last and "Incorrect API key" in last, last[:160])
             bad = [c for c in calls if c["who"] == "badkey"]
             ok("a bad key is asked once, not retried — once by the listener, once by the front",
-               len(bad) == 2 and sum(1 for c in bad if c["body"].get("stream")) == 1, len(bad))
+               sorted(c["asker"] for c in bad) == ["front", "listener"], [c["asker"] for c in bad])
 
             # ---------------------------------------- the findable retry
             ok("a failed turn that changed nothing offers Try again",
@@ -751,7 +768,7 @@ def main():
             page.fill("#say", "and what comes next")
             page.click("#sendBtn")
             settle()
-            fronts = [c for c in calls if c["stream"]]
+            fronts = [c for c in calls if c["who"] == "front"]
             sent = json.dumps(fronts[0]["messages"]) if fronts else ""
             ok("the model is sent the answer that is shown, not the newest", tag(first) in sent and tag(second) not in sent, (tag(first), tag(second)))
 
@@ -1149,8 +1166,16 @@ def main():
             page.fill("#say", "a saltmarsh court where the tide decides who rules")
             page.click("#sendBtn")
             page.wait_for_function("() => document.querySelectorAll('.turn.maker').length >= 1 && !document.querySelector('#sendBtn.stop')", timeout=30000)
+            DELAY["piece"] = 1.2          # a builder that writes slowly enough to be watched
             page.fill("#say", "*new build the plot essential from what I said")
             page.click("#sendBtn")
+            watched = ""
+            end = time.time() + 12
+            while time.time() < end and "words so far" not in watched:
+                watched = page.evaluate("() => { const n = document.querySelector('.status .label'); return n ? n.textContent : ''; }")
+                time.sleep(0.2)
+            DELAY["piece"] = 0.0
+            ok("while the builder writes, the status says how far along it is", re.match(r"^the builder is on it \u00b7 [\d,]+ words so far", watched or ""), watched)
             page.wait_for_function("() => document.querySelectorAll('.turn.maker').length >= 2 && !document.querySelector('#sendBtn.stop')", timeout=30000)
             page.wait_for_timeout(1300)
             ok("the world takes the name its plot essential gave it", page.locator("#worldName").inner_text() == "The Saltmarsh Court",

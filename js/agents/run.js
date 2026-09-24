@@ -270,7 +270,7 @@ export function joinSeam(a, b) {
   return head + tail;
 }
 
-async function runWorker({ worker, sections, conn, project, message, talk, fromHouse = false, onStatus, signal, stale, craft = null }) {
+async function runWorker({ worker, sections, conn, project, message, talk, fromHouse = false, onStatus, onProgress, signal, stale, craft = null }) {
   /* a worker with a craft of its own reads that; the rest read their slice */
   const own = craft || sliceFor(sections, worker).text;
   const system = [CRAFT_FRAME, own, RETURN_CONTRACT].join('\n\n---\n\n');
@@ -301,7 +301,9 @@ async function runWorker({ worker, sections, conn, project, message, talk, fromH
       nudge ? `\n${nudge}` : '',
     ].filter(Boolean).join('\n');
 
-    let out = await callModel(conn, { system, messages: [{ role: 'user', content: user }], maxTokens: 8000, signal, stale });
+    /* how far along it is, counted over every piece of the answer so far */
+    const told = (before) => (onProgress ? (p) => onProgress({ text: before + (p.text || ''), thinking: p.thinking || '' }) : undefined);
+    let out = await callModel(conn, { system, messages: [{ role: 'user', content: user }], maxTokens: 8000, signal, stale, onProgress: told('') });
     for (let more = 0; out.ok && more < MAX_CARRY_ON; more++) {
       const cutAtLimit = CUT_FINISH.test(out.finish || '') && (out.text || '').trim();
       const leftOpen = openFileAtEnd(out.text);
@@ -310,7 +312,7 @@ async function runWorker({ worker, sections, conn, project, message, talk, fromH
       onStatus && onStatus(`the ${worker}'s answer ran long \u2014 asking for the rest`);
       const rest = await callModel(conn, { system, messages: [
         { role: 'user', content: user }, { role: 'assistant', content: out.text }, { role: 'user', content: cutAtLimit ? CARRY_ON : fileLeftOpen(leftOpen) },
-      ], maxTokens: 8000, signal, stale });
+      ], maxTokens: 8000, signal, stale, onProgress: told(out.text) });
       /* nothing more came: asking again would only bring nothing again */
       if (!rest.ok || !String(rest.text || '').trim()) break;
       out = { ...rest, text: joinSeam(out.text, rest.text), thinking: [out.thinking, rest.thinking].filter(Boolean).join('\n\n') };
@@ -440,6 +442,16 @@ export async function runTurn({
   const connFor = (worker) =>
     pickConnection({ map: house.agentConnections || {}, general, connections }, worker) || frontConn;
   const p = personaOf(house);
+  /* WHAT THE CREW IS DOING, SAID ONCE, WITH HOW FAR ALONG IT IS BESIDE IT. The
+   * label says who is on what; the detail ("1,240 words so far") changes as a
+   * streamed answer arrives, and never restarts the clock the label carries. */
+  let doing = '';
+  const status = (label, detail = '') => { doing = label; onStatus(label, detail); };
+  const progress = (p2) => {
+    const words = (String(p2.text || '').match(/\S+/g) || []).length;
+    if (words) status(doing, `${words.toLocaleString()} words so far`);
+    else if (String(p2.thinking || '').trim()) status(doing, 'thinking it through');
+  };
   /* STOP MEANS STOP. The first version let the crew go and then called the
    * front anyway. Every step now looks first. */
   const stopped = () => Boolean(signal && signal.aborted);
@@ -477,7 +489,7 @@ export async function runTurn({
      * craft's own 7.6 says to, with the conversation and whatever is waiting
      * on him. On the same channel as every worker, so Stop and a change of
      * world let it go like any other job. */
-    onStatus('reading that');
+    status('reading that');
     const heard = await enqueue(project.id, LISTENER, ({ signal: s, stale }) => listen({
       conn: connFor(LISTENER), frame: CRAFT_FRAME, sections, docs, open, message, p,
       talk: conversationFor(past, p, LISTEN_TALK), signal: either(signal, s), stale,
@@ -535,7 +547,7 @@ export async function runTurn({
     try { craft = await craftFor(worker, house); }
     catch (e) { return failed((e && e.message) || String(e)); }
     const res = await enqueue(project.id, worker, ({ signal: s, stale }) =>
-      runWorker({ worker, sections, conn: connFor(worker), project: working, message: about, talk: worker === 'builder' ? buildTalk : talk, fromHouse, onStatus, signal: either(signal, s), stale, craft }));
+      runWorker({ worker, sections, conn: connFor(worker), project: working, message: about, talk: worker === 'builder' ? buildTalk : talk, fromHouse, onStatus: status, onProgress: progress, signal: either(signal, s), stale, craft }));
     if (!res || !res.ok) return failed((res && res.error) || 'did not finish');
     if (res.ask) asks.push({ worker, ask: res.ask, at: Date.now() });
     /* a change already made this turn is not made again: a re-quote that
@@ -572,7 +584,7 @@ export async function runTurn({
     allCards.push(...placed);
     const back = [...missed, ...unchanged];
     if (!back.length || requoting || stopped()) { allCards.push(...missed); return applied.cards; }
-    onStatus(`asking the ${worker} to look at ${back.length > 1 ? 'those changes' : 'that change'} again`);
+    status(`asking the ${worker} to look at ${back.length > 1 ? 'those changes' : 'that change'} again`);
     const seen = new Set();
     const list = back.filter((c) => { const k = `${c.name}\u0000${c.find}\u0000${c.why}`; if (seen.has(k)) return false; seen.add(k); return true; })
       .map((c, i) => (unchanged.includes(c)
@@ -600,7 +612,7 @@ export async function runTurn({
 
   for (const intent of intents) {
     if (stopped()) break;
-    onStatus(`the ${intent.worker} is on it`);
+    status(`the ${intent.worker} is on it`);
     await send(intent.worker, intent.about || message, `${intent.worker} — ${short(intent.about || message)}`);
   }
 
@@ -618,7 +630,7 @@ export async function runTurn({
     if (linted.repaired.length) crew.push({ worker: 'house', notes: linted.repaired.join(' ') });
     for (const job of linted.handOver) {
       if (stopped() || repairsLeft-- <= 0) break;
-      onStatus(`the ${job.worker} is fixing ${job.check}`);
+      status(`the ${job.worker} is fixing ${job.check}`);
       await send(job.worker,
         `Something in the documents needs putting right: ${job.check} — ${job.said}. Fix it properly, and check the rest of the documents for the same thing before you finish.`,
         `put right: ${job.check}`, true);
@@ -631,7 +643,7 @@ export async function runTurn({
    * clear or a delete he asked for has nothing to read back. */
   const surgical = intents.length > 0 && intents.every((i) => i.worker === 'editor');
   if (!stopped() && changed() && intents.length && !surgical) {
-    onStatus('reading the whole thing back');
+    status('reading the whole thing back');
     await send('eye',
       'The documents were just changed. Read the whole of them back, front to back, and put right anything that is wrong — not only near the change. Say what you read and what you found.',
       'the eye', true);
@@ -640,7 +652,7 @@ export async function runTurn({
     if (after.repaired.length) crew.push({ worker: 'house', notes: after.repaired.join(' ') });
   }
 
-  onStatus('');
+  status('');
   if (stopped()) return { project: working, reply: '', cards: allCards, batches, crew, edits: turnEdits, asks, error: 'stopped', stopped: true };
 
   /* Now the one voice the writer hears. */
