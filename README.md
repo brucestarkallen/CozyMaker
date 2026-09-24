@@ -89,8 +89,8 @@ one are its conversations — as many as you like, all working on the same
 documents — and its documents. Every world and conversation can be renamed or
 deleted from its ⋯.
 
-**New plot essential** starts one with the crew: tell them about the world and
-it gets built as you talk. **Bring one in** takes a plot essential,
+**Start a plot essential** (or just saying "build it") starts one with the crew: talk the world through first
+— nothing is written until you ask — and it is built from everything you said. **Bring one in** takes a plot essential,
 continuation file or worldbook you already have — paste it or pick the file —
 and tidies it on the way in.
 

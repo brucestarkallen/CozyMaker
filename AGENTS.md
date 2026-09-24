@@ -712,25 +712,37 @@ front can receive inside that harness.
   into the tides", "make it darker", "how would you build it?") is still talk, and with a plot essential there
   "build it" is left to the listener. "Turn this into a plot essential" builds wherever it is said.
 
+### One name for the button, one answer to "is there a plot essential" (v1.2.6)
+
+- **The room taught a button that then could not be found by that name.** The empty room says "Start a plot
+  essential builds it from everything you said" — and goes the moment he speaks. The same action in The documents
+  and the drawer was called "New plot essential". One name everywhere now, **Start a plot essential**, and the room
+  says where it stays (and that saying "build it" does the same). His rule: a control he cannot find does not exist.
+- **Three answers to whether a world has a plot essential.** The room and the crew counted one with words in it;
+  The documents and the drawer counted any plot essential document, so after "clear the plot essential" they
+  offered nothing to start one again. One rule, `hasPlotEssential` (js/doc/index.js), everywhere. (The name the
+  documents list suggests for a new document still asks whether any such document exists — to avoid a clash.)
+- The README still said a world "gets built as you talk" — false since v1.1.12. Corrected.
+
 ## Testing
 
 ```
 bash tests/all.sh           all seven, exit code intact
 ```
 
-    node tests/units.mjs         745 checks — the real modules on a real document, and what the persona hears
+    node tests/units.mjs         746 checks — the real modules on a real document, and what the persona hears
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       46 checks — the real serve.py, real files on disk, streams timed
     python3 tests/browser.py      75 checks — real Chromium at 390x844, end to end
-    python3 tests/walk_worlds.py 164 checks — the drawer, conversations, swipes and versions, edit and
+    python3 tests/walk_worlds.py 168 checks — the drawer, conversations, swipes and versions, edit and
                                               send again, delete, branch, go on, re-quoting, crafts,
                                               the thinking box live, backup and restore, a model too
                                               small for the world, a real server killed mid-edit
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-1,084 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
+1,089 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

@@ -14,7 +14,7 @@ import { $, el, openSheet, closeSheet, toast, redraw, field, select, group, ask,
 import { lintTransplant } from '../doc/transplant.js';
 import { guessKind } from '../doc/kind.js';
 import { originalCraft, ownCraft } from '../engine/crafts.js';
-import { parseDoc, indexLines, estimateTokens, nameWorld } from '../doc/index.js';
+import { parseDoc, indexLines, estimateTokens, nameWorld, hasPlotEssential } from '../doc/index.js';
 import { lint, readEvents, readWorldbook } from '../doc/lint.js';
 import { parseWorldbook, worldbookToST } from '../doc/worldbook.js';
 import { WHOLE_LIMIT } from '../agents/run.js';
@@ -113,11 +113,11 @@ function drawList() {
   body.style.padding = '';
   const docs = p.docs || [];
 
-  if (!docs.some((d) => d.kind === 'pe')) {
+  if (!hasPlotEssential(docs)) {
     const g = group('No plot essential yet',
-      'Talk the world through first \u2014 nothing is written until you ask. Then start one and it is built from everything you said, or bring in one you already have.');
+      'Talk the world through first \u2014 nothing is written until you ask. When you\u2019re ready, say \u201cbuild it\u201d or tap Start a plot essential, and it is built from everything you said; or bring in one you already have.');
     const row = el('div', 'btnrow');
-    const start = el('button', 'btn', 'New plot essential');
+    const start = el('button', 'btn', 'Start a plot essential');
     start.addEventListener('click', () => { closeSheet('docsSheet'); newPlotEssential(); });
     const bring = el('button', 'btn quiet', 'Bring one in');
     bring.addEventListener('click', bringIn);
@@ -152,7 +152,7 @@ function drawList() {
     body.append(row);
   }
 
-  if (docs.some((d) => d.kind === 'pe')) {
+  if (hasPlotEssential(docs)) {
     const row = el('div', 'btnrow');
     const bring = el('button', 'btn quiet', 'Bring one in');
     bring.addEventListener('click', bringIn);

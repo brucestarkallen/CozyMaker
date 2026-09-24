@@ -5,7 +5,7 @@ import * as store from '../store.js';
 import { runTurn, capUndo, landTurn, commit, versionOf, FRONT_ONLY, GO_ON } from '../agents/run.js';
 import { stopWork, onLearn } from '../agents/call.js';
 import { undoBatch } from '../doc/edits.js';
-import { DEFAULT_WORLD_TITLE } from '../doc/index.js';
+import { DEFAULT_WORLD_TITLE, hasPlotEssential } from '../doc/index.js';
 import { personaOf, names } from '../agents/persona.js';
 import { $, el, escape, closeSheet, toast, applyTheme, onRedraw, onAsk, fold, copyText } from './kit.js';
 import { openDocs, tidyOnLeaving, currentDocId, newPlotEssential, bringIn } from './docs.js';
@@ -138,9 +138,9 @@ function emptyRoom(p) {
   const who = names(personaOf(store.getHouse()));
   const them = who.maker === 'you' ? 'them' : who.maker;
   box.append(el('b', '', p.title));
-  const hasPE = (p.docs || []).some((d) => d.kind === 'pe' && (d.text || '').trim());
-  if (!hasPE) {
-    box.append(el('p', '', `Talk the world through with ${them} — the place, the people, the trouble. Nothing is written until you ask; when you're ready, Start a plot essential builds it from everything you said. Or bring in one you already have.`));
+  if (!hasPlotEssential(p.docs)) {
+    /* this room goes once he speaks, so it says where the button stays */
+    box.append(el('p', '', `Talk the world through with ${them} — the place, the people, the trouble. Nothing is written until you ask: when you're ready, say \u201cbuild it\u201d or tap Start a plot essential (it stays in The documents), and it's built from everything you said. Or bring in one you already have.`));
     const row = el('div', 'btnrow center');
     const start = el('button', 'btn', 'Start a plot essential');
     start.addEventListener('click', newPlotEssential);

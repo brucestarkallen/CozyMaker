@@ -839,6 +839,8 @@ eq('an unescaped quote inside a change is read, not lost', salvageEdits('[{"find
   eq('a turn that builds the plot essential names the world', out.world.title, 'The Saltmarsh Court');
   /* an old world opened: named, and written back (openProject writes an upgraded world back) */
   eq('a world opened with the old name and a titled plot essential is named on opening', upgradeWorld({ title: DEFAULT_WORLD_TITLE, docs: [pe('Ashwood')], chats: [] }).title, 'Ashwood');
+  const { hasPlotEssential } = await import('../js/doc/index.js');
+  eq('a world has a plot essential only when one has words in it', [hasPlotEssential([pe('X')]), hasPlotEssential([{ kind: 'pe', text: '  \n' }]), hasPlotEssential([{ kind: 'continuity', text: '# FILE 2' }]), hasPlotEssential([])], [true, false, false, false]);
 }
 
 /* --- THE KIND OF A DOCUMENT IS ONE RULE, AND THE CREW'S DOCUMENTS FOLLOW IT --- */

@@ -25,7 +25,7 @@ import { craftFor } from '../engine/crafts.js';
 import { openingFor, personaOf, addressWriter } from './persona.js';
 import { pickConnection, FRONT } from './roster.js';
 import { callModel, streamModel, enqueue } from './call.js';
-import { parseDoc, brief, readNeed, stripNeed, resolveNeed, LEAD_SHORT, nameWorld } from '../doc/index.js';
+import { parseDoc, brief, readNeed, stripNeed, resolveNeed, LEAD_SHORT, nameWorld, hasPlotEssential } from '../doc/index.js';
 import { route, confirmsOffer, offersIn, writtenCommand, justGreeting } from './router.js';
 import { listen, LISTENER, LISTEN_TALK } from './listener.js';
 import { parseEdits, stripEdits, stripThinking, applyRun, hash, openFileAtEnd } from '../doc/edits.js';
@@ -458,7 +458,7 @@ export async function runTurn({
 
   const past = (history || []).filter((t) => !t.failed);
   const docs = docsOf(project);
-  const hasPE = docs.some((d) => d.kind === 'pe' && (d.text || '').trim());
+  const hasPE = hasPlotEssential(docs);
   const lastTurn = past[past.length - 1];
   const lastMaker = lastTurn && lastTurn.role === 'maker' ? lastTurn : null;
   /* What the crew is still waiting on him for: only what was put to him in the

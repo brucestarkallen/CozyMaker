@@ -26,6 +26,14 @@ export const ALWAYS = ['SCENE', 'CURRENT SCENE', 'STATE', 'CALENDAR'];
  * arrives whole — a turn landing, one brought in, one he finishes typing, a
  * world opened — never mid-keystroke, where half a title would stick. */
 export const DEFAULT_WORLD_TITLE = 'A new world';
+
+/* WHETHER A WORLD HAS A PLOT ESSENTIAL: one with words in it. One rule for the
+ * room, the documents, the drawer and the crew — they used to disagree, so a
+ * plot essential that had been cleared was "there" to the documents and the
+ * drawer (which offered nothing to start one) and "not there" to the room. */
+export function hasPlotEssential(docs) {
+  return (docs || []).some((d) => (d.kind || 'pe') === 'pe' && String(d.text || '').trim());
+}
 export function plotEssentialTitle(docs) {
   for (const d of docs || []) {
     if ((d.kind || 'pe') !== 'pe') continue;

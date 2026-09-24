@@ -338,7 +338,7 @@ def main():
             text = page.locator("#drawerBody").inner_text()
             ok("the drawer lists every world", "The Leviathan Quarter" in text and "An Older World" in text, text[:300])
             ok("the drawer names its parts", "conversations" in text.lower() and "documents" in text.lower())
-            ok("an empty world offers a new plot essential by name", "New plot essential" in text)
+            ok("an empty world offers Start a plot essential, by that one name", "Start a plot essential" in text and "New plot essential" not in text)
             ok("and a way to bring one in", "Bring one in" in text)
             order = [t for t in re.findall(r"(The Leviathan Quarter|An Older World)", text)]
             ok("worlds are listed newest first", order[:2] == ["The Leviathan Quarter", "An Older World"], order)
@@ -1175,6 +1175,14 @@ def main():
             page.fill("#say", "a saltmarsh court where the tide decides who rules")
             page.click("#sendBtn")
             page.wait_for_function("() => document.querySelectorAll('.turn.maker').length >= 1 && !document.querySelector('#sendBtn.stop')", timeout=30000)
+            # the room that named the button is gone once he speaks; the button, by that name, is where it said
+            ok("once he has spoken, the room that named the button is gone", page.locator(".empty").count() == 0)
+            page.click("#docsBtn")
+            page.wait_for_timeout(400)
+            ok("and Start a plot essential is in The documents, by that same name",
+               page.locator("#docsBody .btn", has_text=re.compile("^Start a plot essential$")).count() == 1)
+            page.click("#docsSheet [data-close]")
+            page.wait_for_timeout(300)
             DELAY["piece"] = 1.2          # a builder that writes slowly enough to be watched
             page.fill("#say", "*new build the plot essential from what I said")
             page.click("#sendBtn")
@@ -1193,6 +1201,30 @@ def main():
             page.click("#menuBtn")
             page.wait_for_timeout(400)
             ok("and on the shelf", page.locator(".world-name", has_text=re.compile("^The Saltmarsh Court$")).count() == 1)
+            # a plot essential that has been cleared is no plot essential: every place offers to start one again
+            page.locator(".world-name", has_text=re.compile("^The Saltmarsh Court$")).click()
+            page.wait_for_timeout(700)
+            wid = new_id[0] if new_id else ""
+            wd = world(wid)
+            for d in wd["docs"]:
+                if d["name"] == "Plot Essential.md":
+                    d["text"] = ""
+            api(f"/api/project/{wid}", "PUT", wd)
+            page.reload(wait_until="networkidle")
+            page.wait_for_timeout(700)
+            page.click("#menuBtn")
+            page.wait_for_timeout(400)
+            ok("a cleared plot essential: the drawer offers Start a plot essential again",
+               page.locator("#drawer .btn", has_text=re.compile("^Start a plot essential$")).count() == 1)
+            page.mouse.click(372, 420)          # the drawer shuts by a tap outside it
+            page.wait_for_timeout(300)
+            page.click("#docsBtn")
+            page.wait_for_timeout(400)
+            ok("and so do The documents", page.locator("#docsBody .btn", has_text=re.compile("^Start a plot essential$")).count() == 1)
+            page.click("#docsSheet [data-close]")
+            page.wait_for_timeout(300)
+            page.click("#menuBtn")
+            page.wait_for_timeout(400)
             page.locator(".world-row", has_text=re.compile("^The Leviathan Quarter")).first.click()
             page.wait_for_timeout(700)
             ok("the other world is as it was", page.locator("#worldName").inner_text() == "The Leviathan Quarter")
