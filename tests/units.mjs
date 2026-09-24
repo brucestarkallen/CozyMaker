@@ -1111,6 +1111,14 @@ eq('"I" overrules a second-person frame', personaOf({ settings: { person: 'first
   eq('"can you" is still a request', pick("can you change Claire's age to fifteen"), 'editor');
   eq('"could we" is too', pick('could we move the scene to the Quay?'), 'editor');
   eq('whether the story can reach somewhere goes to the novelist', pick('can the story realistically reach a war by chapter ten?'), 'novelist');
+  /* "build it", with no plot essential yet, is the ask to build one */
+  const fresh = (m) => route(m, { hasPlotEssential: false, hasDocs: false }).map((r) => r.worker).join(',');
+  for (const m of ['ok build it', "let's build it!", 'go ahead and build it', 'build the world from what we said', 'write it up', 'can you build it?', 'yes, build it', 'create the world now'])
+    eq(`"${m}" in a new world builds it`, fresh(m), 'builder');
+  for (const m of ['the guild would build it into the tides', 'make it darker', 'build it around the lighthouse', 'how would you build it?', 'maybe build it later', 'write it in first person'])
+    eq(`"${m}" in a new world is still talk`, fresh(m), '');
+  eq('with a plot essential already there, "build it" is left to the listener', route('ok build it', { hasPlotEssential: true, hasDocs: true }).length, 0);
+  eq('"turn this into a plot essential" builds, whatever is there', pick('turn this into a plot essential'), 'builder');
   eq('and so does "how do we get to the wedding"', pick('how do we get to the wedding without rushing it?'), 'novelist');
 }
 
@@ -1906,6 +1914,25 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
     setTimeout(() => stop.abort(), 30);
     ({ r, heard } = await run('the tide should feel like a character', { signal: stop.signal }));
     eq('Stop while the listener reads: nothing is shown, and it stopped', [r.stopped === true, heard.text.length], [true, 0]);
+
+    /* "ok build it" in a new world, while the listener's answer cannot be read:
+     * it is still a build, and no reply is started early for it */
+    reset();
+    listenerSays = 'hm, hard to say';
+    const blank = { id: 'pe2', docs: [], chats: [], recentSections: [] };
+    const builderSaid = [];
+    const before = globalThis.fetch;
+    globalThis.fetch = async (url, init) => {
+      const req = JSON.parse(init.body);
+      const sys = (req.body.messages.find((m) => m.role === 'system') || {}).content || '';
+      if (/PROACTIVE CO-WRITER/.test(sys)) { builderSaid.push(1); log.push('builder'); return wholeAnswer({ choices: [{ message: { content: 'Built.\n<file name="Plot Essential.md">\n# PLOT ESSENTIAL — Salt — V1.0\n\n## SCENE\nWHERE: the quay\n</file>' }, finish_reason: 'stop' }] }); }
+      return before(url, init);
+    };
+    setTimeout(() => open(), 30);
+    r = await runTurn({ house, project: blank, message: 'ok build it', history: [{ role: 'writer', text: 'a drowned city where the guilds own the tides', at: 1 }, { role: 'maker', text: 'Lovely. Who holds the keys to the lock gates?', at: 2 }] });
+    globalThis.fetch = before;
+    eq('"ok build it" builds even when the listener\'s answer cannot be read', [builderSaid.length, r.project.docs.map((d) => d.name)], [1, ['Plot Essential.md']]);
+    eq('and nothing was started early for it: one reply, after the build', [fronts.length, log.includes('builder') && log.indexOf('front asked') > log.indexOf('builder')], [1, true]);
 
     /* thinking held while the listener read keeps the moment it really arrived */
     reset();

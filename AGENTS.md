@@ -700,13 +700,25 @@ front can receive inside that harness.
   reading, so the builder and the editor were taken for the eye. They know it by 13.6, which only the eye reads;
   every other marker was checked to be read by exactly one worker.
 
+### "Build it" builds (v1.2.5)
+
+- **The plainest ways to ask for a build were read as talk.** The keyword reading's build rule fires only when
+  the sentence names the plot essential (v1.1.12: talking a world through must never start one unasked), so
+  "ok build it", "let's build it", "go ahead and build it", "write it up", "can you build it?" all read as
+  talk. That reading is the fallback whenever the listener's answer cannot be read — and then "ok build it" in a
+  new world got a friendly reply and nothing built — and it decides whether his reply is started early, so every
+  build request started one and threw it away. Now, while a world has no plot essential, a whole short sentence
+  that IS the ask builds (`BUILD_IT`, router.js); a sentence that merely holds "build" ("the guild would build it
+  into the tides", "make it darker", "how would you build it?") is still talk, and with a plot essential there
+  "build it" is left to the listener. "Turn this into a plot essential" builds wherever it is said.
+
 ## Testing
 
 ```
 bash tests/all.sh           all seven, exit code intact
 ```
 
-    node tests/units.mjs         727 checks — the real modules on a real document, and what the persona hears
+    node tests/units.mjs         745 checks — the real modules on a real document, and what the persona hears
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       46 checks — the real serve.py, real files on disk, streams timed
@@ -718,7 +730,7 @@ bash tests/all.sh           all seven, exit code intact
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-1,066 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
+1,084 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

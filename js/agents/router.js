@@ -91,6 +91,7 @@ const PLAIN = [
   ['builder', { always: [], statement: [
     /\b(start|begin|create|build|make|write|draft)\b.{0,24}\b(the |a |my |our |this )?(new |fresh )?(plot essential|pe)\b/i,
     /\b(import|bring (in|over)|rebuild)\b.{0,30}\b(old|previous|existing|my) (story|doc|document|pe|plot essential)\b/i,
+    /\bturn (?:this|it|that|all (?:of )?(?:this|that)|everything|(?:our|the|my) (?:talk|brainstorm|ideas|notes))\s+into\s+(?:a |the |my |our )?(?:new )?(?:plot essential|pe)\b/i,
   ] }],
   ['chronicler', { always: [], statement: [
     /\b(fold|integrate|merge|roll)\b.{0,30}\b(in(to)?|to)\b.{0,20}\b(the )?(pe|plot essential)\b/i,
@@ -154,6 +155,24 @@ const PLAIN = [
     /\b(check|audit|review|go over|read back|look over)\b[^.?!]{0,30}\b(everything|the whole|all of it|the pe|the plot essential|the files?|for (mistakes|errors|problems|contradictions))\b/i,
   ] }],
 ];
+
+/* "BUILD IT." With no plot essential yet, "it" can only be the world being
+ * talked through: "ok build it", "let's build it", "go ahead and build the
+ * world", "write it up", "can you build it?". These are the plainest asks
+ * there are, and the rule above — which builds only when the plot essential
+ * is named, so talking a world through never starts one unasked — missed
+ * every one: said while the listener's answer could not be read, "ok build
+ * it" was taken for talk and nothing was built. Only a whole short sentence
+ * that IS the ask; a sentence that merely holds "build" ("the guild would
+ * build it into the tides") is talk. */
+const BUILD_IT = new RegExp(
+  '^\\s*(?:(?:ok(?:ay)?|alright|all right|right|yes|yeah|yep|cool|great|perfect|good|now|so|then|please|lovely|nice)[\\s,.!]+)*' +
+  '(?:(?:go ahead and|let\'?s|lets|please|now|just)\\s+)*' +
+  '(?:build|create|make|write|draft|put)\\s+' +
+  '(?:it|this|that|the world|this world|our world|the whole thing|it all|all of (?:it|this|that)|everything)' +
+  '(?:\\s+(?:up|together|down|out))?' +
+  '(?:\\s+(?:now|then|please|for me|already|from (?:all )?(?:this|that|what we (?:said|discussed|talked about|have|worked out)|everything|the (?:talk|conversation|brainstorm))))*' +
+  '\\s*[.!?]*\\s*$', 'i');
 
 /* Somebody asking, not telling. */
 const ASKING = /^\s*(do|does|did|is|are|was|were|am|should|shall|would|could|can|may|might|will|have|has|what|why|how|who|whom|whose|when|where|which)\b/i;
@@ -224,9 +243,12 @@ export function route(message, { hasPlotEssential = true, hasDocs = true, asStat
   }
 
   if (!found.length) {
-    /* Nothing named a job. If there is no plot essential yet and the writer
-     * has written something substantial, he is describing a world — that is a
-     * build, never an update. The craft is explicit about this one. */
+    /* Nothing named a job. "Build it", said while there is no plot essential
+     * yet, is still the ask to build one (BUILD_IT above). Anything else is
+     * talk: describing a world, however much of it, is brainstorming, and
+     * only an explicit ask builds. */
+    const bare = text.replace(MANNERS, '');
+    if (!hasPlotEssential && BUILD_IT.test(bare)) return [{ worker: 'builder', why: 'a build asked for in plain words', about: text, strong: false }];
     return [];
   }
 
