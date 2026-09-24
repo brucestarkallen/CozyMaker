@@ -1740,6 +1740,126 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
   } catch (e) { ok('the streaming tests ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
 }
 
+/* ============================ HIS ANSWER STARTS WHILE THE LISTENER READS */
+{
+  const { runTurn } = await import('../js/agents/run.js');
+  const { LISTENER_MARK } = await import('../js/agents/listener.js');
+  const realFetch = globalThis.fetch;
+  const house = { connections: [{ id: 'c1', url: 'https://relay.example/v1', model: 'm', key: 'k' }], agentConnections: {}, settings: { yourName: 'Bruce' }, personaFrame: '' };
+  const world = () => ({ id: 'pe1', docs: [{ id: 'd1', name: 'Plot Essential.md', kind: 'pe', text: '# PLOT ESSENTIAL — Tide — V1.0\n\n## WORLD\n### Rules\n- The tide decides who rules.\n\n## SCENE\nWHERE: the salt flats\n' }], chats: [], recentSections: [] });
+  let log, gate, open, listenerSays, fronts, frontSays;
+  const reset = () => {
+    log = []; fronts = [];
+    gate = new Promise((r) => { open = r; });
+    listenerSays = '{"jobs":[]}';
+    frontSays = () => [{ choices: [{ delta: { content: 'It already does, a little.' }, finish_reason: 'stop' }] }, '[DONE]'];
+  };
+  /* a stream that honours Stop and a letting-go, the way a real one does */
+  const streamOf = (lines, signal, slow = 0) => new Response(new ReadableStream({
+    async start(c) {
+      const enc = new TextEncoder();
+      signal && signal.addEventListener('abort', () => { try { c.error(new DOMException('let go', 'AbortError')); } catch (_) {} }, { once: true });
+      for (const l of lines) {
+        if (signal && signal.aborted) return;
+        c.enqueue(enc.encode('data: ' + (typeof l === 'string' ? l : JSON.stringify(l)) + '\n\n'));
+        if (slow) await new Promise((r) => setTimeout(r, slow));
+      }
+      try { c.close(); } catch (_) {}
+    },
+  }), { status: 200 });
+  globalThis.fetch = async (url, init) => {
+    const req = JSON.parse(init.body);
+    const sys = (req.body.messages.find((m) => m.role === 'system') || {}).content || '';
+    if (forFront(req)) {
+      fronts.push(req.body);
+      log.push(fronts.length === 1 ? 'front asked' : 'front asked again');
+      const lines = frontSays(fronts.length);
+      if (!Array.isArray(lines)) return lines;
+      return streamOf(lines, init.signal, fronts.length === 1 ? 40 : 0);
+    }
+    if (sys.includes(LISTENER_MARK)) {
+      log.push('listener asked');
+      await gate;
+      log.push('listener answered');
+      return wholeAnswer({ choices: [{ message: { content: listenerSays }, finish_reason: 'stop' }] });
+    }
+    log.push('worker');
+    return wholeAnswer({ choices: [{ message: { content: 'Added it.\n<edits>[{"file":"Plot Essential.md","insert_after":"- The tide decides who rules.","replace":"- The kingdom has a second moon."}]</edits>' }, finish_reason: 'stop' }] });
+  };
+  const run = async (message, extra = {}) => {
+    const heard = { text: [], thinking: [] };
+    setTimeout(() => open(), 120);
+    const r = await runTurn({ house, project: world(), message,
+      onText: (t, at) => heard.text.push([t, at, Date.now(), log.includes('listener answered')]),
+      onThinking: (t, at) => heard.thinking.push([t, at, Date.now(), log.includes('listener answered')]), ...extra });
+    return { r, heard };
+  };
+  try {
+    /* talk: the reply is asked for at once, and shown only once the listener has answered */
+    reset();
+    let { r, heard } = await run('the tide should feel like a character');
+    eq('talk: his answer is asked for at the same moment the listener reads', log.slice(0, 2).sort(), ['front asked', 'listener asked']);
+    ok('talk: nothing of it is shown before the listener has answered', heard.text.length > 0 && heard.text.every(([, , , after]) => after === true),
+      JSON.stringify(heard.text.map(([t, , , after]) => [t, after])));
+    eq('talk: one reply, the one that was started, word for word', [fronts.length, r.reply, r.error], [1, 'It already does, a little.', null]);
+
+    /* the same words it would have had: the early reply reads exactly what the ordinary one reads */
+    const early = fronts[0];
+    reset();
+    listenerSays = 'not an answer at all';           /* the old reading runs, and sends nobody */
+    ({ r } = await run('the tide should feel like a character'));
+    eq('talk: the early reply reads exactly what the ordinary one reads', JSON.stringify(fronts[0].messages), JSON.stringify(early.messages));
+
+    /* a job the keyword reading could not see: the early reply is let go unseen */
+    reset();
+    listenerSays = '{"jobs":[{"worker":"editor","task":"Add a second moon to the rules."}]}';
+    frontSays = (n) => (n === 1
+      ? [{ choices: [{ delta: { content: 'EARLY WORDS ' } }] }, { choices: [{ delta: { content: 'that must never show' } }] }, { choices: [{ delta: { content: '.' }, finish_reason: 'stop' }] }, '[DONE]']
+      : [{ choices: [{ delta: { content: 'Two moons it is.' }, finish_reason: 'stop' }] }, '[DONE]']);
+    ({ r, heard } = await run('give the kingdom a second moon'));
+    ok('a job after all: the early reply never reaches him', !heard.text.some(([t]) => /EARLY|never show/.test(t)), JSON.stringify(heard.text.map(([t]) => t)));
+    eq('a job after all: he hears the reply written after the work', [r.reply, fronts.length], ['Two moons it is.', 2]);
+    ok('and that one is told what got done', /What got done while you were talking/.test(JSON.stringify(fronts[1].messages)));
+    ok('and the change landed', /second moon/.test(r.project.docs[0].text));
+
+    /* a job the keyword reading does see: nothing is started early */
+    reset();
+    listenerSays = '{"jobs":[{"worker":"editor","task":"Change the rule."}]}';
+    ({ r } = await run('change the rule to say the tide decides nothing'));
+    eq('an obvious job starts nothing early: one reply, after the work', [fronts.length, log.indexOf('front asked') > log.indexOf('worker')], [1, true]);
+
+    /* something waits on him: his words are likely its answer, so nothing is started early */
+    reset();
+    const history = [{ role: 'writer', text: 'tidy it', at: 1 }, { role: 'maker', text: 'Here is the plan.', at: 2, asks: [{ worker: 'showrunner', ask: 'PLAN: cut the old subplot. Go ahead?' }] }];
+    ({ r } = await run('sounds right to me', { history }));
+    ok('with something waiting on him, the reply waits for the listener', log.indexOf('front asked') > log.indexOf('listener answered'), JSON.stringify(log));
+
+    /* the early reply failed before a word came: the ordinary one is asked for, and he still gets his answer */
+    reset();
+    frontSays = (n) => (n === 1 ? wholeAnswer({ error: 'provider', status: 429, detail: 'Too Many Requests' }) : [{ choices: [{ delta: { content: 'Here I am.' }, finish_reason: 'stop' }] }, '[DONE]']);
+    ({ r } = await run('the tide should feel like a character'));
+    eq('an early reply that failed before a word costs him nothing: the ordinary one comes', [r.reply, r.error, fronts.length], ['Here I am.', null, 2]);
+    reset();
+    frontSays = () => wholeAnswer({ error: 'provider', status: 401, detail: 'Incorrect API key provided' });
+    ({ r } = await run('the tide should feel like a character'));
+    eq('but a bad key is not asked twice: it is said, once', [fronts.length, /Incorrect API key/.test(r.error || '')], [1, true]);
+
+    /* Stop while the listener reads: nothing is shown, and the turn says it stopped */
+    reset();
+    const stop = new AbortController();
+    setTimeout(() => stop.abort(), 30);
+    ({ r, heard } = await run('the tide should feel like a character', { signal: stop.signal }));
+    eq('Stop while the listener reads: nothing is shown, and it stopped', [r.stopped === true, heard.text.length], [true, 0]);
+
+    /* thinking held while the listener read keeps the moment it really arrived */
+    reset();
+    frontSays = () => [{ choices: [{ delta: { reasoning_content: 'Mm, the tide as a character...' } }] }, { choices: [{ delta: { content: 'Yes.' }, finish_reason: 'stop' }] }, '[DONE]'];
+    ({ r, heard } = await run('the tide should feel like a character'));
+    ok('thinking held unseen carries the moment it really arrived', heard.thinking.length === 1 && heard.thinking[0][3] === true && heard.thinking[0][1] > 0 && heard.thinking[0][1] < heard.thinking[0][2] - 40,
+      JSON.stringify(heard.thinking.map(([, at, shown]) => shown - at)));
+  } catch (e) { ok('the early-reply tests ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
+}
+
 /* ============================ the save line: deletes and house saves (v1.1.8) */
 {
   const store = await import('../js/store.js');

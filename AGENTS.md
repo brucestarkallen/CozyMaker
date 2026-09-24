@@ -653,25 +653,45 @@ front can receive inside that harness.
   streams, and the browser suites' stand-ins stream the crew's answers — so the real browser reads the crew
   through the streamed path end to end.
 
+### His answer is written while the listener reads (v1.2.3)
+
+- **Every plain message waited on a whole model call before the one he talks to began.** The listener reads
+  each message first; on a model that thinks that is ten to thirty seconds of nothing, every message, while he
+  talks a new world through. Now, when nothing about the message looks like a job and nothing waits on him
+  (`plainTalk`: no keyword job, no bare yes to an offer, nothing asked of him), his reply starts at the same
+  moment as the listener, **held unseen** (`heldFront`). If the listener sends nobody and clears nothing, it is
+  shown the instant the listener has answered — built by the same `frontMessages` from the same inputs, so word
+  for word what it would have been (a unit checks the two requests are identical). If the listener sends
+  somebody, it is let go, never seen, and the reply is written after the work as always.
+- **Measured in the real browser**, a 2 s listener and a 2 s reply, press to reply on screen, three runs:
+  1.2.2 4.25 / 4.17 / 4.17 s; now 2.22 / 2.12 / 2.11 s. The walk keeps it (fails over 3.4 s; ran against 1.2.2
+  it fails at 4.5 s).
+- **Starting early can never cost him his answer**: an early reply that failed before a word came, for a reason
+  starting early could cause (busy, a limit on calls at once, a dropped line), is asked for again the ordinary
+  way; a bad key is said once, never asked twice (the walk caught that). Held thinking keeps the moment it really
+  arrived, so the box says how long the model truly thought.
+- A connection that refuses a thinking field is now met by the listener and the reply together on the very first
+  call, and each learns from it; the walk checks each one's own tries, never their interleaving.
+
 ## Testing
 
 ```
 bash tests/all.sh           all seven, exit code intact
 ```
 
-    node tests/units.mjs         702 checks — the real modules on a real document, and what the persona hears
+    node tests/units.mjs         716 checks — the real modules on a real document, and what the persona hears
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       46 checks — the real serve.py, real files on disk, streams timed
     python3 tests/browser.py      75 checks — real Chromium at 390x844, end to end
-    python3 tests/walk_worlds.py 162 checks — the drawer, conversations, swipes and versions, edit and
+    python3 tests/walk_worlds.py 164 checks — the drawer, conversations, swipes and versions, edit and
                                               send again, delete, branch, go on, re-quoting, crafts,
                                               the thinking box live, backup and restore, a model too
                                               small for the world, a real server killed mid-edit
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-1,039 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
+1,055 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

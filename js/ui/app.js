@@ -200,7 +200,7 @@ function tookWords(ms) {
   const sec = Math.max(0, ms || 0) / 1000;
   return sec < 60 ? Math.round(sec) + 's' : Math.floor(sec / 60) + 'm ' + Math.round(sec % 60) + 's';
 }
-function thinkingBox(text, ms, { live = false } = {}) {
+function thinkingBox(text, ms, { live = false, since = 0 } = {}) {
   const box = el('div', 'thinking-box');
   const head = el('button', 'thinking-head');
   head.type = 'button';
@@ -216,16 +216,18 @@ function thinkingBox(text, ms, { live = false } = {}) {
   head.addEventListener('click', (e) => { e.stopPropagation(); body.hidden = !body.hidden; show(); });
   show();
   if (!live) return { node: box };
-  const start = Date.now();
+  /* a reply held while the listener read arrives with the moments its thinking
+   * really began and ended, so the box says how long the model truly thought */
+  const start = since > 0 ? since : Date.now();
   let stopped = 0;
   const tick = setInterval(() => { label = `Thinking\u2026 ${tookWords(Date.now() - start)}`; show(); }, 1000);
   return {
     node: box,
     add(chunk) { words.textContent += chunk; },
-    stop() {
+    stop(at = 0) {
       if (stopped) return stopped;
       clearInterval(tick);
-      stopped = Math.max(1, Date.now() - start);
+      stopped = Math.max(1, (at > 0 ? at : Date.now()) - start);
       label = `Thought for ${tookWords(stopped)}`;
       show();
       return stopped;
@@ -613,7 +615,7 @@ async function send(text, forceWorker, opts = {}) {
   bubble.append(inner);
   let liveThinking = null;
   let thinkingMs = 0;
-  const thoughtDone = () => { if (liveThinking && !thinkingMs) thinkingMs = liveThinking.stop(); };
+  const thoughtDone = (at = 0) => { if (liveThinking && !thinkingMs) thinkingMs = liveThinking.stop(at); };
   const titled = (store.getProject().chats || []).find((c) => c.id === chatId);
   running = { worldId, chatId, chatTitle: (titled || chat).title, startedAt: Date.now(), abort, bubble, replaceAt: opts.replaceAt };
   draw();
@@ -624,11 +626,11 @@ async function send(text, forceWorker, opts = {}) {
     result = await runTurn({
       house, project: store.getProject(), history, message: text, forceWorker,
       onStatus: setStatus,
-      onText: (chunk) => { thoughtDone(); keepPlace(() => { reply += chunk; inner.textContent = reply; clearStatus(); }); },
-      onThinking: (chunk) => {
+      onText: (chunk, at) => { thoughtDone(at); keepPlace(() => { reply += chunk; inner.textContent = reply; clearStatus(); }); },
+      onThinking: (chunk, at) => {
         thinking += chunk;
         keepPlace(() => {
-          if (!liveThinking) { liveThinking = thinkingBox('', 0, { live: true }); bubble.insertBefore(liveThinking.node, inner); clearStatus(); }
+          if (!liveThinking) { liveThinking = thinkingBox('', 0, { live: true, since: at }); bubble.insertBefore(liveThinking.node, inner); clearStatus(); }
           liveThinking.add(chunk);
         });
       },

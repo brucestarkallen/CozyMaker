@@ -78,7 +78,8 @@ class Model(http.server.BaseHTTPRequestHandler):
         sent = json.loads(self.rfile.read(n).decode())
         # an address that will not take a thinking field, and one with a bad key
         if self.path.startswith("/refuse/"):
-            calls.append({"who": "refuse", "body": sent})
+            asker = which(next((m["content"] for m in sent.get("messages", []) if m.get("role") == "system"), ""))
+            calls.append({"who": "refuse", "asker": asker, "body": sent})
             if any(k in sent for k in ("thinking", "reasoning_effort", "reasoning", "enable_thinking")):
                 return self.refuse(400, "Unrecognized request argument supplied: reasoning_effort")
         if self.path.startswith("/small/"):
@@ -609,13 +610,19 @@ def main():
             # what each refusal names (Cozy Tavern M350): the first try names reasoning_effort, the second
             # teaches nothing new, so thinking is silenced for the day (M319), and the third goes through.
             # (Before the port this was 2 tries, because the first refusal threw every field away at once.)
-            # The listener rides the front's connection when nothing else is set, so it meets the refusal
-            # first and learns; the front after it goes right the first time.
+            # The listener rides the front's connection when nothing else is set, and since v1.2.3 the front
+            # starts at the same moment as the listener on plain talk, so on the very first call BOTH meet the
+            # unlearned connection, each learning as it goes (a lesson one learns is on the connection the
+            # other rebuilds from). Each one's own tries are checked, never how they interleave.
             THINK = ("thinking", "reasoning_effort", "reasoning", "enable_thinking")
-            ok("a refused thinking level is learned from and goes again", len(refused) == 4, len(refused))
-            ok("the second try left out the field that was named", len(refused) == 4 and "reasoning_effort" not in refused[1]["body"])
-            ok("the third carried no thinking at all", len(refused) == 4 and not any(k in refused[2]["body"] for k in THINK))
-            ok("and every call after the lesson carries none either", all(not any(k in c["body"] for k in THINK) for c in refused[2:]))
+            by = {}
+            for c in refused:
+                by.setdefault(c["asker"], []).append(c)
+            ok("a refused thinking level is learned from and goes again — the listener and the front each",
+               sorted(by) == ["front", "listener"] and all(2 <= len(v) <= 3 for v in by.values()), {k: len(v) for k, v in by.items()})
+            ok("each one's first try carried the level as set", all("reasoning_effort" in v[0]["body"] for v in by.values()))
+            ok("each one's later tries left out the field that was named", all("reasoning_effort" not in c["body"] for v in by.values() for c in v[1:]))
+            ok("each one's last try carried no thinking at all, and went through", all(not any(k in v[-1]["body"] for k in THINK) for v in by.values()))
             learned = [c for c in api("/api/house")["connections"] if c["id"] == "c2"][0].get("learned") or {}
             ok("what it learned is kept on the connection", "reasoning_effort" in (learned.get("drop") or []) and learned.get("downAt"), learned)
             last = page.locator(".turn.maker .bubble").last.inner_text()
@@ -1187,6 +1194,24 @@ def main():
             page.locator(".world-row", has_text=re.compile("^The Leviathan Quarter")).first.click()
             page.wait_for_timeout(700)
             ok("the other world is as it was", page.locator("#worldName").inner_text() == "The Leviathan Quarter")
+
+            # ---------------------------------------- his answer is written while the listener reads
+            # (measured before the change: 4.2s with a 2s listener and a 2s reply; the two in a row)
+            page.mouse.click(372, 420)
+            page.wait_for_timeout(300)
+            DELAY["worker"] = 2.0
+            DELAY["front"] = 2.0
+            calls.clear()
+            page.fill("#say", "the tide should feel like a character to me")
+            t0 = time.time()
+            page.click("#sendBtn")
+            page.wait_for_function("() => { const b = document.querySelectorAll('.turn.maker .bubble'); return b.length && /\\[reply \\d+\\]/.test(b[b.length-1].textContent) && /character to me/.test(document.querySelectorAll('.turn.writer .bubble')[document.querySelectorAll('.turn.writer .bubble').length-1].textContent); }", timeout=30000)
+            took = time.time() - t0
+            DELAY["worker"] = 0.0
+            DELAY["front"] = 0.0
+            page.wait_for_function("() => !document.querySelector('#sendBtn.stop')", timeout=30000)
+            ok("plain talk: the reply is written while the listener reads — the wait is the slower of the two, not both", took < 3.4, round(took, 2))
+            ok("and one reply was asked for, beside one listener", sorted(c["who"] for c in calls) == ["front", "listener"], [c["who"] for c in calls])
 
             wd = world("p_new")
             wd["docs"] = [d for d in wd["docs"] if d["id"] != "dwb" and d["name"] != "Plot Essential (copy).md"]

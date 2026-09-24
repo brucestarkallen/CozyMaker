@@ -478,6 +478,27 @@ export async function runTurn({
     }
     return agreed.length ? agreed : route(message, { hasPlotEssential: hasPE, hasDocs: docs.length > 0 });
   };
+  /* WHAT THE ONE AT THE FRONT READS, one way whenever it is written: his
+   * instructions and the house's plain words; then the talk, the book as it
+   * stands, what got done, what waits on him, and what he just said. */
+  const frontSystem = openingFor(p, frontBody(p));
+  const frontMessages = (world, said, waiting) => {
+    const n = (house.settings || {}).turnsOnScreen || 40;
+    const earlier = past.slice(-n).map((t) => ({ role: t.role === 'writer' ? 'user' : 'assistant', content: t.text || '' }));
+    const ask = [
+      'Where the book stands right now:',
+      docBriefs(world, { message, recent: world.recentSections || [], forFront: true }),
+      said ? `\nWhat got done while you were talking:\n${said}` : '',
+      waiting.length ? `\n${waitingBrief(waiting, p)}` : '',
+      /* his words under his name; with no name set, never "you said:", which
+       * tells the persona it said them itself. Go on is the house's note and
+       * carries no speaker at all. */
+      forceWorker === FRONT_ONLY ? `\n${message}` : `\n${p.you ? `${p.you} said:` : 'What was just said to you:'}\n${message}`,
+    ].filter(Boolean).join('\n\n');
+    return oneVoice(earlier.concat([{ role: 'user', content: ask }]));
+  };
+  let early = null;
+  let earlyKept = false;
   let intents;
   let acts = [];
   if (forceWorker === FRONT_ONLY) intents = [];
@@ -490,17 +511,36 @@ export async function runTurn({
      * on him. On the same channel as every worker, so Stop and a change of
      * world let it go like any other job. */
     status('reading that');
+    /* HIS ANSWER STARTS WHILE THE LISTENER READS. Most of what he says while he
+     * talks a world through is conversation, and it used to wait on a whole
+     * model call (the listener) before the one he talks to began — ten or
+     * thirty seconds on a model that thinks. So when nothing about it looks
+     * like a job and nothing waits on him, the reply starts at the same moment,
+     * held unseen: if the listener sends nobody, it is shown the instant the
+     * listener has answered, word for word what it would have been; if the
+     * listener sends somebody, it is let go and never seen. */
+    const plainTalk = !open.length && !route(message, { hasPlotEssential: hasPE, hasDocs: docs.length > 0 }).length &&
+      !(lastMaker && confirmsOffer(message) && offersIn(lastMaker.text).length);
+    if (plainTalk) {
+      const sameWords = frontMessages(project, '', []);
+      early = heldFront((t, th, sig) => streamModel(frontConn, { system: frontSystem, messages: sameWords, onText: t, onThinking: th, signal: either(signal, sig) }));
+    }
     const heard = await enqueue(project.id, LISTENER, ({ signal: s, stale }) => listen({
       conn: connFor(LISTENER), frame: CRAFT_FRAME, sections, docs, open, message, p,
       talk: conversationFor(past, p, LISTEN_TALK), signal: either(signal, s), stale,
     }));
-    if (stopped()) return { project, reply: '', cards: [], batches: [], crew: [], edits: [], asks: [], error: 'stopped', stopped: true };
+    if (stopped()) { if (early) early.drop(); return { project, reply: '', cards: [], batches: [], crew: [], edits: [], asks: [], error: 'stopped', stopped: true }; }
     intents = heard && heard.ok ? heard.jobs.map((j) => jobFor(j, open, message, p)) : oldReading();
     if (heard && heard.ok) {
       acts = [
         ...(heard.clear || []).map((f) => ({ house: true, clear: true, file: f, reason: 'you asked for it to be cleared' })),
         ...(heard.delete || []).map((f) => ({ house: true, delete_file: f, reason: 'you asked for it to be deleted' })),
       ];
+    }
+    /* nobody to send and nothing to clear: what was started is what he gets */
+    if (early) {
+      earlyKept = !intents.length && !acts.length;
+      if (!earlyKept) early.drop();
     }
   }
   const talk = conversationFor(past.concat([{ role: 'writer', text: message }]), p);
@@ -656,29 +696,19 @@ export async function runTurn({
   if (stopped()) return { project: working, reply: '', cards: allCards, batches, crew, edits: turnEdits, asks, error: 'stopped', stopped: true };
 
   /* Now the one voice the writer hears. */
-  const system = openingFor(p, frontBody(p));
   const said = backstageBrief(crew, allCards, p);
-  const n = (house.settings || {}).turnsOnScreen || 40;
-  const earlier = past.slice(-n).map((t) => ({ role: t.role === 'writer' ? 'user' : 'assistant', content: t.text || '' }));
-  const ask = [
-    'Where the book stands right now:',
-    docBriefs(working, { message, recent: working.recentSections || [], forFront: true }),
-    said ? `\nWhat got done while you were talking:\n${said}` : '',
-    asks.length ? `\n${waitingBrief(asks, p)}` : '',
-    /* his words under his name; with no name set, never "you said:", which
-     * tells the persona it said them itself. Go on is the house's note and
-     * carries no speaker at all. */
-    forceWorker === FRONT_ONLY ? `\n${message}` : `\n${p.you ? `${p.you} said:` : 'What was just said to you:'}\n${message}`,
-  ].filter(Boolean).join('\n\n');
-  const messages = oneVoice(earlier.concat([{ role: 'user', content: ask }]));
+  const messages = frontMessages(working, said, asks);
 
   let reply = '';
   try {
-    const out = await streamModel(frontConn, {
-      system, messages,
-      onText: (t) => { reply += t; onText(t); },
-      onThinking, signal,
-    });
+    const out = early && earlyKept
+      ? await early.keep((t, at) => { reply += t; onText(t, at); }, onThinking,
+        () => streamModel(frontConn, { system: frontSystem, messages, onText: (t) => { reply += t; onText(t); }, onThinking, signal }))
+      : await streamModel(frontConn, {
+        system: frontSystem, messages,
+        onText: (t) => { reply += t; onText(t); },
+        onThinking, signal,
+      });
     reply = endAtControlToken(out.text || reply);
     if (out.cut) return { project: working, reply, cards: allCards, batches, crew, edits: turnEdits, asks, error: null, cut: true };
   } catch (e) {
@@ -689,6 +719,37 @@ export async function runTurn({
     };
   }
   return { project: working, reply, cards: allCards, batches, crew, edits: turnEdits, asks, error: null };
+}
+
+/* A REPLY STARTED EARLY AND HELD UNSEEN (see the listener, in runTurn). What
+ * arrives is kept with the moment it arrived, so a thinking box shown later
+ * still says how long the model really thought. keep() shows what was held,
+ * then lets the rest arrive live; if the early reply failed before a word of
+ * it came, for a reason that starting early could have caused — the provider
+ * busy, a limit on calls at once, a dropped line — the ordinary one is asked
+ * for instead (again()), so starting early can never cost him his answer. A
+ * bad key or a wrong model fails the same way twice, so it is said as it is.
+ * drop() lets it go unseen. */
+const PASSING = (status) => !status || status === 408 || status === 429 || status >= 500;
+export function heldFront(start) {
+  const ctl = new AbortController();
+  const held = [];
+  let live = null;
+  let spoke = false;
+  const toText = (t) => { spoke = true; if (live) live.text(t); else held.push(['text', t, Date.now()]); };
+  const toThinking = (t) => { if (live) live.thinking(t); else held.push(['thinking', t, Date.now()]); };
+  const done = Promise.resolve().then(() => start(toText, toThinking, ctl.signal)).then((out) => ({ ok: true, out }), (e) => ({ ok: false, e }));
+  return {
+    drop() { ctl.abort(); },
+    async keep(onText, onThinking, again) {
+      for (const [k, t, at] of held.splice(0)) (k === 'text' ? onText : onThinking)(t, at);
+      live = { text: (t) => onText(t), thinking: (t) => onThinking(t) };
+      const r = await done;
+      if (r.ok) return r.out;
+      if (!spoke && !(r.e && r.e.name === 'AbortError') && PASSING(Number(r.e && r.e.status) || 0)) return again();
+      throw r.e;
+    },
+  };
 }
 
 /* A job the listener chose. When it answers something a worker put to him,

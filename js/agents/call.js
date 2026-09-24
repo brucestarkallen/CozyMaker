@@ -248,6 +248,7 @@ async function streamOnce(conn, opts, dropThinking) {
   const out = await readReply(req.house, res, { onText: opts.onText, onThinking: opts.onThinking });
   if (out.finish === 'error' && !out.text) {
     const err = new Error(out.error || 'the provider was not happy with that');
+    err.status = Number(out.status) || 0;
     err.refusedThinking = !dropThinking && !out.midStream && out.status >= 400 && out.status < 500 &&
       REASONING_REFUSAL.test(err.message) && THINKING_FIELDS.some((f) => f in req.body);
     err.body = req.body;
