@@ -277,6 +277,11 @@ function editConnection(id) {
   const row = el('div', 'btnrow');
   const saveBtn = el('button', 'btn', 'Save');
   saveBtn.addEventListener('click', async () => {
+    /* what the last "Try it" said was said of this address, this model, this
+     * key, this thinking — change any of them and it no longer describes this
+     * connection, so it goes rather than stand there looking current */
+    const tried = () => JSON.stringify([c.url || '', c.model || '', c.key || '', c.thinking || '', c.thinkingBudget ?? '']);
+    const before = tried();
     c.name = name.value.trim() || model.value.trim() || 'a connection';
     c.url = url.value.trim();
     c.model = model.value.trim();
@@ -291,6 +296,7 @@ function editConnection(id) {
     setNumberOrDrop(c, 'maxTokens', maxTok.value);
     if (thinking.value === '') delete c.thinking; else c.thinking = thinking.value;
     setNumberOrDrop(c, 'thinkingBudget', budget.value);
+    if (tried() !== before) delete c.tested;
     if (!existing) house.connections.push(c);
     if (!house.agentConnections[FRONT]) house.agentConnections[FRONT] = c.id;
     await store.saveHouse(house);
@@ -303,6 +309,9 @@ function editConnection(id) {
   if (existing) {
     const del = el('button', 'btn danger', 'Remove');
     del.addEventListener('click', async () => {
+      /* like every other delete here, it asks first — and this one keeps no copy:
+       * keys are never put in a backup, so the key goes with it */
+      if (!confirm(`Remove the connection \u201c${c.name || c.model || 'unnamed'}\u201d? Its key goes with it \u2014 keys are never kept in a backup.`)) return;
       house.connections = house.connections.filter((x) => x.id !== c.id);
       for (const k of Object.keys(house.agentConnections)) {
         if (house.agentConnections[k] === c.id) delete house.agentConnections[k];

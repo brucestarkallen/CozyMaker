@@ -740,6 +740,19 @@ front can receive inside that harness.
   tier of the tower", "a protocol officer") are untouched. The persona firewall's machinery list now includes
   them, with a worker that writes every one; without the backstop it fails.
 
+### The connections panel, read to its end (v1.2.9)
+
+- **A connection kept its last test result after it had become another connection.** "Last tried …: Thinking works
+  on this connection" stayed under a connection whose model, address, key or thinking had since changed — telling
+  him something about a model he no longer uses, as if current. What the model taught the house was already safe
+  (the lessons are kept for one model at one address, `learnKey`); the test result was not. It goes now whenever
+  what it was said of changes; a rename keeps it.
+- **Remove on a connection deleted it, key and all, on one tap.** Every other delete here asks first and says what
+  survives; this one kept no copy at all, because keys are never put in a backup. It asks now, and says the key
+  goes with it.
+- Read to its end and sound: nothing left empty is ever stored as a number; the front falls back to the first
+  connection when its own is removed, and so does the dropdown that shows it; lessons never cross models.
+
 ## Testing
 
 ```
@@ -751,14 +764,14 @@ bash tests/all.sh           all seven, exit code intact
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       46 checks — the real serve.py, real files on disk, streams timed
     python3 tests/browser.py      75 checks — real Chromium at 390x844, end to end
-    python3 tests/walk_worlds.py 169 checks — the drawer, conversations, swipes and versions, edit and
+    python3 tests/walk_worlds.py 174 checks — the drawer, conversations, swipes and versions, edit and
                                               send again, delete, branch, go on, re-quoting, crafts,
                                               the thinking box live, backup and restore, a model too
                                               small for the world, a real server killed mid-edit
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-1,092 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
+1,097 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

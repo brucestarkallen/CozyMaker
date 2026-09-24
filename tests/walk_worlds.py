@@ -1249,6 +1249,41 @@ def main():
             ok("plain talk: the reply is written while the listener reads — the wait is the slower of the two, not both", took < 3.4, round(took, 2))
             ok("and one reply was asked for, beside one listener", sorted(c["who"] for c in calls) == ["front", "listener"], [c["who"] for c in calls])
 
+            # ---------------------------------------- a connection's last test result, and removing one
+            h = api("/api/house")
+            h["connections"].append({"id": "c9", "name": "spare", "url": f"http://127.0.0.1:{MODEL_PORT}/v1", "model": "spare-model", "key": "k9",
+                                     "tested": {"at": 1700000000000, "words": "Yes \u2014 it answered.", "ok": True, "thinks": False}})
+            api("/api/house", "PUT", h)
+            page.reload(wait_until="networkidle")
+            page.wait_for_timeout(600)
+            page.click("#settingsBtn")
+            page.wait_for_timeout(500)
+            spare = lambda: page.locator("#houseBody .row", has=page.locator("b", has_text=re.compile("^spare(, renamed)?$")))
+            ok("a connection shows what its last test said", "it answered." in spare().inner_text(), spare().inner_text()[:200])
+            spare().locator(".grow").click()
+            page.wait_for_timeout(300)
+            page.locator("#houseBody input[placeholder='What to call it']").fill("spare, renamed")
+            page.locator("#houseBody .btn", has_text=re.compile("^Save$")).click()
+            page.wait_for_timeout(600)
+            ok("renamed, it keeps what its last test said — the test was of the same model", "it answered." in spare().inner_text())
+            spare().locator(".grow").click()
+            page.wait_for_timeout(300)
+            page.locator("#houseBody input[placeholder='deepseek-chat']").fill("another-model")
+            page.locator("#houseBody .btn", has_text=re.compile("^Save$")).click()
+            page.wait_for_timeout(600)
+            ok("given another model, the old test result goes rather than stand there looking current",
+               "it answered." not in spare().inner_text() and not any(c.get("tested") for c in api("/api/house")["connections"] if c["id"] == "c9"))
+            said = []
+            page.on("dialog", lambda d: said.append(d.message))     # recorded only; the walk's standing handler says yes
+            spare().locator(".grow").click()
+            page.wait_for_timeout(300)
+            page.locator("#houseBody .btn", has_text="Remove").click()
+            page.wait_for_timeout(700)
+            ok("removing a connection asks first, and says its key goes with it", bool(said) and "key goes with it" in said[-1], said)
+            ok("and once he says yes it is gone", not any(c["id"] == "c9" for c in api("/api/house")["connections"]))
+            page.click("#houseSheet [data-close]")
+            page.wait_for_timeout(300)
+
             wd = world("p_new")
             wd["docs"] = [d for d in wd["docs"] if d["id"] != "dwb" and d["name"] != "Plot Essential (copy).md"]
             api("/api/project/p_new", "PUT", wd)
