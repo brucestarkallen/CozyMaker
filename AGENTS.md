@@ -29,15 +29,21 @@ numbers, 122,336 of 122,410 characters captured) and hands each worker only the
 sections its job needs. Measured, in `tests/units.mjs`:
 
 ```
-scribe           41,253      showrunner     28,827      editor      26,401
-eye              41,054      diagnostician  28,650      builder     25,827
-compressor       37,506      chronicler     28,299      novelist    24,907
-the whole craft 122,410 — nobody carries all of it
+scribe           60,631      showrunner     47,652      chronicler  42,757
+compressor       59,768      eye            45,610      editor      40,155
+builder          49,500      novelist       43,895      diagnostician 34,140
+the whole craft 122,410 — nobody carries half of it
 ```
 
-The biggest slice is 34% of the monolith. That is the entire argument for
-several workers instead of one: a worker reading only its own laws applies
-them; a worker reading all of them skims.
+The biggest slice is 49.5% of the monolith. That is the argument for several
+workers instead of one: a worker reading only its own laws applies them; a
+worker reading all of them skims. **But its own laws include every check its
+workflow orders it to run** (v1.2.4): the spine carries the Core Mandates
+(1.1), which the craft says override all other rules and every workflow cites
+by name, and a worker is given every section its reading names — or the reason
+it need not is written in `tests/units.mjs` ("is given every check its reading
+orders it to run"). A worker told to use something it never receives invents
+it.
 
 To change the craft, edit `engine/generalist.md`. To change who reads what,
 edit `SLICES` in `js/engine/slices.js`. Nothing else.
@@ -673,13 +679,34 @@ front can receive inside that harness.
 - A connection that refuses a thinking field is now met by the listener and the reply together on the very first
   call, and each learns from it; the walk checks each one's own tries, never their interleaving.
 
+### Every worker holds what it is told to run (v1.2.4)
+
+- **Seven of the nine workers were told to apply the Core Mandates and never given them.** The spine every
+  worker reads (1.3, 3.x, 4) cites M1, M2, M3 and M5 by name — ripple every change through the whole world,
+  record only and invent no motives, no predictive text, and the named list of error classes to scan for — and
+  only the eye and the diagnostician read 1.1. The builder was told to run its pre-delivery gate ("Verification
+  Engine → Expert Eye Tier A on EVERY dossier") and given neither 7.3 nor 2.4; told a blueprint is untrusted and
+  "CBPA applies" with no CBPA (7.2); told its import runs "Verification Engine in Preservation Mode, Auto-Fix
+  Mandate (8.2)" with neither. The compressor was told to re-run the Shared Audit Pipeline (8.3) it had never
+  read; the scribe's own pipeline says "Full CBPA on every event (all seven checks, 7.2)" and it had no 7.2.
+  Found by computing, for every worker, each named check and section its reading points at against what it
+  reads (his rule: a worker told to use something it never receives will invent it).
+- The spine now carries 1.1, and section 2's two-line heading, 2.1 (Anti-Parrot) and 2.3 (the Evidence
+  Requirement) that every workflow's report asks for. Each worker is given what its workflow orders it to run.
+  Tier A, Tier B and the Auto-Fix Mandate are held by the eye, which reads back every change but a surgical edit;
+  the editor, whose one-field edits are not read back, carries Tier A itself. A unit computes the rule from the
+  craft and fails on any gap without a written reason; on the old slices it fails for all nine workers.
+- Every stand-in model in the suites knew the eye by "THE EXPERT EYE", section 2's heading — now in everyone's
+  reading, so the builder and the editor were taken for the eye. They know it by 13.6, which only the eye reads;
+  every other marker was checked to be read by exactly one worker.
+
 ## Testing
 
 ```
 bash tests/all.sh           all seven, exit code intact
 ```
 
-    node tests/units.mjs         716 checks — the real modules on a real document, and what the persona hears
+    node tests/units.mjs         727 checks — the real modules on a real document, and what the persona hears
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       46 checks — the real serve.py, real files on disk, streams timed
@@ -691,7 +718,7 @@ bash tests/all.sh           all seven, exit code intact
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-1,055 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
+1,066 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

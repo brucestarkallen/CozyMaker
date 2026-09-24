@@ -85,7 +85,7 @@ class Model(http.server.BaseHTTPRequestHandler):
             return
 
         # a worker: its call streams, as a real provider's does
-        body = EYE_REPLY if "THE EXPERT EYE" in system else WORKER_REPLY
+        body = EYE_REPLY if "Evidenced CLEAN vs False CLEAN" in system else WORKER_REPLY
         if sent.get("stream"):
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
@@ -241,7 +241,7 @@ def main():
             ok("a worker was sent", len(workers) >= 1, f"{len(workers)} worker calls")
             ok("the one at the front spoke once", len(fronts) == 1, f"{len(fronts)} front calls")
             ok("a one-field edit is not followed by a full read-back (the craft's *edit: required scan only)",
-               not any("THE EXPERT EYE" in w["system"] for w in workers), [w["system"][:40] for w in workers])
+               not any("Evidenced CLEAN vs False CLEAN" in w["system"] for w in workers), [w["system"][:40] for w in workers])
 
             front = fronts[0]
             ok("the front was given the writer's own instructions first",

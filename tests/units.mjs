@@ -88,8 +88,64 @@ ok('the scribe is handed the auto-fix mandate', sliceFor(SECTIONS, 'scribe').tex
 ok('the scribe is NOT handed the cleanup workflow', !sliceFor(SECTIONS, 'scribe').text.includes('THE CLEANUP WORKFLOW'));
 ok('the compressor is handed the compression techniques', sliceFor(SECTIONS, 'compressor').text.includes('Sequential Aggregation'));
 ok('the compressor is NOT handed the skip workflow', !sliceFor(SECTIONS, 'compressor').text.includes('THE SKIP WORKFLOW'));
-ok('the eye is handed the alert list', sliceFor(SECTIONS, 'eye').text.includes('[FALSE_VERIFICATION]'));
-ok('the builder is NOT handed the alert list', !sliceFor(SECTIONS, 'builder').text.includes('[FALSE_VERIFICATION]'));
+/* the alert list is known by its own heading and words, not by one alert's name
+ * (that name is also used in 1.2, 2.3, 2.7, 7.7 and 13.6, which others read) */
+const ALERTS = SECTIONS.get('12').text;
+ok('the eye is handed the alert list', sliceFor(SECTIONS, 'eye').text.includes(ALERTS));
+ok('the builder is NOT handed the alert list', !sliceFor(SECTIONS, 'builder').text.includes(ALERTS));
+
+/* NO WORKER IS ORDERED TO RUN A CHECK IT WAS NEVER GIVEN. Every named check in
+ * the craft, and the section that defines it; a worker whose reading names one
+ * must read its section, or the reason it need not is written here. Before
+ * v1.2.4 seven of nine workers were told to apply the Core Mandates (M1, M2,
+ * M5) and never given them, the builder was told to run the Verification
+ * Engine and Tier A before delivering and given neither, and the compressor
+ * was told to re-run the Shared Audit Pipeline it had never read. A worker
+ * told to use something it never receives invents it. */
+{
+  const NAMED = {
+    'Verification Engine': '7.3', 'Mechanical Audit': '7.3', 'Disease Scan': '7.3', 'Stale-Assumption Scan': '7.3',
+    'Tier A': '2.4', 'Tier B': '2.5', 'Tier C': '2.6', 'Expert Eye': '2', 'Auto-Fix Mandate': '8.2', 'Deliverable Purity': '8.2',
+    'Shared Audit Pipeline': '8.3', 'CBPA': '7.2', 'Protocol 20': '7.5', 'Protocol 21': '7.5', 'Protocol 25': '7.5',
+    'Anti-Parrot': '2.1', 'SCAN EVIDENCE': '2.3', 'Evidence Requirement': '2.3', 'Field Update Contract': '3.4',
+    'Hierarchy of Narrative Truth': '3.5', 'Dual Index': '3.7', 'Zero-Loss Verification': '8.8.3', 'Stacking Architecture': '8.4',
+    'Narrative X-Ray': '10.1', 'Cleanup Manifest': '10.2', 'Viability Simulation': '9.3', 'Cascade Analysis': '9.4',
+    'Edit Mode Discipline': '7.7', 'Surgical Default': '7.7', 'Update Pipeline': '7.2', 'Crowd Perception': '13.4',
+    'Severity Ordering': '1.2', 'Summaryception Input Mode': '8.6', 'GENERALIST NOTES': '7.4', 'MEMORY MAP': '3.6',
+    'Transactional Read': '2.2', 'Continuation File Model': '8.1', 'Command Parsing': '7.6',
+  };
+  for (let i = 1; i <= 8; i++) NAMED[`M${i}`] = '1.1';
+  /* why a section named in a worker's reading need not be read by it */
+  const EVERYONE = { '7.4': 'the craft\'s output protocol is replaced by the house\'s own return contract' };
+  const READ_BACK = new Set(['2.4', '2.5', '2.6', '8.2']);   /* the eye holds these and reads back every change but a surgical edit */
+  const OWN = {
+    scribe: { '8.7': 'section 8 names *ooc in its heading; that is the diagnostician\'s job' },
+    compressor: { '8.5': 'its own Step 3 and Step 4 restate the Golden Rule and the four-question test in full' },
+    editor: { '7.2': 'the CBPA is named only on the *p row of its command table, the chronicler\'s job',
+      '8.2': 'its Tier A carries the purity test itself, and the house\'s contract keeps anything but the story out of a document' },
+  };
+  const eyeReads = new Set([...SPINE, ...SLICES.eye]);
+  ok('the eye really holds what the others lean on it for', [...READ_BACK].every((id) => eyeReads.has(id)));
+  for (const w of Object.keys(SLICES)) {
+    const reads = new Set([...SPINE, ...SLICES[w]]);
+    const text = [...reads].map((id) => (SECTIONS.get(id) || { text: '' }).text).join('\n');
+    const gaps = new Set();
+    const need = (sec, why) => {
+      if (!SECTIONS.has(sec) || reads.has(sec) || EVERYONE[sec] || (OWN[w] || {})[sec]) return;
+      if (w !== 'editor' && w !== 'eye' && READ_BACK.has(sec)) return;
+      gaps.add(`${sec} (${why})`);
+    };
+    for (const [name, sec] of Object.entries(NAMED)) {
+      const re = new RegExp('\\b' + name.replace(/[-\s]/g, '[-\\s]') + '\\b', /^M\d$/.test(name) ? '' : 'i');
+      if (re.test(text)) need(sec, name);
+    }
+    for (const mm of text.matchAll(/(?:Section|\u00a7|\()\s*(\d{1,2}(?:\.\d+){1,2})\)?/g)) need(mm[1], `(${mm[1]})`);
+    ok(`${w} is given every check its reading orders it to run`, gaps.size === 0, [...gaps].join('; '));
+  }
+  const b = sliceFor(SECTIONS, 'builder').text;
+  ok('the builder holds its own pre-delivery gate: the Verification Engine, Tier A, the CBPA, the Core Mandates',
+    b.includes(SECTIONS.get('7.3').text) && b.includes(SECTIONS.get('2.4').text) && b.includes(SECTIONS.get('7.2').text) && b.includes(SECTIONS.get('1.1').text));
+}
 
 const REPORT = sliceReport(SECTIONS);
 const biggest = Math.max(...REPORT.map((r) => r.chars));
@@ -1977,7 +2033,7 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
     }
     const sys = (req.body.messages.find((m) => m.role === 'system') || {}).content || '';
     const user = (req.body.messages.find((m) => m.role === 'user') || {}).content || '';
-    const who = sys.includes(LISTENER_MARK) ? 'listener' : /THE EXPERT EYE/.test(sys) ? 'eye' : /PROACTIVE CO-WRITER/.test(sys) ? 'builder' : 'worker';
+    const who = sys.includes(LISTENER_MARK) ? 'listener' : /Evidenced CLEAN vs False CLEAN/.test(sys) ? 'eye' : /PROACTIVE CO-WRITER/.test(sys) ? 'builder' : 'worker';
     calls.push({ who, user });
     const out = who === 'listener' ? listenerSays(user) : workerSays(user, sys);
     return wholeAnswer({ choices: [{ message: { content: out }, finish_reason: 'stop' }] });
@@ -2049,7 +2105,7 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
     /* a one-field edit is not read back in full (the craft's *edit: required scan only) */
     calls.length = 0;
     listenerSays = () => '{"jobs":[{"worker":"editor","task":"Move the scene to the Quay."}]}';
-    workerSays = (user, sys) => (/THE EXPERT EYE/.test(sys) ? 'read back' : 'Moved.\n<edits>' + JSON.stringify([{ file: 'Plot Essential.md', find: 'WHERE: the Ribway', replace: 'WHERE: the Quay' }]) + '</edits>');
+    workerSays = (user, sys) => (/Evidenced CLEAN vs False CLEAN/.test(sys) ? 'read back' : 'Moved.\n<edits>' + JSON.stringify([{ file: 'Plot Essential.md', find: 'WHERE: the Ribway', replace: 'WHERE: the Quay' }]) + '</edits>');
     r = await runTurn({ house, project: world(), message: 'move the scene to the Quay' });
     ok('a one-field edit lands without a full read-back after it', /WHERE: the Quay/.test(r.project.docs[0].text) && !calls.some((c) => c.who === 'eye'), calls.map((c) => c.who).join(','));
   } catch (e) { ok('the chatting tests ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }

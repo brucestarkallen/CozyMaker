@@ -50,11 +50,13 @@ def until(check, timeout=6.0):
     return check()
 
 
+# Each worker is known by words only its own sections carry. (Section 2's heading, "THE EXPERT
+# EYE", is in every worker's shared reading since v1.2.4; the eye's own is 13.6.)
 def which(system):
     if "You are the one who listens." in system:
         return "listener"
     for marker, name in (("worldbook architect for SillyTavern", "worldbook"), ("PROACTIVE CO-WRITER", "builder"), ("THE CLEANUP WORKFLOW", "showrunner"),
-                         ("THE EXPERT EYE", "eye"), ("Edit Mode Discipline", "editor"),
+                         ("Evidenced CLEAN vs False CLEAN", "eye"), ("Edit Mode Discipline", "editor"),
                          ("SMART COMPRESSION SYSTEM", "compressor")):
         if marker in system:
             return name

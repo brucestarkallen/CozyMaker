@@ -57,19 +57,36 @@ export function cutSections(src) {
  * appended and what is overwritten, the lazy-load rule, the writing
  * principles, and the document's shape. A worker without these can be
  * correct about its own job and still produce a file that breaks. */
-export const SPINE = ['1', '1.3', '3.1', '3.2', '3.3', '3.4', '3.6', '4', '6.1', '6.2', '6.3'];
+/* THE SPINE — what every worker reads. It carries the Core Mandates (1.1),
+ * which the craft says override all other rules and which every workflow
+ * cites by name (M1, M2, M3, M5), and what the Expert Eye asks of any work
+ * (2, 2.1, 2.3). Seven of the nine workers were once told to apply them and
+ * never given them; a worker told to use something it never receives invents
+ * it. tests/units.mjs holds this: no worker is ordered to run a named check
+ * whose section it does not read. */
+export const SPINE = ['1', '1.1', '1.3', '2', '2.1', '2.3', '3.1', '3.2', '3.3', '3.4', '3.6', '4', '6.1', '6.2', '6.3'];
 
-/* Each worker's own sections, on top of the spine. */
+/* Each worker's own sections, on top of the spine — including every section
+ * its own workflow orders it to run: the builder's pre-delivery gate (Tier A,
+ * the Verification Engine) and its import's Auto-Fix Mandate; the CBPA
+ * (7.2) wherever a workflow says to run it; the Mechanical Audit and Disease
+ * Scans (7.3) wherever a workflow says to re-verify; the Shared Audit
+ * Pipeline (8.3) the compressor re-runs, and what that pipeline itself asks
+ * for (Protocol 20, 7.5; Crowd Perception, 13.4). Tier A, Tier B and the
+ * Auto-Fix Mandate are mentioned in passing by nearly everything; the eye
+ * holds them and reads back every change that is not a surgical edit, so
+ * only the editor — whose one-field edits are not read back — carries Tier A
+ * itself. */
 export const SLICES = {
-  builder:        ['7.1', '7.5', '8.9', '14', '13.1', '13.2'],
-  chronicler:     ['7.2', '7.3', '7.5', '3.5', '3.7', '5.1', '5.2', '5.3', '5.4', '13.3', '13.4', '13.5'],
-  scribe:         ['8', '8.1', '8.2', '8.3', '8.4', '8.5', '8.6', '13.5', '13.8'],
-  editor:         ['7.7', '7.3', '2.5', '3.5', '13.7'],
-  eye:            ['2', '2.1', '2.2', '2.3', '2.4', '2.5', '2.6', '2.7', '1.1', '1.2', '7.3', '12', '13.6', '13.7'],
-  showrunner:     ['10', '10.1', '10.2', '10.3', '10.4', '5.1', '5.4'],
-  compressor:     ['5', '5.1', '5.2', '5.3', '5.4', '8.8', '8.8.1', '8.8.2', '8.8.3'],
-  novelist:       ['9', '9.1', '9.2', '9.3', '9.4', '9.5', '9.6', '8.5'],
-  diagnostician:  ['8.7', '1.1', '1.2'],
+  builder:        ['7.1', '7.5', '8.9', '14', '13.1', '13.2', '2.4', '7.2', '7.3', '8.2'],
+  chronicler:     ['7.2', '7.3', '7.5', '3.5', '3.7', '5.1', '5.2', '5.3', '5.4', '13.3', '13.4', '13.5', '2.4', '2.5'],
+  scribe:         ['8', '8.1', '8.2', '8.3', '8.4', '8.5', '8.6', '13.5', '13.8', '7.2', '7.3', '7.5', '13.4'],
+  editor:         ['7.7', '7.3', '2.5', '3.5', '13.7', '13.4', '2.4'],
+  eye:            ['2', '2.1', '2.2', '2.3', '2.4', '2.5', '2.6', '2.7', '1.1', '1.2', '7.3', '12', '13.6', '13.7', '13.4', '8.2'],
+  showrunner:     ['10', '10.1', '10.2', '10.3', '10.4', '5.1', '5.4', '7.3', '8.2'],
+  compressor:     ['5', '5.1', '5.2', '5.3', '5.4', '8.8', '8.8.1', '8.8.2', '8.8.3', '8.3', '7.2', '7.3', '7.5', '13.4'],
+  novelist:       ['9', '9.1', '9.2', '9.3', '9.4', '9.5', '9.6', '8.5', '7.2', '7.3', '7.5'],
+  diagnostician:  ['8.7', '1.1', '1.2', '7.3'],
 };
 
 /* What each worker is for, in the writer's own words. The router reads these
