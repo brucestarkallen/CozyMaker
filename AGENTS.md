@@ -784,6 +784,16 @@ front can receive inside that harness.
   anything the check calls sound. The extension's 16 recorded answers are unchanged.
 - The Plot Essential Maker extension in SillyTavern carries the same `lintTransplant`, with the same two gaps.
 
+### A thumb that lands a little off (v1.2.13)
+
+- The stylesheet read for a phone: safe-area insets on every edge, `viewport-fit=cover`, no `100vh`; the small text
+  in boxes does not matter on his browsers (Chrome and Opera on Android do not zoom on focus). Every visible button
+  was then measured in the real browser at 390px. Text buttons are 37px tall and 80–144px wide — easy to hit. The
+  one real miss: the small icon buttons — the ⋯ on every world and conversation, the ◂ ▸ between answers — were
+  34 × 34px, under the ~44 a thumb needs; a tap a little off the ⋯ opened the world instead of its menu. They keep
+  their look and take a touch 5px beyond it on every side. Measured with taps 4px outside each edge: 0 of 4 landed
+  before, 4 of 4 now; the walk holds it.
+
 ## Testing
 
 ```
@@ -795,14 +805,14 @@ bash tests/all.sh           all seven, exit code intact
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       46 checks — the real serve.py, real files on disk, streams timed
     python3 tests/browser.py      75 checks — real Chromium at 390x844, end to end
-    python3 tests/walk_worlds.py 175 checks — the drawer, conversations, swipes and versions, edit and
+    python3 tests/walk_worlds.py 176 checks — the drawer, conversations, swipes and versions, edit and
                                               send again, delete, branch, go on, re-quoting, crafts,
                                               the thinking box live, backup and restore, a model too
                                               small for the world, a real server killed mid-edit
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-1,108 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
+1,109 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

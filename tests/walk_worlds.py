@@ -335,6 +335,12 @@ def main():
             page.click("#menuBtn")
             page.wait_for_timeout(400)
             ok("the drawer slides in from the left", page.locator("#drawer.open").count() == 1)
+            # a thumb that lands a little off the small ⋯ still lands on it (it looks 34px; it takes 44)
+            around = page.evaluate("""() => [...document.querySelectorAll('#drawer .iconbtn.small')].filter(b => b.getBoundingClientRect().width).map(b => {
+              const r = b.getBoundingClientRect();
+              return [[r.left - 4, r.top + r.height / 2], [r.right + 4, r.top + r.height / 2], [r.left + r.width / 2, r.top - 4], [r.left + r.width / 2, r.bottom + 4]]
+                .filter(([x, y]) => { const e = document.elementFromPoint(x, y); return e && e.closest('button') === b; }).length; })""")
+            ok("a tap just off a small ⋯, on any side, still lands on it", around and all(n == 4 for n in around), around)
             text = page.locator("#drawerBody").inner_text()
             ok("the drawer lists every world", "The Leviathan Quarter" in text and "An Older World" in text, text[:300])
             ok("the drawer names its parts", "conversations" in text.lower() and "documents" in text.lower())

@@ -294,7 +294,11 @@ textarea.plain { resize: vertical; min-height: 90px; font-family: var(--mono); f
 .item-menu.show .item-actions { display: flex; }
 
 .btn.small { padding: 7px 13px; font-size: 13.5px; }
-.iconbtn.small { width: 34px; height: 34px; font-size: 18px; }
+/* a thumb needs about 44px: the small icon buttons (the ⋯ on every world and
+   conversation, the ◂ ▸ between answers) keep their look and take a touch 5px
+   beyond it on every side — measured at 34 × 34 before */
+.iconbtn.small { width: 34px; height: 34px; font-size: 18px; position: relative; }
+.iconbtn.small::after { content: ''; position: absolute; inset: -5px; }
 .btnrow.center { justify-content: center; }
 .empty p { margin: 0 0 16px; }
 
