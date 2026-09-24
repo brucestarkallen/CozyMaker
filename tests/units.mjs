@@ -869,6 +869,13 @@ eq('an unescaped quote inside a change is read, not lost', salvageEdits('[{"find
   eq('two lists one after another are one', (readWorldbook('[{"name":"A","keys":["a"],"content":"x"}]\n[{"name":"B","keys":["b"],"content":"y"}]').entries || []).map((e) => e.name), ['A', 'B']);
   eq('a list and then an entry are one', (readWorldbook('[] {"name":"C","keys":["c"],"content":"z"}').entries || []).map((e) => e.name), ['C']);
   eq('words around them are not guessed at', readWorldbook('hello [1]').ok, false);
+  /* counted and outlined the way the house reads it, everywhere */
+  const three = JSON.stringify([{ name: 'A', keys: ['a'], content: 'x' }, { name: 'B', keys: ['b'], content: 'y' }, { name: 'C', keys: ['c'], content: 'z' }]);
+  const twoInARow = JSON.stringify([{ name: 'A', keys: ['a'], content: 'x' }]) + '\n' + JSON.stringify([{ name: 'B', keys: ['b'], content: 'y' }]);
+  eq('a list after a list is counted, not called uncountable', countOf(twoInARow, 'worldbook'), { entries: 2 });
+  eq('so three entries rewritten as two, that way, are a loss the guard refuses', lostSomething(three, twoInARow, 'worldbook'), '1 entries');
+  eq('the outline the crew and the persona are shown holds every entry of it', parseDoc(twoInARow, 'worldbook').sections.map((s) => s.title), ['A', 'B']);
+  eq('and a SillyTavern export pasted in is outlined by its own names', parseDoc('{"entries":{"0":{"comment":"Aldric","key":["Aldric"],"content":"A general."}}}', 'worldbook').sections.map((s) => s.title), ['Aldric']);
 }
 
 ok('a block in the thinking channel is still a block', (() => {

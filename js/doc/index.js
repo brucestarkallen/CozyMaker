@@ -15,6 +15,8 @@
  * it. It never has to guess, and it never has to invent.
  */
 
+import { readWorldbook } from './lint.js';
+
 export const ALWAYS = ['SCENE', 'CURRENT SCENE', 'STATE', 'CALENDAR'];
 
 /* A NEW WORLD TAKES THE NAME ITS PLOT ESSENTIAL GIVES IT. A world begins as
@@ -121,11 +123,13 @@ export function parseDoc(text, kind = 'pe') {
 }
 
 function parseWorldbook(src) {
-  let entries = [];
-  try {
-    const parsed = JSON.parse(src || '[]');
-    if (Array.isArray(parsed)) entries = parsed;
-  } catch (_) { /* a worldbook mid-edit may not parse; the lint reports it */ }
+  /* read the way the house reads every worldbook (a list after a list, a list
+   * wrapped as {entries} or in SillyTavern's own shape, a stray comma): a bare
+   * parse showed the crew and the persona an empty outline of a worldbook the
+   * house could read whole. What no rule can read still shows as nothing, and
+   * the checks hand it to its keeper. */
+  const read = readWorldbook(src || '');
+  const entries = read.ok ? read.entries : [];
   const counts = Object.create(null);
   const sections = entries.map((e, n) => {
     const base = slug(e && e.name) || ('entry-' + (n + 1));
@@ -138,7 +142,7 @@ function parseWorldbook(src) {
       text: JSON.stringify(e, null, 2),
     };
   });
-  return { kind: 'worldbook', head: [], sections, raw: src, entries, parsed: entries.length > 0 || /^\s*\[\s*\]\s*$/.test(src || '') };
+  return { kind: 'worldbook', head: [], sections, raw: src, entries, parsed: read.ok };
 }
 
 /* ------------------------------------------------------------- the index */

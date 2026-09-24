@@ -52,9 +52,11 @@ function finding(check, said, opts = {}) {
 export function countOf(text, kind = 'pe') {
   const src = String(text || '');
   if (kind === 'worldbook') {
-    let n = 0;
-    try { const v = JSON.parse(src || '[]'); n = Array.isArray(v) ? v.length : 0; } catch (_) { n = -1; }
-    return { entries: n };
+    /* counted the way the house reads it: a bare parse called a list written
+     * after a list uncountable, and the guard stands aside for what it cannot
+     * count — so five entries rewritten as two, that way, went through */
+    const read = readWorldbook(src);
+    return { entries: read.ok ? read.entries.length : -1 };
   }
   const events = new Set();
   let dossiers = 0;
