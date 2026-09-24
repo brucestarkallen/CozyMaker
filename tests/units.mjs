@@ -1158,7 +1158,7 @@ eq('"I" overrules a second-person frame', personaOf({ settings: { person: 'first
     const out = answer(user);
     return wholeAnswer(typeof out === 'string' ? { choices: [{ message: { content: out }, finish_reason: 'stop' }] } : out);
   };
-  const MACHINERY = /<\/?(?:edits|docedits|need)>|replace_all|\bthe (?:builder|chronicler|scribe|editor|eye|showrunner|compressor|novelist|diagnostician|worldbook keeper|memory auditor|instructions writer)\b|\bworkers?\b|\bcrew\b|backstage|people working behind|\bslice\b|§|\bM-[A-Z]{3,}\b|\bapi\b|\b40[13]\b|sk-abc|set aside as a draft|\bdraft\b|\bJSON\b|\bcraft\b|could not finish/i;
+  const MACHINERY = /\bTiers? [ABC]\b|\bProtocol \d+\b|\bCBPA\b|Named-Person Gate|Disease Scan|Stale-Assumption|Mechanical Audit|Verification Engine|Anti-Parrot|Auto-Fix Mandate|Deliverable Purity|RELS Gate|MC Exclusion|<\/?(?:edits|docedits|need)>|replace_all|\bthe (?:builder|chronicler|scribe|editor|eye|showrunner|compressor|novelist|diagnostician|worldbook keeper|memory auditor|instructions writer)\b|\bworkers?\b|\bcrew\b|backstage|people working behind|\bslice\b|§|\bM-[A-Z]{3,}\b|\bapi\b|\b40[13]\b|sk-abc|set aside as a draft|\bdraft\b|\bJSON\b|\bcraft\b|could not finish/i;
   const heard = () => { const b = fronts[fronts.length - 1]; return [b.messages.map((m) => m.content).join('\n')].join('\n'); };
   const check = (name) => {
     const b = fronts[fronts.length - 1];
@@ -1195,6 +1195,13 @@ eq('"I" overrules a second-person frame', personaOf({ settings: { person: 'first
     r = await runTurn({ house, project: world(), message: '*edit move the scene to the Quay' });
     check('a draft on the page');
     ok('a draft on the page: no card says something went wrong', !r.cards.some((c) => c.status === 'refused'), JSON.stringify(r.cards.map((c) => c.why)));
+
+    /* a worker that reports in the craft's own names for its checks, which every worker now reads (v1.2.4) */
+    answer = (user) => (/What the author just asked for/.test(user)
+      ? 'Moved it, per Protocol 20. Tier A passed; Named-Person Gate clean; Disease Scan on ages clean; CBPA on the request; Anti-Parrot pass done; RELS Gate held; Verification Engine run.\n\n<edits>\n' + JSON.stringify([{ file: 'Plot Essential.md', find: 'WHERE: the Ribway', replace: 'WHERE: the Quay', reason: 'moved the scene' }]) + '\n</edits>'
+      : 'Read it all back. Tier A/B checks clean; Mechanical Audit clean; Deliverable Purity Test passed.');
+    await runTurn({ house, project: world(), message: '*edit move the scene to the Quay' });
+    check('a worker who names its checks');
 
     answer = () => 'M-SCAN read every block. M-RECORD holds. The ledger for Claire is sound.';
     const sc = { id: 'pw', docs: [{ id: 'd2', name: 'Harbour transplant.md', kind: 'transplant', text: '<!-- SC-TRANSPLANT {"v":1} -->' }], chats: [], recentSections: [] };

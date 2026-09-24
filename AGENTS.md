@@ -728,13 +728,25 @@ front can receive inside that harness.
   body of Side by side — where the top still said "New document". Side by side goes back the same way now. No other
   action in the app has two names (every button label listed and compared).
 
+### The crew's names for its checks never reach the persona (v1.2.8)
+
+- **Found as a consequence of v1.2.4.** Every worker now reads the sections that name the craft's checks, and the
+  craft's own report format asks for them — so a worker's notes say "per Protocol 20. Tier A passed; Named-Person
+  Gate clean; Disease Scan on ages clean; CBPA …", and the notes reach the persona. `naturalize` already turned
+  SCAN EVIDENCE, tags, M-codes and section numbers into nothing or plain words; the checks' own names went through,
+  for the persona to repeat to him. Fixed at the source — the return contract asks for what was read and checked
+  in plain words, with none of the craft's names for its checks — and backstopped: any that slip through are said
+  the way a person would ("the checks passed", "a sweep for the same mistake everywhere"). Ordinary words ("the
+  tier of the tower", "a protocol officer") are untouched. The persona firewall's machinery list now includes
+  them, with a worker that writes every one; without the backstop it fails.
+
 ## Testing
 
 ```
 bash tests/all.sh           all seven, exit code intact
 ```
 
-    node tests/units.mjs         746 checks — the real modules on a real document, and what the persona hears
+    node tests/units.mjs         748 checks — the real modules on a real document, and what the persona hears
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       46 checks — the real serve.py, real files on disk, streams timed
@@ -746,7 +758,7 @@ bash tests/all.sh           all seven, exit code intact
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-1,090 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
+1,092 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

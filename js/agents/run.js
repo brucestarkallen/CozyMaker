@@ -120,6 +120,22 @@ export function naturalize(text) {
     .replace(/\bEXPERT EYE\b:?/gi, '')
     .replace(/\bGENERALIST NOTES\b:?/gi, '')
     .replace(/\bM\d+\b/g, '')
+    /* the craft's names for its checks, said the way a person would (the crew is
+     * told to, and this is what is left when one does not) */
+    .replace(/\s*\(?\b(?:per|via|under)\s+Protocol\s+\d+\)?/gi, '')
+    .replace(/\bProtocol\s+\d+\b/gi, 'the usual way')
+    .replace(/\bTiers?\s+[ABC](?:\s*(?:\/|and|,)\s*[ABC])*\b(?:\s+checks?)?/g, 'the checks')
+    .replace(/\bNamed[- ]Person Gate\b/gi, 'the check that keeps names out of personality lines')
+    .replace(/\bDisease Scans?\b/gi, 'a sweep for the same mistake everywhere')
+    .replace(/\bStale[- ]Assumption Scans?\b/gi, 'a look at what the change knocks on to')
+    .replace(/\bMechanical Audit\b/gi, 'the arithmetic check')
+    .replace(/\bVerification Engine\b/gi, 'the final check')
+    .replace(/\bCBPA(?:-G)?\b/g, 'the logic check')
+    .replace(/\bAnti[- ]Parrot\b(?:\s+(?:pass|test|scan|check))?/gi, 'a look beyond what was named')
+    .replace(/\bAuto[- ]Fix Mandate\b/gi, 'the rule to fix things quietly')
+    .replace(/\bDeliverable Purity(?:\s+Test)?\b/gi, 'a check that the document holds nothing but the story')
+    .replace(/\bRELS Gate\b/gi, 'the check that only people who have met share a bond')
+    .replace(/\bMC Exclusion(?:\s+Rule)?\b/gi, 'the rule that the main character lives only in the scene')
     .replace(/[ \t]{2,}/g, ' ')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
@@ -178,7 +194,7 @@ export function docBriefs(project, opts) {
 
 const RETURN_CONTRACT = `When you are done, write these and nothing else.
 
-First, in plain sentences — a short paragraph at most — what you did and what you found while you were in there. Write it for a person, not for a form.
+First, in plain sentences — a short paragraph at most — what you did and what you found while you were in there. Write it for a person, not for a form: what you read and what you checked, said in plain words, with none of the craft's own names for its checks — no tier letters, protocol numbers, scan, gate or audit names, no bracketed tags.
 
 Second, if a document should change, the change itself.
 
