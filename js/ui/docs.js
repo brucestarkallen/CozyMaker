@@ -519,9 +519,17 @@ function openOne(id) {
 
 
 function exportForSillyTavern(doc) {
-  /* the extension's own pipeline: read the worldbook tolerantly, then map it */
-  const p = parseWorldbook(doc.text || '');
-  if (p.error) return toast(`The worldbook cannot be read as data right now (${p.error}) \u2014 tap Check it, then export.`);
+  /* READ THE WAY THE HOUSE READS EVERY WORLDBOOK, then map it with the
+   * extension's own pipeline. The house's reading repairs what code can — a
+   * stray comma, a line break inside a value, a list written after a list, a
+   * list wrapped as {entries} or in SillyTavern's own shape — and the documents
+   * list already counted entries that way; the export read with the
+   * extension's reader alone, and refused a worldbook it was counting. Only
+   * what no rule can read is left for the keeper (Check it, on this page). */
+  const read = readWorldbook(doc.text || '');
+  if (!read.ok) return toast(`The worldbook cannot be read as data right now (${read.why}) \u2014 tap Check it and it will be put right, then export.`);
+  const p = parseWorldbook(JSON.stringify(read.entries));
+  if (p.error) return toast(`The worldbook cannot be read as data right now (${p.error}) \u2014 tap Check it and it will be put right, then export.`);
   if (!p.entries.length) return toast('There are no entries in this worldbook yet.');
   downloadText(doc.name.replace(/\.(md|json|txt)$/i, '') + ' - SillyTavern.json', JSON.stringify(worldbookToST(p.entries), null, 2));
   const counts = p.entries.reduce((n, e) => { n[e.strategy] = (n[e.strategy] || 0) + 1; return n; }, {});

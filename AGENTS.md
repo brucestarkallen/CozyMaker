@@ -753,6 +753,17 @@ front can receive inside that harness.
 - Read to its end and sound: nothing left empty is ever stored as a number; the front falls back to the first
   connection when its own is removed, and so does the dropdown that shows it; lessons never cross models.
 
+### Export for SillyTavern reads the way the house does (v1.2.10)
+
+- **The export refused a worldbook the house could read.** It read with the extension's reader alone, which fixes
+  only trailing commas, and said "cannot be read as data right now — tap Check it, then export" — while the
+  documents list, reading the house's way (`readWorldbook`: a line break inside a value, a list written after a
+  list, a list wrapped as `{entries}` or in SillyTavern's own shape), was already counting its entries. Detection
+  handed to him as a task. The export reads the house's way now and maps with the extension's own pipeline; only
+  what no rule can read is left for the keeper, and the message says Check it will put it right. The walk exports a
+  list written after a list and gets both entries; with the old reader it gets that message instead.
+- `worldbook.js` and the export mapping are the extension's, unchanged, held by `tests/fixtures/worldbook-export.json`.
+
 ## Testing
 
 ```
@@ -764,14 +775,14 @@ bash tests/all.sh           all seven, exit code intact
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       46 checks — the real serve.py, real files on disk, streams timed
     python3 tests/browser.py      75 checks — real Chromium at 390x844, end to end
-    python3 tests/walk_worlds.py 174 checks — the drawer, conversations, swipes and versions, edit and
+    python3 tests/walk_worlds.py 175 checks — the drawer, conversations, swipes and versions, edit and
                                               send again, delete, branch, go on, re-quoting, crafts,
                                               the thinking box live, backup and restore, a model too
                                               small for the world, a real server killed mid-edit
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-1,097 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
+1,098 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

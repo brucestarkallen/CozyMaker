@@ -562,6 +562,37 @@ def main():
             st = json.loads(Path(path).read_text())
             ok("the export is named for SillyTavern", dl.value.suggested_filename == "Old Worldbook - SillyTavern.json", dl.value.suggested_filename)
             ok("the export is in SillyTavern's shape", st["entries"]["0"]["key"] == ["Ribway"] and st["entries"]["0"]["selective"] is True)
+            # a worldbook the house can read — a list written after a list — exports whole, not "cannot be read"
+            page.click("#docsSheet [data-close]")
+            page.wait_for_timeout(300)
+            wd = world("p_new")
+            wd["docs"].append({"id": "dwb2", "name": "Two Lists.json", "kind": "worldbook",
+                               "text": json.dumps([{"name": "Aldric", "keys": ["Aldric"], "content": "A general.", "strategy": "green"}]) + "\n" +
+                                       json.dumps([{"name": "Brin", "keys": ["Brin"], "content": "A smith.", "strategy": "green"}])})
+            api("/api/project/p_new", "PUT", wd)
+            page.reload(wait_until="networkidle")
+            page.wait_for_timeout(700)
+            page.click("#docsBtn")
+            page.wait_for_timeout(400)
+            page.locator("#docsBody .row .grow", has_text="Two Lists.json").click()
+            page.wait_for_timeout(400)
+            try:
+                with page.expect_download(timeout=5000) as dl2:
+                    page.locator(".doc-jobs .btn", has_text="Export for SillyTavern").click()
+                st2 = json.loads(Path(dl2.value.path()).read_text())
+                got = sorted(e["comment"] for e in st2["entries"].values())
+            except Exception as e:          # no download at all: the export refused it
+                got = "no download: " + page.locator(".toast").last.inner_text()[:120] if page.locator(".toast").count() else "no download"
+            ok("a worldbook the house can read exports whole — both lists, both entries", got == ["Aldric", "Brin"], got)
+            page.click("#docsSheet [data-close]")
+            page.wait_for_timeout(300)
+            wd = world("p_new")
+            wd["docs"] = [d for d in wd["docs"] if d["id"] != "dwb2"]
+            api("/api/project/p_new", "PUT", wd)
+            page.reload(wait_until="networkidle")
+            page.wait_for_timeout(700)
+            page.click("#docsBtn")
+            page.wait_for_timeout(400)
 
             # ---------------------------------------- a world can be renamed and deleted
             page.click("#docsSheet [data-close]")
