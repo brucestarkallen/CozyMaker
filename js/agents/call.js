@@ -280,6 +280,85 @@ async function streamOnce(conn, opts, dropThinking) {
  * An error that arrives in the middle of a stream is an error, never a finished
  * answer; and a stream that ends having said nothing at all, and never said it
  * was done, did not finish — both are tried again like any passing fault. */
+/* A THOUGHT WRITTEN INTO THE REPLY IS THE MODEL'S THINKING, NOT ITS REPLY.
+ * Some servers have no channel for a model's thinking and send it inside the
+ * words, between <think> and </think> — often with no opening tag at all, the
+ * model's own template having opened it. Cozy Tavern's splitter (its M8.5,
+ * V176) moves a reply's leading span onto the thinking channel as it streams,
+ * holding back a tag cut in two by a chunk; CozyMaker never had it, so the
+ * whole thought was shown as the reply, and sent back to the persona as its
+ * own earlier words on every turn after. The streamed splitter below is
+ * Tavern's; splitThink takes what is left when the stream is done: a lone
+ * </think> means everything before it was the thought. */
+function makeThinkSplitter(emit) {
+  const OPEN = '<think>';
+  const CLOSE = '</think>';
+  let state = 'open';
+  let buf = '';
+  let afterThought = false;   /* the blank lines after a moved thought are not the reply's first words */
+  function feed(text) {
+    buf += text;
+    for (;;) {
+      if (state === 'open') {
+        const trimmed = buf.replace(/^\s+/, '');
+        if (trimmed.length < OPEN.length && OPEN.startsWith(trimmed)) return;
+        if (trimmed.startsWith(OPEN)) {
+          const lead = buf.length - trimmed.length;
+          if (lead) emit('prose', buf.slice(0, lead));
+          buf = trimmed.slice(OPEN.length);
+          state = 'thinking';
+          continue;
+        }
+        emit('prose', buf);
+        buf = '';
+        state = 'prose';
+        return;
+      }
+      if (state === 'thinking') {
+        const at = buf.indexOf(CLOSE);
+        if (at !== -1) {
+          if (at) emit('thinking', buf.slice(0, at));
+          buf = buf.slice(at + CLOSE.length);
+          state = 'prose';
+          afterThought = true;
+          continue;
+        }
+        let hold = 0;
+        const maxHold = Math.min(CLOSE.length - 1, buf.length);
+        for (let k = maxHold; k > 0; k--) {
+          if (CLOSE.startsWith(buf.slice(-k))) { hold = k; break; }
+        }
+        const out = buf.slice(0, buf.length - hold);
+        if (out) emit('thinking', out);
+        buf = buf.slice(buf.length - hold);
+        return;
+      }
+      if (afterThought) { buf = buf.replace(/^\s+/, ''); if (!buf) return; afterThought = false; }
+      emit('prose', buf);
+      buf = '';
+      return;
+    }
+  }
+  function end() {
+    if (!buf) return;
+    emit(state === 'thinking' ? 'thinking' : 'prose', buf);
+    buf = '';
+  }
+  return { feed, end };
+}
+export function splitThink(text) {
+  let words = String(text || '');
+  let thought = '';
+  const lead = /^\s*<think>([\s\S]*?)(?:<\/think>|$)/.exec(words);
+  if (lead) { thought = lead[1]; words = words.slice(lead[0].length); }
+  const close = words.lastIndexOf('</think>');
+  if (close !== -1 && words.slice(0, close).indexOf('<think>') === -1) {
+    thought = (thought ? thought + '\n' : '') + words.slice(0, close);
+    words = words.slice(close + 8);
+  }
+  return { text: words.replace(/^\s+/, ''), thinking: thought.trim() };
+}
+
 const TRANSIENT_WORDS = /overload|rate.?limit|too many requests|timed? ?out|try again|temporar|unavailable|capacity|busy/i;
 /* An error said in the middle of an answer: the provider was reached and said
  * what went wrong, so it is not a lost connection. What reads as passing
@@ -301,6 +380,8 @@ export async function readReply(house, res, { onText, onThinking, onProgress } =
       return { finish: 'error', error: typeof d === 'string' ? d : JSON.stringify(d), status: Number(data.status) || 0, retryAfter: data.retryAfter, text: '', thinking: '' };
     }
     const a = readAnswer(house, data);
+    const cut = splitThink(a.text);
+    if (cut.thinking) { a.text = cut.text; a.thinking = [a.thinking, cut.thinking].filter(Boolean).join('\n\n'); }
     if (a.text && onText) onText(a.text);
     if (a.thinking && onThinking) onThinking(a.thinking);
     return a;
@@ -312,6 +393,9 @@ export async function readReply(house, res, { onText, onThinking, onProgress } =
   }
   const decoder = new TextDecoder();
   let buffer = '', raw = '', sse = false, text = '', thinking = '', cut = false, ended = false, midError = null, told = 0;
+  const split = makeThinkSplitter((kind, s) => {
+    if (kind === 'thinking') { thinking += s; if (onThinking) onThinking(s); } else { text += s; if (onText) onText(s); }
+  });
   const handle = (line) => {
     const l = line.trim();
     if (!l.startsWith('data:')) return;
@@ -327,7 +411,7 @@ export async function readReply(house, res, { onText, onThinking, onProgress } =
     if (choice && choice.finish_reason) ended = true;
     const part = readChunk(house, obj);
     if (!part) return;
-    if (part.text) { text += part.text; if (onText) onText(part.text); }
+    if (part.text) split.feed(part.text);
     if (part.thinking) { thinking += part.thinking; if (onThinking) onThinking(part.thinking); }
     if (part.cut) cut = true;
   };
@@ -349,6 +433,10 @@ export async function readReply(house, res, { onText, onThinking, onProgress } =
     try { data = JSON.parse(raw); } catch (_) { return { finish: 'error', error: raw.trim() ? 'the answer could not be read' : 'nothing came back', status: 0, text: '', thinking: '' }; }
     return whole(data);
   }
+  split.end();
+  /* a lone </think> left in the words: everything before it was the thought */
+  const late = splitThink(text);
+  if (late.thinking) { text = late.text; thinking = [thinking, late.thinking].filter(Boolean).join('\n\n'); }
   if (onProgress) onProgress({ text, thinking });
   if (midError) { const e = errorOf(midError); return { finish: 'error', error: e.message, status: e.status, midStream: true, text, thinking }; }
   if (!text && !thinking && !ended) return { finish: 'error', error: 'the answer stopped before anything came', status: 0, text: '', thinking: '' };

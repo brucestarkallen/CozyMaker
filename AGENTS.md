@@ -834,13 +834,33 @@ front can receive inside that harness.
   Info (its own craft: blue always on, green on keywords and — through the export — vectors too, chain on vectors
   only), and Export for SillyTavern hands it over.
 
+### "Maybe we should add that…" is written, and a thought is never the reply (v1.3.1)
+
+- **He asked for a change and the persona said it had made one — nothing was written.** His "So maybe we should add
+  that Jovan just got accepted … and who approved, logically Shunsui?" read as a job to the keyword reading (the
+  editor) and as talk to the listener, which has the last word: its rule called a suggestion or a question
+  conversation, and anything unsure conversation. That rule was written (v1.1.12) so brainstorming a NEW world never
+  starts a build; applied to a world whose plot essential exists it swallowed a plain ask. Now a suggestion to put
+  something into a document that already exists IS an ask however softly put, and a question with it is part of the
+  job for the worker to reason out; talking through a world with no plot essential yet stays conversation. And when
+  the keyword reading sees a job but the listener sends nobody, the persona is told plainly that nothing was written,
+  and to say so and offer — his yes then sends the worker — rather than cover for it.
+- **The reply he got was the model's thinking** ("So my response, in my voice, short and warm: …"), with no answer
+  after it. CozyMaker read a thought only from the reasoning fields; a server that sends it inside the words, between
+  `<think>` and `</think>` — often with no opening tag, the model's template having opened it — had it shown as the
+  reply, and sent back to the persona as its own earlier words every turn after, which teaches it to keep doing it.
+  Cozy Tavern's splitter (its M8.5) is ported into the one reader (`makeThinkSplitter`), and `splitThink` takes a lone
+  `</think>` when the stream is done; the crew's `stripThinking` does too; the persona's past replies go back without
+  any thought in them; the turn keeps the moved thought with the reply; and the persona is told that what it writes
+  is what he reads — its answer, never its notes on how to answer.
+
 ## Testing
 
 ```
 bash tests/all.sh           all seven, exit code intact
 ```
 
-    node tests/units.mjs         773 checks — the real modules on a real document, and what the persona hears
+    node tests/units.mjs         787 checks — the real modules on a real document, and what the persona hears
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       49 checks — the real serve.py, real files on disk, streams timed
@@ -852,7 +872,7 @@ bash tests/all.sh           all seven, exit code intact
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-1,139 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
+1,153 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

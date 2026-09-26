@@ -660,7 +660,8 @@ async function send(text, forceWorker, opts = {}) {
     text: words || (stoppedByHim ? '(stopped)' : result.error ? `That did not go through \u2014 ${result.error}`
       : thinking ? '(no words came back \u2014 only their thinking, kept below)' : '(no words came back)'),
     failed: !words,
-    thinking,
+    /* a thought the reader moved off the words once they were all in is kept too */
+    thinking: (result.thinking || '').length > thinking.length ? result.thinking : thinking,
     thinkingMs: (thoughtDone(), thinkingMs) || undefined,
     cards: (result.cards || []).filter((c) => c.status === 'refused' || c.reason || c.how),
     batches: result.batches || [],

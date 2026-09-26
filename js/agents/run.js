@@ -64,7 +64,7 @@ When ${him} asked for something to be checked, audited, diagnosed or judged, wha
 
 When something cannot go further until ${him} decides, I put all of it to ${him} \u2014 every point there is to decide, in my own voice \u2014 and let ${him} choose.
 
-If ${him} is just talking, I just talk. Not every sentence is a job.`;
+If ${him} is just talking, I just talk. Not every sentence is a job.\n\nWhat I write is what ${him} reads: I answer ${him} directly, never my notes to myself about how to answer.`;
     return `The two of us are building ${WORLD}. This is the comfortable room where that gets made, so I talk like it: two people making something good, not a service desk.
 
 The person I am making this with only ever talks to me. Changes to the documents are made as we talk, and before I answer I am told exactly what changed. I speak of it in my own voice, as myself: short, warm, and specific about what actually changed.
@@ -75,7 +75,7 @@ When they asked for something to be checked, audited, diagnosed or judged, what 
 
 When something cannot go further until they decide, I put all of it to them \u2014 every point there is to decide, in my own voice \u2014 and let them choose.
 
-If they are just talking, I just talk. Not every sentence is a job.`;
+If they are just talking, I just talk. Not every sentence is a job.\n\nWhat I write is what they read: I answer them directly, never my notes to myself about how to answer.`;
   }
   if (him) return `You and ${him} are building ${WORLD}. This is the comfortable room where that gets made, so talk like it: two people making something good, not a service desk.
 
@@ -87,7 +87,7 @@ When ${him} asked for something to be checked, audited, diagnosed or judged, wha
 
 When something cannot go further until ${him} decides, put all of it to ${him} \u2014 every point there is to decide, in your own voice \u2014 and let ${him} choose.
 
-If ${him} is just talking, just talk. Not every sentence is a job.`;
+If ${him} is just talking, just talk. Not every sentence is a job.\n\nWhat you write is what ${him} reads: answer ${him} directly, never your notes to yourself about how to answer.`;
   return `The two of you are building ${WORLD}. This is the comfortable room where that gets made, so talk like it: two people making something good, not a service desk.
 
 The person you are making this with only ever talks to you. Changes to the documents are made as you talk, and before you answer you are told exactly what changed. Speak of it in your own voice, as yourself: short, warm, and specific about what actually changed.
@@ -98,7 +98,7 @@ When they asked for something to be checked, audited, diagnosed or judged, what 
 
 When something cannot go further until they decide, put all of it to them \u2014 every point there is to decide, in your own voice \u2014 and let them choose.
 
-If they are just talking, just talk. Not every sentence is a job.`;
+If they are just talking, just talk. Not every sentence is a job.\n\nWhat you write is what they read: answer them directly, never your notes to yourself about how to answer.`;
 }
 
 /* Strip the crew's working shorthand out of anything the front will read. */
@@ -498,14 +498,18 @@ export async function runTurn({
    * instructions and the house's plain words; then the talk, the book as it
    * stands, what got done, what waits on him, and what he just said. */
   const frontSystem = openingFor(p, frontBody(p));
-  const frontMessages = (world, said, waiting) => {
+  const frontMessages = (world, said, waiting, note = '') => {
     const n = (house.settings || {}).turnsOnScreen || 40;
-    const earlier = past.slice(-n).map((t) => ({ role: t.role === 'writer' ? 'user' : 'assistant', content: t.text || '' }));
+    /* its own earlier replies go back without any thought left in them: one
+     * reply that carried a thought, sent back as what it said, taught it to
+     * keep writing its thinking as its reply */
+    const earlier = past.slice(-n).map((t) => (t.role === 'writer' ? { role: 'user', content: t.text || '' } : { role: 'assistant', content: stripThinking(t.text || '') }));
     const ask = [
       'Where the book stands right now:',
       docBriefs(world, { message, recent: world.recentSections || [], forFront: true }),
       said ? `\nWhat got done while you were talking:\n${said}` : '',
       waiting.length ? `\n${waitingBrief(waiting, p)}` : '',
+      note ? `\n${note}` : '',
       /* his words under his name; with no name set, never "you said:", which
        * tells the persona it said them itself. Go on is the house's note and
        * carries no speaker at all. */
@@ -515,6 +519,7 @@ export async function runTurn({
   };
   let early = null;
   let earlyKept = false;
+  let heardNobody = false;
   let intents;
   let acts = [];
   if (forceWorker === FRONT_ONLY) intents = [];
@@ -547,6 +552,7 @@ export async function runTurn({
     }));
     if (stopped()) { if (early) early.drop(); return { project, reply: '', cards: [], batches: [], crew: [], edits: [], asks: [], error: 'stopped', stopped: true }; }
     intents = heard && heard.ok ? heard.jobs.map((j) => jobFor(j, open, message, p)) : oldReading();
+    heardNobody = Boolean(heard && heard.ok && !heard.jobs.length && !(heard.clear || []).length && !(heard.delete || []).length);
     if (heard && heard.ok) {
       acts = [
         ...(heard.clear || []).map((f) => ({ house: true, clear: true, file: f, reason: 'you asked for it to be cleared' })),
@@ -713,9 +719,19 @@ export async function runTurn({
 
   /* Now the one voice the writer hears. */
   const said = backstageBrief(crew, allCards, p);
-  const messages = frontMessages(working, said, asks);
+  /* WHEN THE LISTENER SENT NOBODY BUT HIS WORDS READ LIKE A JOB. The listener
+   * has the last word, and it can be wrong: his "so maybe we should add that
+   * Jovan…" read as a job to the keyword reading and as talk to the listener,
+   * nobody was sent, and the persona — asked for a change — said it had made
+   * one. It is told plainly that nothing was written, so it says so and offers;
+   * his yes then sends the worker. */
+  const missed = !crew.length && !forceWorker && !writtenCommand(message) && heardNobody &&
+    route(message, { hasPlotEssential: hasPE, hasDocs: docs.length > 0 }).length > 0;
+  const note = missed ? `It may be that ${p.you || 'he'} asked for a change to the documents just now. Nothing was changed: nobody was sent to do it. If that is what ${p.you || 'he'} asked for, say plainly that it has not been written yet and offer to write it in \u2014 never say it was done.` : '';
+  const messages = frontMessages(working, said, asks, note);
 
   let reply = '';
+  let frontThought = '';
   try {
     const out = early && earlyKept
       ? await early.keep((t, at) => { reply += t; onText(t, at); }, onThinking,
@@ -726,7 +742,8 @@ export async function runTurn({
         onThinking, signal,
       });
     reply = endAtControlToken(out.text || reply);
-    if (out.cut) return { project: working, reply, cards: allCards, batches, crew, edits: turnEdits, asks, error: null, cut: true, cutBy: out.cutBy || 'length' };
+    frontThought = out.thinking || '';
+    if (out.cut) return { project: working, reply, thinking: frontThought, cards: allCards, batches, crew, edits: turnEdits, asks, error: null, cut: true, cutBy: out.cutBy || 'length' };
   } catch (e) {
     const aborted = (e && e.name === 'AbortError') || stopped();
     return {
@@ -734,7 +751,7 @@ export async function runTurn({
       error: aborted ? 'stopped' : ((e && e.message) || String(e)), stopped: aborted,
     };
   }
-  return { project: working, reply, cards: allCards, batches, crew, edits: turnEdits, asks, error: null };
+  return { project: working, reply, thinking: frontThought, cards: allCards, batches, crew, edits: turnEdits, asks, error: null };
 }
 
 /* A REPLY STARTED EARLY AND HELD UNSEEN (see the listener, in runTurn). What

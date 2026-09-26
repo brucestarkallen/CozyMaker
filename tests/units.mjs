@@ -1933,6 +1933,76 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
   } catch (e) { ok('the streaming tests ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
 }
 
+/* ============================ A THOUGHT WRITTEN INTO THE REPLY IS THINKING, NOT THE REPLY */
+{
+  const call = await import('../js/agents/call.js');
+  const { runTurn } = await import('../js/agents/run.js');
+  const { LISTENER_MARK } = await import('../js/agents/listener.js');
+  const conn = { url: 'https://neuralwatt.example/v1', model: 'glm', key: 'k' };
+  const realFetch = globalThis.fetch;
+  let next = null;
+  globalThis.fetch = async () => next();
+  try {
+    /* the leading span, its tags cut in two across chunks, as a server sends it */
+    const shown = [];
+    next = () => sseAnswer(['<thi', 'nk>He is asking for the paperwork to ', 'move. So my response, in my voice:</th', 'ink>\n\nThe packet is still in the courier\'s bag.'].map((c, i, all) => ({ choices: [{ delta: { content: c }, finish_reason: i === all.length - 1 ? 'stop' : null }] })).concat(['[DONE]']));
+    let r = await call.streamModel(conn, { system: 's', messages: [{ role: 'user', content: 'q' }], onText: (t) => shown.push(t) });
+    eq('a thought sent inside the words is moved to the thinking, even with its tags cut across chunks',
+      [r.text, r.thinking, shown.join('')], ["The packet is still in the courier's bag.", 'He is asking for the paperwork to move. So my response, in my voice:', "The packet is still in the courier's bag."]);
+    /* no opening tag at all — the model's template opened it */
+    next = () => sseAnswer([{ choices: [{ delta: { content: 'He is looking at his own book. So my response, short and warm:\n</think>\n\nAdded — the packet is in transit.' }, finish_reason: 'stop' }] }, '[DONE]']);
+    r = await call.streamModel(conn, { system: 's', messages: [{ role: 'user', content: 'q' }] });
+    eq('a lone closing tag: everything before it was the thought', [r.text, r.thinking], ['Added — the packet is in transit.', 'He is looking at his own book. So my response, short and warm:']);
+    /* a whole answer, not streamed */
+    next = () => wholeAnswer({ choices: [{ message: { content: '<think>weighing it</think>Here it is.' }, finish_reason: 'stop' }] });
+    r = await call.callModel(conn, { user: 'x' });
+    eq('and in a whole answer', [r.text, r.thinking], ['Here it is.', 'weighing it']);
+    next = () => sseAnswer([{ choices: [{ delta: { content: 'A < B, and the tide > the moon.' }, finish_reason: 'stop' }] }, '[DONE]']);
+    r = await call.streamModel(conn, { system: 's', messages: [{ role: 'user', content: 'q' }] });
+    eq('words with no thought in them are untouched', [r.text, r.thinking], ['A < B, and the tide > the moon.', '']);
+    eq('the crew\'s answers lose a thought with no opening tag too', stripThinking('I will add the line.\n</think>\nDone.\n<edits>[]</edits>'), 'Done.\n<edits>[]</edits>');
+
+    /* through the real turn: the reply is the answer, the thought is kept, and the persona's past replies go back clean */
+    const fronts = [];
+    let listenerSays = '{"jobs":[]}';
+    globalThis.fetch = async (url, init) => {
+      const req = JSON.parse(init.body);
+      const sys = (req.body.messages.find((m) => m.role === 'system') || {}).content || '';
+      if (forFront(req)) { fronts.push(req.body); return sseAnswer([{ choices: [{ delta: { content: '<think>plan it</think>Of course.' }, finish_reason: 'stop' }] }, '[DONE]']); }
+      if (sys.includes(LISTENER_MARK)) { fronts.push({ listener: sys }); return wholeAnswer({ choices: [{ message: { content: listenerSays }, finish_reason: 'stop' }] }); }
+      return wholeAnswer({ choices: [{ message: { content: 'Added it.\n<edits>[{"file":"Plot Essential.md","append":true,"replace":"e006 [Sun] [setup]: The packet was still in transit."}]</edits>' }, finish_reason: 'stop' }] });
+    };
+    const house = { connections: [{ id: 'c1', url: 'https://relay.example/v1', model: 'm', key: 'k' }], agentConnections: {}, settings: { yourName: 'Bruce' }, personaFrame: '' };
+    const world = () => ({ id: 'pt', docs: [{ id: 'd1', name: 'Plot Essential.md', kind: 'pe', text: '# PLOT ESSENTIAL — Soul Society — V1.0\n\n## TIMELINE\ne005 [Fri] [setup]: Shunsui appointed Jovan.\n' }], chats: [], recentSections: [] });
+    const history = [{ role: 'writer', text: 'hi', at: 1 }, { role: 'maker', text: 'He is looking at his own book. So my response:\n</think>\nHello!', at: 2 }];
+    const turn = await runTurn({ house, project: world(), history, message: 'the tide should feel like a character' });
+    eq('through the real turn: the reply is the answer, and its thought is kept with it', [turn.reply, turn.thinking], ['Of course.', 'plan it']);
+    const sent = fronts.find((f) => f.messages);
+    ok('the persona\'s earlier reply goes back without the thought that was in it', sent && JSON.stringify(sent.messages).includes('"Hello!"') && !JSON.stringify(sent.messages).includes('looking at his own book'), sent && JSON.stringify(sent.messages).slice(0, 300));
+    ok('and it is told to answer directly, never its notes on how to answer', sent && /never your notes to yourself about how to answer/.test(sent.messages[0].content));
+
+    /* his own words: a soft "maybe we should add that…" to a book that exists */
+    fronts.length = 0;
+    const HIS = 'So maybe we should add that Jovan just got accepted to seiretei and actually have been assigned to Thirteen division last week and the documents is on the move to Thirteenth Division desk and the second division but rukia and sui feng doesn\'t know since it\'s still moving. And idk how Jovan just got accepted without academy probably the bankai case and who approved logically shunsui?';
+    eq('his message, read by the keyword reading with a plot essential there: an ask to write it', route(HIS, { hasPlotEssential: true, hasDocs: true }).map((j) => j.worker), ['editor']);
+    eq('an idea floated with no ask to write it stays talk', route('maybe the guild owns a dragon?', { hasPlotEssential: true, hasDocs: true }).length, 0);
+    /* the listener hears it as talk and sends nobody (what happened): the persona is told nothing was written */
+    listenerSays = '{"jobs":[]}';
+    const told = await runTurn({ house, project: world(), message: HIS });
+    const frontSaw = fronts.filter((f) => f.messages).pop();
+    ok('when the listener sends nobody for words that read like a job, the persona is told plainly nothing was written',
+      told.project.docs[0].text === world().docs[0].text && frontSaw && /Nothing was changed: nobody was sent to do it\. If that is what Bruce asked for, say plainly that it has not been written yet and offer to write it in \u2014 never say it was done\./.test(frontSaw.messages[frontSaw.messages.length - 1].content));
+    fronts.length = 0;
+    await runTurn({ house, project: world(), message: 'the tide should feel like a character' });
+    ok('plain talk carries no such line', !fronts.filter((f) => f.messages).some((f) => /Nothing was changed: nobody was sent/.test(JSON.stringify(f.messages))));
+    listenerSays = 'not readable';          /* the listener's answer lost: the keyword reading decides */
+    const edit = await runTurn({ house, project: world(), message: HIS });
+    ok('and through the real turn, even with the listener\'s answer lost, it is written', edit.project.docs[0].text.includes('The packet was still in transit.'), edit.project.docs[0].text);
+    ok('what the listener is told: a soft suggestion to add to an existing document is an ask, and a question with it is part of the job',
+      fronts.some((f) => f.listener && /A suggestion to put something into a document that already exists IS an ask, however softly he puts it/.test(f.listener) && /a question he asks with it \(how, who, why\) is part of the job/.test(f.listener)));
+  } catch (e) { ok('the thought-splitting tests ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
+}
+
 /* ============================ HIS ANSWER STARTS WHILE THE LISTENER READS */
 {
   const { runTurn } = await import('../js/agents/run.js');

@@ -388,7 +388,11 @@ export function stripThinking(text) {
   let rest = String(text || '').replace(/<(think|thinking|reasoning)>[\s\S]*?<\/\1>/gi, '');
   const open = rest.match(/<(think|thinking|reasoning)>/i);
   if (open) rest = rest.slice(0, open.index);
-  return rest.replace(/<\/(think|thinking|reasoning)>/gi, '').trim();
+  /* a closing tag with no opening one: the model's template opened the thought,
+   * so everything before the last closer was thinking, never words to keep */
+  const closers = [...rest.matchAll(/<\/(think|thinking|reasoning)>/gi)];
+  if (closers.length) { const last = closers[closers.length - 1]; rest = rest.slice(last.index + last[0].length); }
+  return rest.trim();
 }
 
 export function stripEdits(text) {
