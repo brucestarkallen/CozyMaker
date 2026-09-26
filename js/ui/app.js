@@ -6,6 +6,7 @@ import { runTurn, capUndo, landTurn, commit, versionOf, FRONT_ONLY, GO_ON } from
 import { isStoryCard } from '../agents/router.js';
 import { stopWork, onLearn } from '../agents/call.js';
 import { undoBatch } from '../doc/edits.js';
+import { rollBackTo } from '../doc/branch.js';
 import { DEFAULT_WORLD_TITLE, hasPlotEssential } from '../doc/index.js';
 import { personaOf, names } from '../agents/persona.js';
 import { $, el, escape, closeSheet, toast, applyTheme, onRedraw, onAsk, fold, copyText } from './kit.js';
@@ -141,13 +142,13 @@ function emptyRoom(p) {
   box.append(el('b', '', p.title));
   if (!hasPlotEssential(p.docs)) {
     /* this room goes once he speaks, so it says where the button stays */
-    box.append(el('p', '', `Talk the world through with ${them} — the place, the people, the trouble. Nothing is written until you ask: when you're ready, say \u201cbuild it\u201d or tap Start a plot essential (it stays in The documents), and it's built from everything you said. Or bring in one you already have, or build one from a story card you found on Isekai Zero, AI Dungeon or the like.`));
+    box.append(el('p', '', `Talk the world through with ${them} — the place, the people, the trouble. Nothing is written until you ask: when you're ready, say \u201cbuild it\u201d or tap Start a plot essential (it stays in The documents), and it's built from everything you said. Or import one you already have, or build one from a story card you found on Isekai Zero, AI Dungeon or the like.`));
     const row = el('div', 'btnrow center');
     const start = el('button', 'btn', 'Start a plot essential');
     start.addEventListener('click', newPlotEssential);
     const card = el('button', 'btn quiet', 'Build from a story card');
     card.addEventListener('click', storyCardIn);
-    const bring = el('button', 'btn quiet', 'Bring one in');
+    const bring = el('button', 'btn quiet', 'Import');
     bring.addEventListener('click', bringIn);
     row.append(start, card, bring);
     box.append(row);
@@ -538,19 +539,32 @@ async function deleteTurn(index) {
   draw();
 }
 
+/* BRANCH HERE: A WORLD OF ITS OWN. It used to make a new conversation that
+ * shared the world's documents — so whatever the branch changed, the original
+ * lost, and nothing rolled back. Now the branch is a world beside the original:
+ * the talk up to this message, and its OWN documents, as they stood right
+ * after it — every change made since put back on the copy (doc/branch.js),
+ * never on the original, which is left exactly as it is. Rolling an update
+ * back is branching from the message before it. */
 async function branchHere(index) {
   if (running) return;
+  await store.flush();
+  const world = store.getProject();
   const chat = store.openChat();
-  /* The talk up to here, in a new conversation. The documents are the
-   * world's, shared; the way back for each change stays with the
-   * conversation that made it, so nothing can be put back twice. */
-  const turns = chat.turns.slice(0, index + 1).map((t) => (t.role !== 'maker' ? { ...t } : {
-    ...t, batches: [], versions: t.versions ? t.versions.map((v) => ({ ...v, batches: [] })) : undefined,
-  }));
-  await store.newChatWith(`${chat.title} \u2014 branch`, turns);
+  const t = chat.turns[index];
+  if (!t) return;
+  const back = rollBackTo(world, t.at || 0);
+  const docs = (back.ok ? back.docs : world.docs || []).map((d) => ({ ...d, id: store.docId() }));
+  const turns = chat.turns.slice(0, index + 1).map((x) => ({ ...x }));
+  await store.createProject(`${world.title} \u2014 branch`);
+  const fresh = store.getProject();
+  const talk = { ...fresh.chats[0], title: chat.title, turns, updated: Date.now() };
+  await store.setProject({ ...fresh, docs, chats: [talk], openChat: talk.id, recentSections: world.recentSections || [] }, { now: true });
   draw();
   if (drawerIsOpen()) drawDrawer();
-  toast('A new conversation from here. The documents are shared with the one it came from.');
+  toast(back.ok
+    ? `A branch of \u201c${world.title}\u201d from that message \u2014 its own documents, as they stood then. The original is untouched.`
+    : `A branch of \u201c${world.title}\u201d from that message \u2014 its own documents, as they stand now (${back.why}). The original is untouched.`);
 }
 
 function goOn(index) {

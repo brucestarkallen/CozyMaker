@@ -1933,6 +1933,42 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
   } catch (e) { ok('the streaming tests ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
 }
 
+/* ============================ BRANCH HERE: THE DOCUMENTS AS THEY STOOD, ON A COPY */
+{
+  const { rollBackTo } = await import('../js/doc/branch.js');
+  const PE0 = '# PLOT ESSENTIAL — Soul Society — V1.0\n\n## TIMELINE\ne005 [Fri] [setup]: Shunsui appointed Jovan.\n\n## SCENE\nWHERE: the Ribway\n';
+  const r1 = applyRun([{ name: 'Plot Essential.md', text: PE0 }], [{ file: 'Plot Essential.md', find: 'WHERE: the Ribway', replace: 'WHERE: the 13th Division barracks' }]);
+  const PE1 = r1.texts.get('Plot Essential.md');
+  const r2 = applyRun([{ name: 'Plot Essential.md', text: PE1 }], [{ file: 'Plot Essential.md', insert_after: 'e005 [Fri] [setup]: Shunsui appointed Jovan.', replace: 'e006 [Sun 09:00] [setup]: The courier packet had not reached the 13th or 2nd Division desks.' }]);
+  const PE2 = r2.texts.get('Plot Essential.md');
+  const PE3 = PE2.replace('Shunsui appointed Jovan.', 'Shunsui appointed Jovan, on his own authority.');
+  const world = () => ({
+    docs: [{ id: 'd1', name: 'Plot Essential.md', kind: 'pe', text: PE3 }],
+    chats: [{ id: 'k', turns: [{ role: 'writer', text: 'move the scene', at: 10 }, { role: 'maker', text: 'Moved.', at: 20, batches: [r1.batch] },
+      { role: 'writer', text: 'add the packet', at: 30 }, { role: 'maker', text: 'Added.', at: 40, batches: [r2.batch] }] }],
+    undo: [{ id: 'h1', docId: 'd1', name: 'Plot Essential.md', before: PE2, after: PE3, at: 50 }],
+  });
+  ok('the changes the tests roll back are real ones', r1.batch && r2.batch && PE1 !== PE0 && PE2 !== PE1);
+  const at = (cut) => { const r = rollBackTo(world(), cut); return r.ok ? r.docs[0].text : 'refused: ' + r.why; };
+  eq('rolled to after the last reply: his hand edit since is put back', at(40), PE2);
+  eq('rolled to before the packet was added: the packet is gone, the scene still moved', at(30), PE1);
+  eq('rolled to before anything: the book as it first was', at(10), PE0);
+  eq('rolled to now: nothing changes', at(99), PE3);
+  const w = world();
+  rollBackTo(w, 10);
+  eq('the world itself is never touched — only the copy is rolled', w.docs[0].text, PE3);
+  const putBack = world();
+  putBack.chats[0].turns[3].batches = [{ ...r2.batch, undone: true }];
+  putBack.docs[0].text = PE1;
+  putBack.undo = [];
+  eq('a change already put back is not put back twice', rollBackTo(putBack, 10).docs[0].text, PE0);
+  const moved = world();
+  moved.undo = [];
+  moved.docs[0].text = PE2.replace('The courier packet had not reached', 'The courier packet HAD reached');
+  const refused = rollBackTo(moved, 30);
+  ok('a change whose words were changed since cannot be put back: it says so, rather than roll half', !refused.ok && refused.why, JSON.stringify(refused).slice(0, 200));
+}
+
 /* ============================ A THOUGHT WRITTEN INTO THE REPLY IS THINKING, NOT THE REPLY */
 {
   const call = await import('../js/agents/call.js');

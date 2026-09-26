@@ -870,25 +870,40 @@ front can receive inside that harness.
   answer, walked with ◂ ▸; refused, with the reason, if the documents moved since); Try again shows only on a last
   reply that failed and changed nothing.
 
+### Copy all and Export at the top, Import by its name, and a branch that is a branch (v1.3.3)
+
+- **Copy all and Save as a file sat under the whole document** and its outline — on a phone, a long scroll past
+  everything, so he never found them and asked why export needed Termux. They sit at the top of the document now,
+  above the words, and it is **Export** (his word): the file lands in the phone's downloads. The walk checks their
+  place in the page, not only that they work.
+- **Bring one in is Import** (his word), everywhere: the empty room, The documents, the drawer, its own view
+  (Import it).
+- **Branch here made a conversation that shared the documents** — whatever the branch changed, the original lost,
+  and nothing rolled back. It makes a world of its own now: the talk up to that message and its OWN documents as they
+  stood right after it — every change made since, the crew's from every conversation and his hand edits, put back
+  newest first on the copy (`rollBackTo`, js/doc/branch.js, through the same undoBatch every put-back uses), never
+  on the original. A change whose words were changed since stops the roll-back and says why; the branch then keeps
+  the documents as they stand, and says so. Rolling an update back is branching from the message before it.
+
 ## Testing
 
 ```
 bash tests/all.sh           all seven, exit code intact
 ```
 
-    node tests/units.mjs         791 checks — the real modules on a real document, and what the persona hears
+    node tests/units.mjs         799 checks — the real modules on a real document, and what the persona hears
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       49 checks — the real serve.py, real files on disk, streams timed
     python3 tests/browser.py      75 checks — real Chromium at 390x844, end to end
-    python3 tests/walk_worlds.py 188 checks — the drawer, conversations, swipes and versions, edit and
+    python3 tests/walk_worlds.py 192 checks — the drawer, conversations, swipes and versions, edit and
                                               send again, delete, branch, go on, re-quoting, crafts,
                                               the thinking box live, backup and restore, a model too
                                               small for the world, a real server killed mid-edit
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-1,157 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
+1,169 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

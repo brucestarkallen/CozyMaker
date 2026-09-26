@@ -356,7 +356,7 @@ def main():
             ok("the drawer lists every world", "The Leviathan Quarter" in text and "An Older World" in text, text[:300])
             ok("the drawer names its parts", "conversations" in text.lower() and "documents" in text.lower())
             ok("an empty world offers Start a plot essential, by that one name", "Start a plot essential" in text and "New plot essential" not in text)
-            ok("and a way to bring one in", "Bring one in" in text)
+            ok("and a way to import one, by that name", "Import" in text and "Bring one in" not in text)
             order = [t for t in re.findall(r"(The Leviathan Quarter|An Older World)", text)]
             ok("worlds are listed newest first", order[:2] == ["The Leviathan Quarter", "An Older World"], order)
 
@@ -558,13 +558,13 @@ def main():
             # ---------------------------------------- bring one in
             page.click("#menuBtn")
             page.wait_for_timeout(300)
-            page.locator(".world-parts .btn", has_text="Bring one in").click()
+            page.locator(".world-parts .btn", has_text=re.compile("^Import$")).click()
             page.wait_for_timeout(400)
             page.locator("#docsBody input[type=text]").fill("Old Worldbook.json")
             page.locator("#docsBody textarea").fill(json.dumps([
                 {"name": "The Ribway", "keys": ["Ribway"], "content": "a market street", "strategy": "green", "order": 9999},
             ]))
-            page.locator("#docsBody .btn", has_text="Bring it in").click()
+            page.locator("#docsBody .btn", has_text=re.compile("^Import it$")).click()
             page.wait_for_timeout(1300)
             saved = world("p_new")
             wb = [d for d in saved["docs"] if d["name"] == "Old Worldbook.json"]
@@ -929,11 +929,11 @@ def main():
             WHOLE = RAW.replace("\r\n", "\n")
             page.click("#menuBtn")
             page.wait_for_timeout(300)
-            page.locator(".world-parts .btn", has_text="Bring one in").click()
+            page.locator(".world-parts .btn", has_text=re.compile("^Import$")).click()
             page.wait_for_timeout(400)
             page.locator("#docsBody input[type=text]").fill("My Old PE.md")
             page.locator("#docsBody textarea").fill(RAW)
-            page.locator("#docsBody .btn", has_text="Bring it in").click()
+            page.locator("#docsBody .btn", has_text=re.compile("^Import it$")).click()
             page.wait_for_timeout(1300)
             mine = [d for d in world("p_new")["docs"] if d["name"] == "My Old PE.md"]
             ok("his raw plot essential arrives whole, every word, [HIDDEN] and TBD and all", bool(mine) and mine[0]["text"] == WHOLE and mine[0]["kind"] == "pe",
@@ -991,15 +991,24 @@ def main():
             ok("deleting a reply that changed a document puts the change back", where_line() == "WHERE: the Ribway" and "Harbour" not in pe_text(), where_line())
             ok("and the reply is gone", page.locator(".turn").count() == n - 1)
 
-            # branch here: the talk up to there, in a new conversation beside the old one
-            chats_before = len(world("p_new")["chats"])
-            page.locator(".turn.writer").first.locator(".bubble").click()
+            # branch here: a world of its own — the talk up to there, and its own documents as they stood then
+            worlds_before = {p["id"] for p in api("/api/projects")["projects"]}
+            original = {d["name"]: d["text"] for d in world("p_new")["docs"]}
+            page.locator(".turn.writer").last.locator(".bubble").click()
             page.wait_for_timeout(250)
-            page.locator(".turn.writer").first.locator(".turn-actions .btn", has_text="Branch here").click()
-            page.wait_for_timeout(1200)
-            wb = world("p_new")
-            ok("Branch here opens a new conversation holding the talk up to there", page.locator(".turn").count() == 1
-               and len(wb["chats"]) == chats_before + 1 and any(c["title"].endswith("— branch") for c in wb["chats"]), page.locator(".turn").count())
+            page.locator(".turn.writer").last.locator(".turn-actions .btn", has_text="Branch here").click()
+            page.wait_for_timeout(1500)
+            made = [p for p in api("/api/projects")["projects"] if p["id"] not in worlds_before]
+            ok("Branch here makes a world of its own, beside the original", len(made) == 1 and made[0]["title"] == "The Leviathan Quarter — branch", made)
+            bw = world(made[0]["id"]) if made else {"docs": [], "chats": []}
+            ok("holding the talk up to that message", page.locator(".turn.writer").count() >= 1 and len(bw["chats"]) == 1
+               and bw["chats"][0]["turns"][-1]["role"] == "writer", [t["role"] for t in (bw["chats"][0]["turns"] if bw["chats"] else [])])
+            ok("with its own copies of the documents", bw["docs"] and not ({d["id"] for d in bw["docs"]} & {d["id"] for d in world("p_new")["docs"]}))
+            ok("and the original world is exactly as it was", {d["name"]: d["text"] for d in world("p_new")["docs"]} == original)
+            page.click("#menuBtn")
+            page.wait_for_timeout(400)
+            page.locator(".world-name", has_text=re.compile("^The Leviathan Quarter$")).click()
+            page.wait_for_timeout(800)
 
             # go on: the rest of a reply cut off at the limit joins the same reply
             h = api("/api/house")
@@ -1218,9 +1227,13 @@ def main():
             page.locator("#docsBody .btn", has_text="Put back my edits").click()
             ok("Put back my edits returns the document to exactly how he found it", until(lambda: pe_text() == pe_before), pe_text()[-80:])
             ok("and the button goes, with nothing left to put back", page.locator("#docsBody .btn", has_text="Put back my edits").count() == 0)
+            ok("Copy all and Export sit at the top of the document, above the words — not under them",
+               page.evaluate("""() => { const t = document.querySelector('#docsBody textarea');
+                 return ['Copy all', 'Export'].every((w) => { const b = [...document.querySelectorAll('#docsBody .btn')].find((x) => x.textContent === w);
+                   return b && t && (b.compareDocumentPosition(t) & Node.DOCUMENT_POSITION_FOLLOWING); }); }"""))
             with page.expect_download() as dl:
-                page.locator("#docsBody .btn", has_text="Save as a file").click()
-            ok("Save as a file hands him the document exactly", Path(dl.value.path()).read_text() == pe_text() and dl.value.suggested_filename == "Plot Essential.md", dl.value.suggested_filename)
+                page.locator("#docsBody .btn", has_text=re.compile("^Export$")).click()
+            ok("Export hands him the document exactly, as a file in his downloads", Path(dl.value.path()).read_text() == pe_text() and dl.value.suggested_filename == "Plot Essential.md", dl.value.suggested_filename)
             page.locator("#docsBody .btn", has_text="Duplicate").click()
             page.wait_for_timeout(900)
             copies = [d for d in world("p_new")["docs"] if d["name"] == "Plot Essential (copy).md"]

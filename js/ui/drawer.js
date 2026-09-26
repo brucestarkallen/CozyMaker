@@ -175,7 +175,7 @@ function openWorldParts(world) {
     card.addEventListener('click', () => { closeDrawer(); storyCardIn(); });
     acts.append(start, card);
   }
-  const bring = el('button', 'btn quiet small', 'Bring one in');
+  const bring = el('button', 'btn quiet small', 'Import');
   bring.addEventListener('click', () => { closeDrawer(); bringIn(); });
   acts.append(bring);
   const pe = world.docs.find((d) => d.kind === 'pe' && (d.text || '').trim());

@@ -95,7 +95,7 @@ deleted from its ⋯.
 premise, plot, characters and opening — and builds a plot essential ready to play, in a world of its own, with
 whatever makes it more immersive added. On a plot essential, **Make a worldbook from it** has the worldbook keeper
 write its world as SillyTavern World Info — blue always on, green on keywords and vectors, chain on vectors
-only — and **Export for SillyTavern** on the worldbook hands it over. **Bring one in** takes a plot essential,
+only — and **Export for SillyTavern** on the worldbook hands it over. **Import** takes a plot essential,
 continuation file or worldbook you already have — paste it or pick the file —
 and tidies it on the way in.
 
@@ -105,7 +105,7 @@ SillyTavern*, which saves it in SillyTavern's World Info format — import it
 there under World Info. Each job shows in the conversation in plain words, the
 same as if you had typed it.
 
-A document also has **Copy all**, **Save as a file**, **Duplicate**, and — after you
+A document has **Copy all** and **Export** (the file lands in your downloads) at its top, **Duplicate**, and — after you
 have edited it by hand — **Put back my edits**. **Side by side** shows two to four
 documents next to each other. Under the cog, **Save everything to a file** keeps
 every world in one file (not your connections or keys), and **Bring everything back

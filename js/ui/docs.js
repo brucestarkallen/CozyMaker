@@ -116,13 +116,13 @@ function drawList() {
 
   if (!hasPlotEssential(docs)) {
     const g = group('No plot essential yet',
-      'Talk the world through first \u2014 nothing is written until you ask. When you\u2019re ready, say \u201cbuild it\u201d or tap Start a plot essential, and it is built from everything you said; or bring in one you already have.');
+      'Talk the world through first \u2014 nothing is written until you ask. When you\u2019re ready, say \u201cbuild it\u201d or tap Start a plot essential, and it is built from everything you said; or import one you already have.');
     const row = el('div', 'btnrow');
     const start = el('button', 'btn', 'Start a plot essential');
     start.addEventListener('click', () => { closeSheet('docsSheet'); newPlotEssential(); });
     const card = el('button', 'btn quiet', 'Build from a story card');
     card.addEventListener('click', storyCardIn);
-    const bring = el('button', 'btn quiet', 'Bring one in');
+    const bring = el('button', 'btn quiet', 'Import');
     bring.addEventListener('click', bringIn);
     row.append(start, card, bring);
     g.append(row);
@@ -157,7 +157,7 @@ function drawList() {
 
   if (hasPlotEssential(docs)) {
     const row = el('div', 'btnrow');
-    const bring = el('button', 'btn quiet', 'Bring one in');
+    const bring = el('button', 'btn quiet', 'Import');
     bring.addEventListener('click', bringIn);
     row.append(bring);
     body.append(row);
@@ -347,7 +347,7 @@ export function bringIn() {
   openSheet('docsSheet');
   if (openDocIdValue) tidyOnLeaving(openDocIdValue);
   openDocIdValue = null;
-  $('docsTitle').textContent = 'Bring one in';
+  $('docsTitle').textContent = 'Import';
   const action = $('docsAction');
   action.textContent = 'All documents';
   action.onclick = () => openDocs();
@@ -374,7 +374,7 @@ export function bringIn() {
   });
   g.append(field('Call it', name), field('Its words', area), field('…or pick the file', file));
   const row = el('div', 'btnrow');
-  const go = el('button', 'btn', 'Bring it in');
+  const go = el('button', 'btn', 'Import it');
   go.addEventListener('click', async () => {
     const text = area.value;
     if (!text.trim()) return toast('There is nothing in it yet.');
@@ -454,6 +454,24 @@ function openOne(id) {
   if (doc.kind === 'transplant') body.append(craftNode('auditor', 'how the memory auditor works'));
   if (doc.kind === 'instructions') body.append(craftNode('instructions', 'how the instructions writer works'));
 
+  /* COPY ALL AND EXPORT, AT THE TOP. They sat under the whole document and its
+   * outline — on a phone, a long scroll past everything he was looking for
+   * them from, so they may as well not have been there. And it is Export: the
+   * file lands in the phone's downloads, no Termux needed. */
+  const nowDoc = () => ((store.getProject() || {}).docs || []).find((d) => d.id === id) || doc;
+  const top = el('div', 'btnrow');
+  top.style.padding = '0 16px 10px';
+  const copy = el('button', 'btn quiet', 'Copy all');
+  const exp = el('button', 'btn quiet', 'Export');
+  exp.addEventListener('click', () => {
+    const d = nowDoc();
+    const name = /\.[a-z0-9]{1,5}$/i.test(d.name) ? d.name : d.name + (d.kind === 'worldbook' ? '.json' : '.md');
+    downloadText(name, d.text || '', /\.json$/i.test(name) ? 'application/json' : 'text/markdown');
+    toast(`Exported as ${name} \u2014 it is in your downloads.`);
+  });
+  top.append(copy, exp);
+  body.append(top);
+
   const wrap = el('div', 'docedit');
   const area = document.createElement('textarea');
   area.value = doc.text || '';
@@ -507,16 +525,7 @@ function openOne(id) {
     $('docsTitle').textContent = clean;
     redraw();
   });
-  const copy = el('button', 'btn quiet', 'Copy all');
   copy.addEventListener('click', () => copyText(area.value));
-  const nowDoc = () => ((store.getProject() || {}).docs || []).find((d) => d.id === id) || doc;
-  const save = el('button', 'btn quiet', 'Save as a file');
-  save.addEventListener('click', () => {
-    const d = nowDoc();
-    const name = /\.[a-z0-9]{1,5}$/i.test(d.name) ? d.name : d.name + (d.kind === 'worldbook' ? '.json' : '.md');
-    downloadText(name, d.text || '', /\.json$/i.test(name) ? 'application/json' : 'text/markdown');
-    toast(`Saved as ${name}.`);
-  });
   const dup = el('button', 'btn quiet', 'Duplicate');
   dup.addEventListener('click', async () => {
     const d = nowDoc();
@@ -544,7 +553,7 @@ function openOne(id) {
     openDocs();
     redraw();
   });
-  row.append(rename, copy, save, dup);
+  row.append(rename, dup);
   if (lastHandEdit(id)) {
     const back = el('button', 'btn quiet', 'Put back my edits');
     back.addEventListener('click', () => putBackHandEdit(id));
