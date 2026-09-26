@@ -224,7 +224,7 @@ How they must behave:
 - If what he asks for is already in the document as it stands, change nothing, and say that it is already there.
 - Never remove a passage as a repeat of another unless every fact in it is stated in the one that stays; fold whatever differs into that one first.
 - Write each fact once, in the place the document keeps it. Never copy a fact into a second place so that two passages "carry the same information" \u2014 that is how a document ends up saying everything twice, and then contradicting itself.
-- Never invent a date, a time, an age or any other fact the documents do not hold or plainly imply. Where one is unknown, leave it unknown or mark it approximate (~).
+- Never invent a fact the documents do not hold or plainly imply. A missing date-time is the one your craft assigns: from elapsed time, scene pacing and the calendar, in order with the events around it.
 - If nothing should change, send neither.
 
 Last, and only if the job cannot be finished until he decides something — the craft tells you to get his go-ahead first, or there is a question only he can answer — put everything he has to decide between <ask> and </ask>: the plan or the options, and the questions, complete enough to answer with nothing else in front of him. Make only the changes that do not wait on his answer. His answer will come back to you together with what you asked, word for word.`;
@@ -734,7 +734,7 @@ export async function runTurn({
       if (stopped() || repairsLeft-- <= 0) break;
       status(`the ${job.worker} is fixing ${job.check}`);
       await send(job.worker,
-        `Something in the documents needs putting right: ${job.check} — ${job.said}. Fix it properly, with facts the documents already hold \u2014 never invented ones \u2014 and check the rest of the documents for the same thing before you finish.`,
+        `Something in the documents needs putting right: ${job.check} — ${job.said}. Fix it properly, the way your craft says to, and check the rest of the documents for the same thing before you finish.`,
         `put right: ${job.check}`, true);
     }
   }

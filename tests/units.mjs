@@ -353,8 +353,8 @@ ok('only the outermost removal is reported',
     .found.filter((f) => /empty heading/.test(f.check))[0].said.includes('(GONE)'));
 ok('a heading inside a fenced block is left alone',
   lint('## A\nbody\n\n```\n## not a heading\n```\n', { kind: 'pe' }).text.includes('## not a heading'));
-ok('an undated event is handed to the chronicler',
-  L.found.some((f) => f.worker === 'chronicler' && /no date/.test(f.check)));
+ok('an event without a full date-time is handed to the chronicler',
+  L.found.some((f) => f.worker === 'chronicler' && /without a full date-time/.test(f.check)));
 ok('the undated event is named', L.found.some((f) => /e004/.test(f.said)));
 ok('a name inside a trait is handed to the editor',
   L.found.some((f) => f.worker === 'editor' && /name inside/.test(f.check)), JSON.stringify(L.found.map((f) => f.check)));
@@ -1980,9 +1980,24 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
   const { readEvents } = await import('../js/doc/lint.js');
   const HIS = ['e001 [~980 AG] [setup]: Jovan was born.', 'e003 [Wednesday 3rd of Hanami, 1001 AG, 14:00] [LEVERAGE]:', 'e004 [Sunday 20th of Shiraume, 1000 AG, 18:40]:',
     'e005 [Friday 3rd of Hanami, 1001 AG, 09:00] [POLITICAL]:', 'e006 [Mon 14 Apr 247, 09:00] [setup]: the template\'s own shape', 'e007 [setup]: a thing with no date at all', 'e008 [e005 follow-up]: an id is not a year'].join('\n');
-  eq('his own calendar\'s dates are dates — ordinals, "of", month names, an approximate year', readEvents(HIS).undated, ['e007', 'e008']);
-  const f = lint('# PLOT ESSENTIAL — Soul Society — V1.0\n\n## TIMELINE\n' + HIS + '\n', { kind: 'pe', deliverable: true }).found.find((x) => x.check === 'an event with no date');
-  ok('the crew is sent only for the ones with no date, and told never to invent a day or an hour', f && /e007, e008 carry no date at all/.test(f.said) && /never invent a day or an hour/.test(f.said), f && f.said);
+  /* the craft's own standard (3.1): "Every event … carries a full date-time: [DD MMM YYYY, HH:MM]. No
+   * exceptions" — his calendar's full stamps pass; a bare year is not one, and it is assigned, never left */
+  eq('his own calendar\'s full stamps pass — ordinals, "of", month names; a bare year is not a full date-time', readEvents(HIS).undated, ['e001', 'e007', 'e008']);
+  const f = lint('# PLOT ESSENTIAL — Soul Society — V1.0\n\n## TIMELINE\n' + HIS + '\n', { kind: 'pe', deliverable: true }).found.find((x) => x.check === 'an event without a full date-time');
+  ok('the crew is told to assign them as the craft\'s Temporal Anchoring says', f && /e001, e007, e008 carry no full date-time/.test(f.said) && /Temporal Anchoring/.test(f.said) && /in order with the events around it/.test(f.said), f && f.said);
+  eq('the craft\'s own fantasy example is a full date-time', readEvents('## TIMELINE\ne001 [Moonday 15th of Highsun, 847 AK, 14:30] [SETUP]: x\n').undated, []);
+  /* the rest of its Mechanical Audit, read by code from his real event lines */
+  const HIS_UPLOAD = ['### Calendar', 'Months: 1-Shiratsuyu, 2-Hatsuharu, 3-Hanami, 4-Samidare, 5-Mizube,', '6-Suzushiro, 7-Momiji, 8-Kogarashi, 9-Setsugetsu, 10-Fuyubi, 11-Maboroshi,', '12-Shiraume. 7-day week (Mon–Sun).', '', '## TIMELINE',
+    'e001 [Thur 22nd of Shiraume, ~980 AG, 03:20] [SETUP]: Jovan Oda born.', '', 'e002 [Thur 5th of Hanami, ~980 AG, 11:00] [SETUP]: Yamamoto discovered the child.', '',
+    'e004 [Sun 20th of Hanami, 1000 AG, 18:40]: Thousand Year Blood War.', '', 'e005 [Fri 3rd of Hanami, 1001 AG, 09:00] [POLITICAL]: ' + 'word '.repeat(90).trim()].join('\n');
+  const audit = readEvents(HIS_UPLOAD);
+  eq('his upload, read by code: the discovery dated before the birth', audit.lateOrder, ['e002 is dated before e001']);
+  eq('an event with no tags', audit.untagged, ['e004']);
+  eq('an event over the craft\'s 80-word ceiling', audit.long, ['e005']);
+  eq('the STATE dated before the last event is caught', readEvents('# STATE: Mon 1 Jan 1000, 09:00 / x\n## TIMELINE\ne001 [Tue 2 Jan 1000, 10:00] [SETUP]: y\n').stateEarly, 'e001');
+  eq('and one at or after it is not', readEvents('# STATE: Tue 2 Jan 1000, 11:00 / x\n## TIMELINE\ne001 [Tue 2 Jan 1000, 10:00] [SETUP]: y\n').stateEarly, '');
+  const found = lint('# PLOT ESSENTIAL — X — V1.0\n\n' + HIS_UPLOAD + '\n', { kind: 'pe', deliverable: true }).found.map((y) => y.check);
+  ok('each is handed to the chronicler as a finding', ['events out of time order', 'an event with no tags', 'an event over its word budget'].every((c) => found.includes(c)), JSON.stringify(found));
   eq('a change that only moves spacing is no change', applyEdit('WHERE: the  Ribway\nLAST: x', { find: 'WHERE: the  Ribway', replace: 'WHERE: the Ribway' }).why, 'only the spacing would change');
 
   const { runTurn } = await import('../js/agents/run.js');
@@ -2014,7 +2029,7 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
     eq('what is already there, and a spacing-only change, reach him as no card at all', r.cards.filter((c) => /already in the document|only the spacing/.test(c.why || '')).length, 0);
     ok('a change with nothing saying what to do goes back to the worker once, not to him', asked.length === 2 && /a change came with nothing saying what to do/.test(asked[1].user), asked.map((a) => a.user.slice(0, 80)).join(' | '));
     ok('and the document is exactly as it was', r.project.docs[0].text === doc);
-    ok('the crew is told: one fact in one place, and nothing invented', /Write each fact once, in the place the document keeps it/.test(asked[0].sys) && /Never invent a date, a time, an age or any other fact the documents do not hold/.test(asked[0].sys));
+    ok('the crew is told: one fact in one place, nothing invented, and a missing date-time assigned as its craft says', /Write each fact once, in the place the document keeps it/.test(asked[0].sys) && /Never invent a fact the documents do not hold or plainly imply\. A missing date-time is the one your craft assigns/.test(asked[0].sys));
   } catch (e) { ok('the noise-card tests ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
 }
 

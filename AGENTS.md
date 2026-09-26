@@ -923,13 +923,32 @@ front can receive inside that harness.
   passages carry the same information" (the mirroring that the next pass then folded as a duplicate); and never an
   invented date, time, age or fact. The read-back marks the words a change replaced as gone, never to be quoted.
 
+### The craft's own standard, held by code (v1.3.6)
+
+- **v1.3.5 held the timeline to a standard of the house's own, not the craft's.** It took a bare year as a date and
+  told the crew never to assign a day or an hour. The craft says the opposite, in so many words (3.1 Temporal
+  Standard): "Every event … carries a full date-time: [DD MMM YYYY, HH:MM]. No exceptions. No undated events", and
+  "Generalist assigns timestamps to any input lacking them, using elapsed time, scene pacing, travel times, and the
+  established calendar". What had gone wrong in his file was never that dates were assigned; it was that they were
+  assigned OUT OF ORDER — the discovery dated before the birth — which the craft's Mechanical Audit ("monotonic
+  timestamps") forbids and nothing in the house checked. Reverted, and the checks now follow the craft to the word:
+  a full date-time is a day, a month, a year and an hour, in any calendar's words (the craft's own example
+  `[Moonday 15th of Highsun, 847 AK, 14:30]` passes; the old Gregorian-only check turned it away).
+- **The rest of the craft's Mechanical Audit, by code** (`readEvents`, lint): timestamps must run forward, read in
+  the document's OWN calendar's month order ("1-Shiratsuyu, 2-Hatsuharu, …"); the STATE may not be dated before the
+  last event; every event carries a thematic tag (5.1: tags decide compression); no event runs past 80 words (5.1's
+  longest tier). Each goes to the chronicler as a finding. Run on his uploaded plot essential they find exactly what a
+  line-by-line read found: e002 dated before e001, e004 with no tag, e005 over 80 words.
+- The return contract and the repair jobs say the craft's rule: never invent a fact — a missing date-time is the one
+  the craft assigns, in order with the events around it.
+
 ## Testing
 
 ```
 bash tests/all.sh           all seven, exit code intact
 ```
 
-    node tests/units.mjs         813 checks — the real modules on a real document, and what the persona hears
+    node tests/units.mjs         820 checks — the real modules on a real document, and what the persona hears
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       49 checks — the real serve.py, real files on disk, streams timed
@@ -941,7 +960,7 @@ bash tests/all.sh           all seven, exit code intact
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-1,183 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
+1,190 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

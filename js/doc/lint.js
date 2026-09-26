@@ -33,13 +33,44 @@ const CHORE_LINES = [
   /^\s*Step \d+ found.*$/gim,
 ];
 const EVENT_LINE = /^(\s*)(e\d{3,})(\s*[-–]\s*(\d{3,}))?\s*(\[[^\]]*\])?/;
-/* WHAT COUNTS AS A DATE: a bracket holding a year, or a day of a month — in any
- * calendar's words ("5th of Hanami", "14 Apr"), approximate ones included
- * ("~980 AG"). It once took only the template's own shape, so every event in a
- * world with its own calendar ("[Sunday 5th of Hanami, 1001 AG, 09:00]") read as
- * undated, the crew was sent on every turn to date events that had dates, and,
- * told they had "no day and time", it invented days. */
-const DATE_STAMP = /\[[^\]]*?(?:(?<![\w:])~?\d{3,5}(?!\d)|\b\d{1,2}(?:st|nd|rd|th)?\s+(?:of\s+)?[A-Za-z]{3,12}\b)[^\]]*\]/;
+/* A FULL DATE-TIME, IN THE CRAFT'S OWN SHAPE (3.1, Temporal Standard: "Every
+ * event … carries a full date-time: [DD MMM YYYY, HH:MM]. No exceptions. No
+ * undated events."): a day, a month, a year and an hour — [Mon 14 Apr 247,
+ * 09:00], or the craft's own fantasy example [Moonday 15th of Highsun, 847 AK,
+ * 14:30]. The first check took only the Gregorian shape and turned the craft's
+ * own example away, so every event in a world with its own calendar read as
+ * undated and the crew re-dated them on every turn; v1.3.5 then took a bare
+ * year as enough — a standard of the house's own, not the craft's. */
+const FULL_STAMP = /\[\s*(?:[A-Za-z]{2,12}\.?,?\s+)?(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?([A-Za-z][A-Za-z'\u2019-]{1,20})\.?,?\s+~?(\d{1,5})\b[^\]]*?\b(\d{1,2}):(\d{2})\b[^\]]*\]/;
+const STATE_STAMP = /^#\s*STATE:\s*(?:[A-Za-z]{2,12}\.?,?\s+)?(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?([A-Za-z][A-Za-z'\u2019-]{1,20})\.?,?\s+~?(\d{1,5})\b[^\n]*?\b(\d{1,2}):(\d{2})\b/im;
+const TAG_BRACKET = /\]\s*\[\s*[A-Za-z][^\]]*\]/;
+/* the craft's longest timeline tier (5.1: recent events, \u226480 words) */
+export const EVENT_WORDS = 80;
+const GREGORIAN = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+/* The months in the order the document's own calendar gives them
+ * ("1-Shiratsuyu, 2-Hatsuharu, …"), else the Gregorian ones. */
+export function calendarMonths(src) {
+  const text = String(src || '');
+  const at = text.search(/^#{2,3}\s*Calendar\b.*$/im);
+  const map = new Map();
+  if (at !== -1) {
+    const rest = text.slice(at).split('\n').slice(1);
+    const body = [];
+    for (const line of rest) { if (/^#{1,3}\s/.test(line)) break; body.push(line); }
+    for (const m of body.join(' ').matchAll(/(\d{1,2})\s*[-\u2013.:)]\s*([A-Za-z][A-Za-z'\u2019-]+)/g)) map.set(m[2].toLowerCase(), Number(m[1]));
+  }
+  return (name) => {
+    const n = String(name || '').toLowerCase();
+    if (map.has(n)) return map.get(n);
+    const g = GREGORIAN.indexOf(n.slice(0, 3));
+    return g === -1 ? null : g + 1;
+  };
+}
+function stampKey(m, month) {
+  const mi = month(m[2]);
+  if (mi == null) return null;
+  return ((Number(m[3]) * 100 + mi) * 100 + Number(m[1])) * 10000 + Number(m[4]) * 100 + Number(m[5]);
+}
 const SCORES_NOW = /\(\s*now\s*:\s*P\s*:\s*(-?\d+)\s+R\s*:\s*(-?\d+)\s+S\s*:\s*(-?\d+)\s*\)/gi;
 const SCORES_BARE = /\(\s*P\s*:\s*(-?\d+)\s+R\s*:\s*(-?\d+)\s+S\s*:\s*(-?\d+)\s*\)/gi;
 
@@ -227,10 +258,31 @@ export function lint(text, { kind = 'pe', deliverable = true, keep = null } = {}
       `${ev.outOfOrder.join(', ')} come after a later number`,
       { worker: 'chronicler', count: ev.outOfOrder.length }));
   }
+  const some = (list) => `${list.slice(0, 6).join(', ')}${list.length > 6 ? ` and ${list.length - 6} more` : ''}`;
   if (ev.undated.length) {
-    found.push(finding('an event with no date',
-      `${ev.undated.slice(0, 6).join(', ')}${ev.undated.length > 6 ? ` and ${ev.undated.length - 6} more` : ''} carry no date at all \u2014 give each the date the documents already give or imply, or an approximate one (~); never invent a day or an hour`,
+    found.push(finding('an event without a full date-time',
+      `${some(ev.undated)} carry no full date-time [day month year, hour:minute] \u2014 assign each as the craft's Temporal Anchoring says: from elapsed time, scene pacing and the calendar, in order with the events around it`,
       { worker: 'chronicler', count: ev.undated.length }));
+  }
+  if (ev.lateOrder.length) {
+    found.push(finding('events out of time order',
+      `${some(ev.lateOrder)}, which comes before it \u2014 timestamps must run forward (the craft's Mechanical Audit)`,
+      { worker: 'chronicler', count: ev.lateOrder.length }));
+  }
+  if (ev.stateEarly) {
+    found.push(finding('the STATE is earlier than the last event',
+      `the STATE line is dated before ${ev.stateEarly} \u2014 the scene's date-time must be at or after the last event`,
+      { worker: 'chronicler', count: 1 }));
+  }
+  if (ev.untagged.length) {
+    found.push(finding('an event with no tags',
+      `${some(ev.untagged)} carry no thematic tag \u2014 the craft tags every event at creation; its tags decide how it is compressed`,
+      { worker: 'chronicler', count: ev.untagged.length }));
+  }
+  if (ev.long.length) {
+    found.push(finding('an event over its word budget',
+      `${some(ev.long)} run past ${EVENT_WORDS} words, the craft's longest timeline tier \u2014 compress it, keeping its causal chain and its significant lines`,
+      { worker: 'chronicler', count: ev.long.length }));
   }
 
   /* 6 — a name inside a trait line belongs with the bond, not the trait. */
@@ -439,16 +491,45 @@ function removeEmptySections(src, had = null) {
 export function readEvents(src) {
   const ids = [];
   const undated = [];
+  const untagged = [];
+  const long = [];
+  const lateOrder = [];
   const seen = new Map();
   const duplicates = [];
-  for (const line of String(src || '').split('\n')) {
+  const month = calendarMonths(src);
+  const lines = String(src || '').split('\n');
+  let last = null;
+  let keyLast = null;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     const m = EVENT_LINE.exec(line);
     if (!m) continue;
     const id = m[2];
     ids.push(id);
     if (seen.has(id)) { if (!duplicates.includes(id)) duplicates.push(id); } else seen.set(id, true);
-    if (!DATE_STAMP.test(line)) undated.push(id);
+    const stamp = FULL_STAMP.exec(line);
+    if (!stamp) undated.push(id);
+    if (!TAG_BRACKET.test(line.slice(0, (line.indexOf(']:') + 2) || line.length))) untagged.push(id);
+    /* its words: the line and the ones under it, to a blank line, a heading or
+     * the next event; the lines it quotes and its bond moves are not counted */
+    let words = line.replace(/^\s*e\d+[^:]*:/, '').trim().split(/\s+/).filter(Boolean).length;
+    for (let j = i + 1; j < lines.length; j++) {
+      const next = lines[j];
+      if (!next.trim() || /^#/.test(next) || EVENT_LINE.test(next)) break;
+      if (/^\s*(>|REL:)/.test(next)) continue;
+      words += next.trim().split(/\s+/).filter(Boolean).length;
+    }
+    if (words > EVENT_WORDS) long.push(id);
+    /* the craft's Mechanical Audit: monotonic timestamps */
+    const key = stamp ? stampKey(stamp, month) : null;
+    if (key != null) {
+      if (keyLast != null && key < keyLast) lateOrder.push(`${id} is dated before ${last}`);
+      if (keyLast == null || key >= keyLast) { keyLast = key; last = id; }
+    }
   }
+  const st = STATE_STAMP.exec(String(src || ''));
+  const stateKey = st ? stampKey(st, month) : null;
+  const stateEarly = stateKey != null && keyLast != null && stateKey < keyLast ? last : '';
   const outOfOrder = [];
   let high = -1;
   for (const id of ids) {
@@ -456,7 +537,7 @@ export function readEvents(src) {
     if (n < high) outOfOrder.push(id);
     else high = n;
   }
-  return { ids, duplicates, outOfOrder, undated };
+  return { ids, duplicates, outOfOrder, undated, untagged, long, lateOrder, stateEarly };
 }
 
 /* A trait line that leans on a name is really a bond line. Only flags names
