@@ -263,7 +263,7 @@ function jobsFor(doc) {
   const jobs = [
     ['Tidy it up', 'showrunner', `Tidy up ${n}.`],
     ['Make it shorter', 'compressor', `Make ${n} shorter without losing anything that matters.`],
-    ['Check it', 'eye', `Check ${n} for anything wrong or contradictory, and put it right.`],
+    ['Check it', 'eye', `Check ${n} for anything wrong or contradictory, and put right what is actually wrong \u2014 a contradiction, a lost or broken fact, a date or an age that does not add up. Leave what is only a different way of saying it; name anything you would change by taste instead of changing it.`],
   ];
   /* a plot essential's world, as a SillyTavern worldbook: the keeper writes it
    * (its own craft: blue always on, green on keys and vectors, chain on vectors

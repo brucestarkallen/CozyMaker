@@ -1933,6 +1933,47 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
   } catch (e) { ok('the streaming tests ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
 }
 
+/* ============================ THE READ-BACK CHECKS WHAT CHANGED; THE MODEL HE TALKS TO DECIDES WHO WORKS */
+{
+  const { runTurn } = await import('../js/agents/run.js');
+  const { LISTENER_MARK } = await import('../js/agents/listener.js');
+  const realFetch = globalThis.fetch;
+  const sent = [];
+  let chronicler = '';
+  globalThis.fetch = async (url, init) => {
+    const req = JSON.parse(init.body);
+    const sys = (req.body.messages.find((m) => m.role === 'system') || {}).content || '';
+    const user = (req.body.messages.filter((m) => m.role === 'user').pop() || {}).content || '';
+    const who = forFront(req) ? 'front' : sys.includes(LISTENER_MARK) ? 'listener' : /Evidenced CLEAN vs False CLEAN/.test(sys) ? 'eye' : /PROACTIVE CO-WRITER/.test(sys) ? 'builder' : 'worker';
+    sent.push({ who, url: req.url, user, sys });
+    if (who === 'front') return sseAnswer([{ choices: [{ delta: { content: 'Done.' }, finish_reason: 'stop' }] }, '[DONE]']);
+    if (who === 'listener') return wholeAnswer({ choices: [{ message: { content: '{"jobs":[{"worker":"chronicler","task":"Add that the courier packet is still in transit."}]}' }, finish_reason: 'stop' }] });
+    if (who === 'builder') return wholeAnswer({ choices: [{ message: { content: 'Built.\n<file name="Plot Essential.md">\n# PLOT ESSENTIAL — Soul Society — V1.0\n\n## SCENE\nWHERE: the 1st Division\n</file>' }, finish_reason: 'stop' }] });
+    if (who === 'eye') return wholeAnswer({ choices: [{ message: { content: 'Checked it; it holds.' }, finish_reason: 'stop' }] });
+    return wholeAnswer({ choices: [{ message: { content: chronicler }, finish_reason: 'stop' }] });
+  };
+  try {
+    const house = { connections: [{ id: 'c1', url: 'https://front.example/v1', model: 'the-smart-one', key: 'k' }, { id: 'c2', url: 'https://crew.example/v1', model: 'the-cheap-one', key: 'k' }],
+      agentConnections: { keeper: 'c1', _general: 'c2' }, settings: { yourName: 'Bruce' }, personaFrame: '' };
+    const world = () => ({ id: 'prb', docs: [{ id: 'd1', name: 'Plot Essential.md', kind: 'pe', text: '# PLOT ESSENTIAL — Soul Society — V1.0\n\n## TIMELINE\ne005 [Fri 3rd of Hanami] [setup]: Shunsui appointed Jovan.\n\n## SCENE\nWHERE: the 1st Division\n' }], chats: [], recentSections: [] });
+    chronicler = 'Added the packet.\n<edits>[{"file":"Plot Essential.md","insert_after":"e005 [Fri 3rd of Hanami] [setup]: Shunsui appointed Jovan.","replace":"e006 [Sun 5th of Hanami] [setup]: The courier packet had not reached the 13th or 2nd Division desks.","reason":"the packet in transit"}]</edits>';
+    await runTurn({ house, project: world(), message: 'so maybe we should add that the documents are still with the courier' });
+    const listener = sent.find((s) => s.who === 'listener');
+    const worker = sent.find((s) => s.who === 'worker');
+    eq('the one who decides who works rides the model he talks to, not the crew\'s', [listener && new URL(listener.url).host, worker && new URL(worker.url).host], ['front.example', 'crew.example']);
+    const eye = sent.find((s) => s.who === 'eye');
+    ok('the read-back is handed this turn\'s changes, as they now read', eye && /Check these changes, and what they touch:\n- Plot Essential\.md: put it under/.test(eye.user) && /now: e006 \[Sun 5th of Hanami\] \[setup\]: The courier packet had not reached/.test(eye.user), eye && eye.user.slice(0, 400));
+    ok('and told to leave everything else exactly as it is — never the whole book, front to back', eye && /Leave everything else exactly as it is/.test(eye.user) && /change nothing for it/.test(eye.user) && !/front to back/.test(eye.user));
+    ok('the crew is told never to drop a fact by removing a "repeat"', worker && /Never remove a passage as a repeat of another unless every fact in it is stated in the one that stays/.test(worker.sys));
+    const front = sent.filter((s) => s.who === 'front').pop();
+    ok('the persona has a place to think that he never sees', front && /think inside <think> and <\/think> before you answer/.test(front.sys));
+    sent.length = 0;
+    await runTurn({ house, project: { id: 'pnew', docs: [], chats: [], recentSections: [] }, message: '*new build it', forceWorker: 'builder' });
+    const eye2 = sent.find((s) => s.who === 'eye');
+    ok('after a build the read-back reads the new document through', eye2 && /A document was written whole this turn: read that one through\./.test(eye2.user));
+  } catch (e) { ok('the read-back tests ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
+}
+
 /* ============================ BRANCH HERE: THE DOCUMENTS AS THEY STOOD, ON A COPY */
 {
   const { rollBackTo } = await import('../js/doc/branch.js');

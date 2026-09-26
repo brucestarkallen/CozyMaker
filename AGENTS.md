@@ -885,13 +885,32 @@ front can receive inside that harness.
   on the original. A change whose words were changed since stops the roll-back and says why; the branch then keeps
   the documents as they stand, and says so. Rolling an update back is branching from the message before it.
 
+### Every change brought a dozen he never asked for (v1.3.4)
+
+- **The read-back was told to audit the whole book on every change** ("read the whole of them back, front to back,
+  and put right anything that is wrong — not only near the change"). An auditor told that always finds something, so
+  every change he asked for came back with a flood he had not — weekday names respelled in four places, blank lines,
+  a section moved, and a paragraph deleted as a "duplicate" that took facts only it held ("Rukia expected the
+  promotion; Shunsui placed Jovan instead"). Every turn found new "problems"; that was the churn, not the models.
+  It now checks THIS turn's changes (listed, as they now read) and what they touch — contradictions, dates, who knows
+  what, facts lost — puts right only what is wrong because of them, and leaves everything else exactly as it is;
+  anything else it notices goes in its notes, changed nowhere. A document written whole is read through.
+- **Nothing is removed as a repeat** unless every fact in it is stated in the passage that stays (the return
+  contract, to every worker). **Check it** puts right real faults and names taste instead of acting on it.
+- **The one who decides who works rode the crew's model** — the backstage pick, often the cheap one — not the model
+  he talks to. It rides the model he talks to now, unless he gives it its own; the settings say so, and the
+  per-worker "the same as the front" (false once "Everyone behind them" was set) says what it does.
+- **The persona has somewhere to think that he never sees**: inside `<think>…</think>`, which the reader moves to
+  the thinking box — so a model with no thinking channel, monologuing before it answers, no longer shows it as its
+  reply.
+
 ## Testing
 
 ```
 bash tests/all.sh           all seven, exit code intact
 ```
 
-    node tests/units.mjs         799 checks — the real modules on a real document, and what the persona hears
+    node tests/units.mjs         805 checks — the real modules on a real document, and what the persona hears
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       49 checks — the real serve.py, real files on disk, streams timed
@@ -903,7 +922,7 @@ bash tests/all.sh           all seven, exit code intact
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-1,169 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
+1,175 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

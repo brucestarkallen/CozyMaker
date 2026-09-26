@@ -64,7 +64,7 @@ When ${him} asked for something to be checked, audited, diagnosed or judged, wha
 
 When something cannot go further until ${him} decides, I put all of it to ${him} \u2014 every point there is to decide, in my own voice \u2014 and let ${him} choose.
 
-If ${him} is just talking, I just talk. Not every sentence is a job.\n\nWhat I write is what ${him} reads: I answer ${him} directly, never my notes to myself about how to answer.`;
+If ${him} is just talking, I just talk. Not every sentence is a job.\n\nWhat I write is what ${him} reads: I answer ${him} directly, never my notes to myself about how to answer. If I want to think it through first, I think inside <think> and </think> before I answer \u2014 ${him} never sees what is inside; what comes after it is my answer.`;
     return `The two of us are building ${WORLD}. This is the comfortable room where that gets made, so I talk like it: two people making something good, not a service desk.
 
 The person I am making this with only ever talks to me. Changes to the documents are made as we talk, and before I answer I am told exactly what changed. I speak of it in my own voice, as myself: short, warm, and specific about what actually changed.
@@ -75,7 +75,7 @@ When they asked for something to be checked, audited, diagnosed or judged, what 
 
 When something cannot go further until they decide, I put all of it to them \u2014 every point there is to decide, in my own voice \u2014 and let them choose.
 
-If they are just talking, I just talk. Not every sentence is a job.\n\nWhat I write is what they read: I answer them directly, never my notes to myself about how to answer.`;
+If they are just talking, I just talk. Not every sentence is a job.\n\nWhat I write is what they read: I answer them directly, never my notes to myself about how to answer. If I want to think it through first, I think inside <think> and </think> before I answer \u2014 they never see what is inside; what comes after it is my answer.`;
   }
   if (him) return `You and ${him} are building ${WORLD}. This is the comfortable room where that gets made, so talk like it: two people making something good, not a service desk.
 
@@ -87,7 +87,7 @@ When ${him} asked for something to be checked, audited, diagnosed or judged, wha
 
 When something cannot go further until ${him} decides, put all of it to ${him} \u2014 every point there is to decide, in your own voice \u2014 and let ${him} choose.
 
-If ${him} is just talking, just talk. Not every sentence is a job.\n\nWhat you write is what ${him} reads: answer ${him} directly, never your notes to yourself about how to answer.`;
+If ${him} is just talking, just talk. Not every sentence is a job.\n\nWhat you write is what ${him} reads: answer ${him} directly, never your notes to yourself about how to answer. If you want to think it through first, think inside <think> and </think> before you answer \u2014 ${him} never sees what is inside; what comes after it is your answer.`;
   return `The two of you are building ${WORLD}. This is the comfortable room where that gets made, so talk like it: two people making something good, not a service desk.
 
 The person you are making this with only ever talks to you. Changes to the documents are made as you talk, and before you answer you are told exactly what changed. Speak of it in your own voice, as yourself: short, warm, and specific about what actually changed.
@@ -98,7 +98,7 @@ When they asked for something to be checked, audited, diagnosed or judged, what 
 
 When something cannot go further until they decide, put all of it to them \u2014 every point there is to decide, in your own voice \u2014 and let them choose.
 
-If they are just talking, just talk. Not every sentence is a job.\n\nWhat you write is what they read: answer them directly, never your notes to yourself about how to answer.`;
+If they are just talking, just talk. Not every sentence is a job.\n\nWhat you write is what they read: answer them directly, never your notes to yourself about how to answer. If you want to think it through first, think inside <think> and </think> before you answer \u2014 they never see what is inside; what comes after it is your answer.`;
 }
 
 /* Strip the crew's working shorthand out of anything the front will read. */
@@ -222,6 +222,7 @@ How they must behave:
 - A change you only describe in words does not happen. It happens in the block or in a file, or it does not happen.
 - Nothing you write into a document may be a note, a flag, a marker or an instruction. What goes into a document is what the story is, and nothing else.
 - If what he asks for is already in the document as it stands, change nothing, and say that it is already there.
+- Never remove a passage as a repeat of another unless every fact in it is stated in the one that stays; fold whatever differs into that one first.
 - If nothing should change, send neither.
 
 Last, and only if the job cannot be finished until he decides something — the craft tells you to get his go-ahead first, or there is a question only he can answer — put everything he has to decide between <ask> and </ask>: the plan or the options, and the questions, complete enough to answer with nothing else in front of him. Make only the changes that do not wait on his answer. His answer will come back to you together with what you asked, word for word.`;
@@ -456,8 +457,12 @@ export async function runTurn({
   const connections = house.connections || [];
   const frontConn = connections.find((c) => c.id === (house.agentConnections || {})[FRONT]) || connections[0] || null;
   const general = (house.agentConnections || {})._general || null;
-  const connFor = (worker) =>
-    pickConnection({ map: house.agentConnections || {}, general, connections }, worker) || frontConn;
+  /* the listener decides who works: it rides the model he talks to — the one he
+   * chose to understand him — unless he gives it a connection of its own; the
+   * crew rides the backstage pick */
+  const connFor = (worker) => (worker === LISTENER
+    ? pickConnection({ map: house.agentConnections || {}, general: null, connections }, worker) || frontConn
+    : pickConnection({ map: house.agentConnections || {}, general, connections }, worker) || frontConn);
   const p = personaOf(house);
   /* WHAT THE CREW IS DOING, SAID ONCE, WITH HOW FAR ALONG IT IS BESIDE IT. The
    * label says who is on what; the detail ("1,240 words so far") changes as a
@@ -729,9 +734,25 @@ export async function runTurn({
    * clear or a delete he asked for has nothing to read back. */
   const surgical = intents.length > 0 && intents.every((i) => i.worker === 'editor');
   if (!stopped() && changed() && intents.length && !surgical) {
+    /* THE READ-BACK CHECKS WHAT CHANGED, NOT THE WHOLE BOOK FOR TASTE. It was
+     * told to read everything front to back and "put right anything that is
+     * wrong — not only near the change": an auditor told that always finds
+     * something, so every change he asked for came back with a dozen he had
+     * not — weekdays respelled, blank lines added, a paragraph deleted as a
+     * "duplicate" with the facts only it held. Every turn found new "problems".
+     * It checks this turn's changes and what they touch; anything else it
+     * notices, it says, and changes nothing for. */
     status('reading the whole thing back');
+    const madeNow = allCards.filter((c) => c.status === 'applied');
+    const wroteWhole = madeNow.some((c) => /^(started it|rewrote the whole thing|wrote it)$/.test(c.how || ''));
+    const clip = (x) => String(x || '').replace(/\s+/g, ' ').trim().slice(0, 300);
+    const listed = madeNow.slice(0, 24).map((c) => `- ${c.name}: ${c.how || 'changed'}${c.reason ? ` (${naturalize(c.reason)})` : ''}` +
+      `${c.was && !wroteWhole ? `\n  was: ${clip(c.was)}` : ''}${c.now && !wroteWhole ? `\n  now: ${clip(c.now)}` : ''}`).join('\n');
     await send('eye',
-      'The documents were just changed. Read the whole of them back, front to back, and put right anything that is wrong — not only near the change. Say what you read and what you found.',
+      `The documents were just changed. Check these changes, and what they touch:\n${listed}\n\n` +
+      (wroteWhole ? 'A document was written whole this turn: read that one through. ' : '') +
+      'For each change: is it right; does anything elsewhere now contradict it or lean on what it replaced \u2014 dates, ages, who knows what, what came before and after; was any fact or detail lost by it. Put right only what is wrong because of these changes. ' +
+      'Leave everything else exactly as it is \u2014 no rewording, respelling, reformatting or reorganizing of anything these changes did not touch. If you notice something else that looks wrong, say it in your notes and change nothing for it. Say what you checked and what you found.',
       'the eye', true);
     const after = sweep(working, touched(), startTexts);
     working = after.project;

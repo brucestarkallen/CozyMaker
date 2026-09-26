@@ -361,8 +361,12 @@ function crewSection(house) {
   const detailsInner = el('div', '');
   const details = fold('give someone their own connection', detailsInner, { className: 'fold thinking' });
   details.style.maxHeight = 'none';
+  /* what an empty pick means, said truly: the listener rides the one he talks
+   * to; everyone else, whatever "Everyone behind them" is set to (it used to
+   * say "the same as the front" for everyone, and was wrong once that was set) */
   for (const [id, what] of WORKERS) {
-    const s = select(options, house.agentConnections[id] || '');
+    const own = [['', id === 'listener' ? 'the same as the one you talk to' : 'the same as everyone behind them']].concat(house.connections.map((c) => [c.id, c.name || c.model]));
+    const s = select(own, house.agentConnections[id] || '');
     s.addEventListener('change', async () => {
       if (s.value) house.agentConnections[id] = s.value;
       else delete house.agentConnections[id];
