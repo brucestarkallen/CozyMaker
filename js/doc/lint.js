@@ -75,6 +75,10 @@ const SCORES_NOW = /\(\s*now\s*:\s*P\s*:\s*(-?\d+)\s+R\s*:\s*(-?\d+)\s+S\s*:\s*(
 const SCORES_BARE = /\(\s*P\s*:\s*(-?\d+)\s+R\s*:\s*(-?\d+)\s+S\s*:\s*(-?\d+)\s*\)/gi;
 
 export const THRESHOLDS = { healthy: 6000, mature: 8000, bloated: 10000 };
+/* the craft gives continuation files their own, smaller budget (8.8: "continuation
+ * files: ~3000 tokens healthy, ~5000 mature, 6000+ → bloat"); they were held to the
+ * plot essential's, so one could grow to twice the craft's bloat line unflagged */
+export const CONTINUITY_THRESHOLDS = { healthy: 3000, mature: 5000, bloated: 6000 };
 
 function clamp(n) { return Math.max(0, Math.min(100, n)); }
 
@@ -115,6 +119,22 @@ export function countOf(text, kind = 'pe') {
   return { events: events.size, dossiers, bonds };
 }
 
+/* WHAT THE CRAFT REQUIRES IN EVERY DOCUMENT OF ITS KIND, which no change may take
+ * out (6.1, 3.1, 8.5): a plot essential's STATE and CALENDAR lines, its calendar,
+ * its Epistemic Law and its SCENE; a continuation file's STATE and CALENDAR lines.
+ * The guard below counted people, events and bonds only, so a whole-document
+ * rewrite — "make it shorter", "tidy it up" — that dropped the SCENE or the
+ * Epistemic Law went through. Only what the document had before is held. */
+const ANCHORS = {
+  pe: [['the STATE line', /^#\s*STATE\s*:/m], ['the CALENDAR line', /^#\s*CALENDAR\s*:/m], ['the calendar', /^#{2,3}\s*Calendar\b/im],
+    ['the Epistemic Law', /Epistemic Law/i], ['the SCENE', /^#{1,3}\s*(?:CURRENT\s+)?SCENE\b/m]],
+  continuity: [['the STATE line', /^#\s*STATE\s*:/m], ['the CALENDAR line', /^#\s*CALENDAR\s*:/m]],
+};
+export function anchorsOf(text, kind = 'pe') {
+  const src = String(text || '');
+  return (ANCHORS[kind] || []).filter(([, re]) => re.test(src)).map(([name]) => name);
+}
+
 /* Did this write lose something it should not have? Returns null when fine. */
 export function lostSomething(beforeText, afterText, kind = 'pe') {
   /* A TRANSPLANT LOSES DATA THROUGH ITS MARKERS. Its importer reads markers
@@ -135,6 +155,8 @@ export function lostSomething(beforeText, afterText, kind = 'pe') {
     if (a[key] < 0 || b[key] < 0) continue;
     if (b[key] < a[key]) lost.push(`${a[key] - b[key]} ${key}`);
   }
+  const kept = new Set(anchorsOf(afterText, kind));
+  for (const name of anchorsOf(beforeText, kind)) if (!kept.has(name)) lost.push(name);
   return lost.length ? lost.join(', ') : null;
 }
 
@@ -279,7 +301,10 @@ export function lint(text, { kind = 'pe', deliverable = true, keep = null } = {}
       `${some(ev.untagged)} carry no thematic tag \u2014 the craft tags every event at creation; its tags decide how it is compressed`,
       { worker: 'chronicler', count: ev.untagged.length }));
   }
-  if (ev.long.length) {
+  /* the 80-word ceiling is the PLOT ESSENTIAL's timeline tier (5.1); a continuation
+   * file keeps FULL detail (8.5: "*continuity preserves EVERY detail … nothing
+   * compressed"), and held to it, its events would have been sent to be cut */
+  if (kind === 'pe' && ev.long.length) {
     found.push(finding('an event over its word budget',
       `${some(ev.long)} run past ${EVENT_WORDS} words, the craft's longest timeline tier \u2014 compress it, keeping its causal chain and its significant lines`,
       { worker: 'chronicler', count: ev.long.length }));
@@ -295,7 +320,7 @@ export function lint(text, { kind = 'pe', deliverable = true, keep = null } = {}
 
   /* 7 — size. */
   const tokens = Math.ceil(src.length / 4);
-  if (tokens >= THRESHOLDS.bloated) {
+  if (tokens >= (kind === 'continuity' ? CONTINUITY_THRESHOLDS : THRESHOLDS).bloated) {
     found.push(finding('the document has grown heavy',
       `about ${tokens.toLocaleString()} tokens — past the point where it starts crowding the storyteller`,
       { worker: 'compressor' }));

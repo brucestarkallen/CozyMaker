@@ -870,6 +870,19 @@ eq('an unescaped quote inside a change is read, not lost', salvageEdits('[{"find
   eq('and the plot essential checks never touch it (its TBD line and its empty heading stay)', swept.project.docs[0].text, HIS);
 }
 
+/* --- THE PARTS THE CRAFT REQUIRES ARE NEVER LOST TO A CREW CHANGE --- */
+{
+  const FULL = '# PLOT ESSENTIAL — X — V1.0\n# STATE: Mon 1 Jan 1000, 09:00 / the hall\n# CALENDAR: Gregorian\n\n## WORLD\n### Rules\n- Epistemic Law: NPCs know only what they witnessed.\n\n### Calendar\nGregorian.\n\n## MC — A (20)\nID: tall\nCORE: calm\n\n## TIMELINE\ne001 [Mon 1 Jan 1000, 08:00] [SETUP]: began.\n\n## SCENE\nWHERE: the hall / LAST: he waits.\n';
+  eq('a rewrite that drops the SCENE is a loss', lostSomething(FULL, FULL.replace(/\n## SCENE[\s\S]*$/, '\n')), 'the SCENE');
+  eq('and one that drops the Epistemic Law', lostSomething(FULL, FULL.replace('- Epistemic Law: NPCs know only what they witnessed.\n', '')), 'the Epistemic Law');
+  eq('and one that drops the STATE and CALENDAR lines', lostSomething(FULL, FULL.replace(/^# STATE:.*\n# CALENDAR:.*\n/m, '')), 'the STATE line, the CALENDAR line');
+  eq('a change that keeps them all is no loss', lostSomething(FULL, FULL.replace('he waits', 'he opens the door')), null);
+  eq('a document that never had a SCENE is not held to one', lostSomething('# PLOT ESSENTIAL — X — V1.0\n## MC — A (20)\nID: x\nCORE: y\n', '# PLOT ESSENTIAL — X — V1.0\n## MC — A (20)\nID: x\nCORE: y, calm\n'), null);
+  const r = commit({ id: 'pa', docs: [{ id: 'd', name: 'Plot Essential.md', kind: 'pe', text: FULL }], chats: [] },
+    [{ file: 'Plot Essential.md', whole: true, replace: FULL.replace(/\n## SCENE[\s\S]*$/, '\n') }], 'test');
+  eq('through the real commit: "make it shorter" that dropped the SCENE is refused, and the document kept', [(r.cards[0] || {}).status, /the SCENE/.test((r.cards[0] || {}).why || ''), r.project.docs[0].text === FULL], ['refused', true, true]);
+}
+
 /* --- A NEW WORLDBOOK, AND THE KEEPER'S OWN FIRST RULE --- */
 {
   const { readWorldbook } = await import('../js/doc/lint.js');
@@ -1998,6 +2011,13 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
   eq('and one at or after it is not', readEvents('# STATE: Tue 2 Jan 1000, 11:00 / x\n## TIMELINE\ne001 [Tue 2 Jan 1000, 10:00] [SETUP]: y\n').stateEarly, '');
   const found = lint('# PLOT ESSENTIAL — X — V1.0\n\n' + HIS_UPLOAD + '\n', { kind: 'pe', deliverable: true }).found.map((y) => y.check);
   ok('each is handed to the chronicler as a finding', ['events out of time order', 'an event with no tags', 'an event over its word budget'].every((c) => found.includes(c)), JSON.stringify(found));
+  /* each kind of document to its own budget, as the craft sets them */
+  const fullDetail = '# PLOT ESSENTIAL CONTINUITY — X — FILE 2\n# STATE: Mon 1 Jan 1000, 09:00 / x\n\n## WHAT HAPPENED\ne010 [Mon 1 Jan 1000, 08:00] [SETUP]: ' + 'word '.repeat(120).trim() + '\n';
+  eq('a continuation file keeps full detail: no 80-word ceiling on its events', lint(fullDetail, { kind: 'continuity', deliverable: true }).found.filter((y) => y.check === 'an event over its word budget').length, 0);
+  eq('the plot essential is held to it', lint(fullDetail, { kind: 'pe', deliverable: true }).found.filter((y) => y.check === 'an event over its word budget').length, 1);
+  const heavy = 'x '.repeat(4 * 7000 / 2);
+  eq('a continuation file past the craft\'s 6,000 tokens is heavy; a plot essential of the same size is not',
+    [lint(heavy, { kind: 'continuity', deliverable: true }).found.some((y) => y.check === 'the document has grown heavy'), lint(heavy, { kind: 'pe', deliverable: true }).found.some((y) => y.check === 'the document has grown heavy')], [true, false]);
   eq('a change that only moves spacing is no change', applyEdit('WHERE: the  Ribway\nLAST: x', { find: 'WHERE: the  Ribway', replace: 'WHERE: the Ribway' }).why, 'only the spacing would change');
 
   const { runTurn } = await import('../js/agents/run.js');
@@ -2029,7 +2049,7 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
     eq('what is already there, and a spacing-only change, reach him as no card at all', r.cards.filter((c) => /already in the document|only the spacing/.test(c.why || '')).length, 0);
     ok('a change with nothing saying what to do goes back to the worker once, not to him', asked.length === 2 && /a change came with nothing saying what to do/.test(asked[1].user), asked.map((a) => a.user.slice(0, 80)).join(' | '));
     ok('and the document is exactly as it was', r.project.docs[0].text === doc);
-    ok('the crew is told: one fact in one place, nothing invented, and a missing date-time assigned as its craft says', /Write each fact once, in the place the document keeps it/.test(asked[0].sys) && /Never invent a fact the documents do not hold or plainly imply\. A missing date-time is the one your craft assigns/.test(asked[0].sys));
+    ok('the crew is told: one fact in one place, nothing invented, and a missing date-time assigned as its craft says', /Write each fact once, in the place the document keeps it/.test(asked[0].sys) && /Never invent a fact the documents do not hold or plainly imply \u2014 unless making it is the job itself: a build, or something he asked you to add or develop/.test(asked[0].sys) && /A missing date-time is the one your craft always assigns/.test(asked[0].sys));
   } catch (e) { ok('the noise-card tests ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
 }
 

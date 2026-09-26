@@ -194,7 +194,7 @@ export function docBriefs(project, opts) {
 
 const RETURN_CONTRACT = `When you are done, write these and nothing else.
 
-First, in plain sentences — a short paragraph at most — what you did and what you found while you were in there. Write it for a person, not for a form: what you read and what you checked, said in plain words, with none of the craft's own names for its checks — no tier letters, protocol numbers, scan, gate or audit names, no bracketed tags.
+First, in plain sentences — a short paragraph at most — what you did and what you found while you were in there, and what you read and checked to know it. Write it for a person, not for a form.
 
 Second, if a document should change, the change itself.
 
@@ -224,7 +224,7 @@ How they must behave:
 - If what he asks for is already in the document as it stands, change nothing, and say that it is already there.
 - Never remove a passage as a repeat of another unless every fact in it is stated in the one that stays; fold whatever differs into that one first.
 - Write each fact once, in the place the document keeps it. Never copy a fact into a second place so that two passages "carry the same information" \u2014 that is how a document ends up saying everything twice, and then contradicting itself.
-- Never invent a fact the documents do not hold or plainly imply. A missing date-time is the one your craft assigns: from elapsed time, scene pacing and the calendar, in order with the events around it.
+- Never invent a fact the documents do not hold or plainly imply \u2014 unless making it is the job itself: a build, or something he asked you to add or develop; then make it fit everything already established. A missing date-time is the one your craft always assigns: from elapsed time, scene pacing and the calendar, in order with the events around it.
 - If nothing should change, send neither.
 
 Last, and only if the job cannot be finished until he decides something — the craft tells you to get his go-ahead first, or there is a question only he can answer — put everything he has to decide between <ask> and </ask>: the plan or the options, and the questions, complete enough to answer with nothing else in front of him. Make only the changes that do not wait on his answer. His answer will come back to you together with what you asked, word for word.`;

@@ -942,13 +942,37 @@ front can receive inside that harness.
 - The return contract and the repair jobs say the craft's rule: never invent a fact — a missing date-time is the one
   the craft assigns, in order with the events around it.
 
+### Held against his own engine file, byte for byte (v1.3.7)
+
+- **engine/generalist.md is his Generalist engine v10.4.3 exactly** — his uploaded file and the shipped copy have the
+  same size and SHA-256. Of its 75 sections, 69 reach at least one worker; the rest are four bare headings, the
+  command table (followed in code by the router) and 7.4 Output Protocol (replaced on purpose by the house's return
+  contract, so the persona speaks naturally).
+- **The house's own words were read line by line against it; four contradicted it, all fixed:**
+  - Continuation files were held to the PLOT ESSENTIAL's budgets. The craft gives them their own ("~3000 tokens
+    healthy, ~5000 mature, 6000+ → bloat") and keeps them in FULL detail (8.5: "nothing compressed"); the 80-word
+    ceiling (v1.3.6) would have sent their events to be cut. Each kind now has its own budget; the ceiling is the
+    plot essential's alone.
+  - "Never invent a fact" (v1.3.5/v1.3.6) went to every worker — the builder too, whom the craft makes a proactive
+    co-writer (7.1), and whom his story cards ask to add what makes a world more immersive. It holds for updates and
+    gives way where making something is the job.
+  - "None of the craft's own names for its checks" (v1.2.8) contradicted the craft's Evidence Requirement (2.3) and
+    mandatory output format (2.7): a worker must name what it read and checked. The persona is kept from those
+    names by `naturalize`, which was always the guarantee (tested); the contract only asks for the evidence now.
+- **The loss guard holds what the craft requires in every document**, not only people, events and bonds: a plot
+  essential's STATE and CALENDAR lines, its calendar, its Epistemic Law and its SCENE; a continuation file's STATE and
+  CALENDAR lines (`anchorsOf`). A whole rewrite — make it shorter, tidy it up — that dropped the SCENE was applied
+  before; it is refused now and the document kept. Clears and deletes he asks for do not pass through the guard.
+- His hand edits are never trimmed by the checks on leaving (they keep every line he wrote), a bond line he types
+  under his own MC included — checked.
+
 ## Testing
 
 ```
 bash tests/all.sh           all seven, exit code intact
 ```
 
-    node tests/units.mjs         820 checks — the real modules on a real document, and what the persona hears
+    node tests/units.mjs         829 checks — the real modules on a real document, and what the persona hears
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       49 checks — the real serve.py, real files on disk, streams timed
@@ -960,7 +984,7 @@ bash tests/all.sh           all seven, exit code intact
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-1,190 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
+1,199 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.
