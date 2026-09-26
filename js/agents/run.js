@@ -122,7 +122,7 @@ export function naturalize(text) {
     .replace(/\bM\d+\b/g, '')
     /* the craft's names for its checks, said the way a person would (the crew is
      * told to, and this is what is left when one does not) */
-    .replace(/\s*\(?\b(?:per|via|under)\s+Protocol\s+\d+\)?/gi, '')
+    .replace(/\s*,?\s*\(?\b(?:per|via|under)\s+Protocol\s+\d+\)?/gi, '')
     .replace(/\bProtocol\s+\d+\b/gi, 'the usual way')
     .replace(/\bTiers?\s+[ABC](?:\s*(?:\/|and|,)\s*[ABC])*\b(?:\s+checks?)?/g, 'the checks')
     .replace(/\bNamed[- ]Person Gate\b/gi, 'the check that keeps names out of personality lines')
@@ -221,6 +221,7 @@ How they must behave:
 - Rebuild a document whole only when the whole of it is genuinely being rebuilt. Every part that should survive must be in what you write \u2014 anything left out is deleted.
 - A change you only describe in words does not happen. It happens in the block or in a file, or it does not happen.
 - Nothing you write into a document may be a note, a flag, a marker or an instruction. What goes into a document is what the story is, and nothing else.
+- If what he asks for is already in the document as it stands, change nothing, and say that it is already there.
 - If nothing should change, send neither.
 
 Last, and only if the job cannot be finished until he decides something — the craft tells you to get his go-ahead first, or there is a question only he can answer — put everything he has to decide between <ask> and </ask>: the plan or the options, and the questions, complete enough to answer with nothing else in front of him. Make only the changes that do not wait on his answer. His answer will come back to you together with what you asked, word for word.`;
@@ -498,6 +499,28 @@ export async function runTurn({
    * instructions and the house's plain words; then the talk, the book as it
    * stands, what got done, what waits on him, and what he just said. */
   const frontSystem = openingFor(p, frontBody(p));
+  /* WHAT THE CREW ALREADY CHANGED, AND STILL STANDS. The persona used to know
+   * what earlier turns changed only from its own earlier replies — and one of
+   * those can be wrong (a thought shown as a reply, a change claimed and never
+   * made), so \u201cdid you add it?\u201d was answered from memory, either way.
+   * Now it reads the house's own record: every change card from this
+   * conversation whose change was not put back, newest first, with the words
+   * it wrote. */
+  const standing = (() => {
+    const lines = [];
+    for (let i = past.length - 1; i >= 0 && lines.length < 8; i--) {
+      const t = past[i];
+      if (!t || t.role !== 'maker' || !(t.batches || []).some((b) => !b.undone)) continue;
+      for (const c of (t.cards || []).filter((x) => x.status === 'applied')) {
+        if (lines.length >= 8) break;
+        const why = naturalize(c.reason || '').replace(/\s+/g, ' ').trim();
+        const words = String(c.now || '').replace(/\s+/g, ' ').trim();
+        const small = words && c.how !== 'started it' && c.how !== 'rewrote the whole thing' && c.how !== 'cleared it' && c.how !== 'deleted it';
+        lines.push(`- ${c.name}: ${c.how || 'changed'}${why ? ` (${why})` : ''}${small ? ` \u2014 now reads: \u201c${words.slice(0, 160)}${words.length > 160 ? '\u2026' : ''}\u201d` : ''}`);
+      }
+    }
+    return lines.length ? `Changed earlier in this conversation, and standing now (newest first) \u2014 for reference, never to repeat as new:\n${lines.join('\n')}` : '';
+  })();
   const frontMessages = (world, said, waiting, note = '') => {
     const n = (house.settings || {}).turnsOnScreen || 40;
     /* its own earlier replies go back without any thought left in them: one
@@ -507,6 +530,7 @@ export async function runTurn({
     const ask = [
       'Where the book stands right now:',
       docBriefs(world, { message, recent: world.recentSections || [], forFront: true }),
+      standing ? `\n${standing}` : '',
       said ? `\nWhat got done while you were talking:\n${said}` : '',
       waiting.length ? `\n${waitingBrief(waiting, p)}` : '',
       note ? `\n${note}` : '',
@@ -727,7 +751,7 @@ export async function runTurn({
    * his yes then sends the worker. */
   const missed = !crew.length && !forceWorker && !writtenCommand(message) && heardNobody &&
     route(message, { hasPlotEssential: hasPE, hasDocs: docs.length > 0 }).length > 0;
-  const note = missed ? `It may be that ${p.you || 'he'} asked for a change to the documents just now. Nothing was changed: nobody was sent to do it. If that is what ${p.you || 'he'} asked for, say plainly that it has not been written yet and offer to write it in \u2014 never say it was done.` : '';
+  const note = missed ? `It may be that ${p.you || 'he'} asked for a change to the documents just now. Nothing was changed just now: nobody was sent to do it. If what ${p.you || 'he'} asked for is already in the documents \u2014 in the changes already made above, or in the book as it stands \u2014 say it is already in. If it is not, say plainly that it has not been written yet and offer to write it in. Never say you changed something just now.` : '';
   const messages = frontMessages(working, said, asks, note);
 
   let reply = '';

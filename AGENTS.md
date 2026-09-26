@@ -854,13 +854,29 @@ front can receive inside that harness.
   any thought in them; the turn keeps the moved thought with the reply; and the persona is told that what it writes
   is what he reads — its answer, never its notes on how to answer.
 
+### "Did you add it?" is answered from the record, not from memory (v1.3.2)
+
+- **The persona knew what earlier turns changed only from its own earlier replies** — and one of those can be wrong
+  (a thought shown as a reply, a change claimed and never made), so "did you add it?" was answered from memory,
+  either way. It now reads the house's own record every turn: the change cards from this conversation whose change
+  still stands (a put-back one is not), newest first, with the words each wrote, in plain words — for reference,
+  never to repeat as new. The same record rides the early reply, so it reads the same words either way.
+- **The v1.3.1 safety line asserted "it has not been written yet"** when the listener sent nobody — false the moment he
+  re-asks for something an earlier turn already wrote. It now checks: already in the documents (the record, or the
+  book as it stands) → say so; not there → say so and offer; never claim a change made just now.
+- **The crew is told**: what he asks for that is already in the document is changed nowhere, and said to be there.
+- `naturalize` left a dangling comma where it took out "…, per Protocol 20"; the comma goes with the phrase now.
+- The retries were already sound: Another answer puts that answer's changes back before it asks again (a version per
+  answer, walked with ◂ ▸; refused, with the reason, if the documents moved since); Try again shows only on a last
+  reply that failed and changed nothing.
+
 ## Testing
 
 ```
 bash tests/all.sh           all seven, exit code intact
 ```
 
-    node tests/units.mjs         787 checks — the real modules on a real document, and what the persona hears
+    node tests/units.mjs         791 checks — the real modules on a real document, and what the persona hears
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       49 checks — the real serve.py, real files on disk, streams timed
@@ -872,7 +888,7 @@ bash tests/all.sh           all seven, exit code intact
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-1,153 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
+1,157 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

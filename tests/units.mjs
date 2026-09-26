@@ -1991,10 +1991,39 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
     const told = await runTurn({ house, project: world(), message: HIS });
     const frontSaw = fronts.filter((f) => f.messages).pop();
     ok('when the listener sends nobody for words that read like a job, the persona is told plainly nothing was written',
-      told.project.docs[0].text === world().docs[0].text && frontSaw && /Nothing was changed: nobody was sent to do it\. If that is what Bruce asked for, say plainly that it has not been written yet and offer to write it in \u2014 never say it was done\./.test(frontSaw.messages[frontSaw.messages.length - 1].content));
+      told.project.docs[0].text === world().docs[0].text && frontSaw && /Nothing was changed just now: nobody was sent to do it\. If what Bruce asked for is already in the documents/.test(frontSaw.messages[frontSaw.messages.length - 1].content)
+      && /Never say you changed something just now\./.test(frontSaw.messages[frontSaw.messages.length - 1].content));
     fronts.length = 0;
     await runTurn({ house, project: world(), message: 'the tide should feel like a character' });
-    ok('plain talk carries no such line', !fronts.filter((f) => f.messages).some((f) => /Nothing was changed: nobody was sent/.test(JSON.stringify(f.messages))));
+    ok('plain talk carries no such line', !fronts.filter((f) => f.messages).some((f) => /Nothing was changed just now/.test(JSON.stringify(f.messages))));
+
+    /* "did you add it?" after the edit landed: the persona answers from the house's record, not its memory */
+    const landed = { role: 'maker', text: 'He is looking at his own book… (a thought, shown as a reply)', at: 3,
+      cards: [{ status: 'applied', name: 'Plot Essential.md', how: 'put it under e005', reason: 'the courier packet, per Protocol 20', now: 'e006 [Sun 09:00] [setup]: The courier packet had not reached the 13th or 2nd Division desks.' }],
+      batches: [{ id: 'b1', undone: false }] };
+    const undone = { role: 'maker', text: 'Moved the scene.', at: 5,
+      cards: [{ status: 'applied', name: 'Plot Essential.md', how: 'exact', reason: 'moved the scene', now: 'WHERE: the Quay' }],
+      batches: [{ id: 'b2', undone: true }] };
+    fronts.length = 0;
+    await runTurn({ house, project: world(), history: [{ role: 'writer', text: 'add the paperwork', at: 2 }, landed, { role: 'writer', text: 'move the scene', at: 4 }, undone], message: 'did you add it?' });
+    const asked = fronts.filter((f) => f.messages).pop();
+    const last = asked ? asked.messages[asked.messages.length - 1].content : '';
+    ok('asked "did you add it?", the persona is shown the change that stands, with the words it wrote',
+      /Changed earlier in this conversation, and standing now \(newest first\)/.test(last) && /Plot Essential\.md: put it under e005 \(the courier packet\) \u2014 now reads: \u201ce006 \[Sun 09:00\] \[setup\]: The courier packet had not reached the 13th or 2nd Division desks\.\u201d/.test(last), last.slice(last.indexOf('Changed earlier'), last.indexOf('Changed earlier') + 400));
+    ok('a change that was put back is not in the record', !/WHERE: the Quay/.test(last));
+    ok('and the record carries no machinery (the crew\'s "per Protocol 20" is gone)', !/Protocol 20/.test(last));
+    const workerSys = [];
+    const standIn = globalThis.fetch;
+    globalThis.fetch = async (url, init) => {
+      const req = JSON.parse(init.body);
+      const sys = (req.body.messages.find((m) => m.role === 'system') || {}).content || '';
+      if (forFront(req)) return sseAnswer([{ choices: [{ delta: { content: 'It is already in.' }, finish_reason: 'stop' }] }, '[DONE]']);
+      if (!sys.includes(LISTENER_MARK)) workerSys.push(sys);
+      return wholeAnswer({ choices: [{ message: { content: sys.includes(LISTENER_MARK) ? '{"jobs":[{"worker":"editor","task":"Add the courier packet line."}]}' : 'It is already there.' }, finish_reason: 'stop' }] });
+    };
+    await runTurn({ house, project: world(), message: 'add that the packet is still with the courier' });
+    ok('the crew is told: what is already in the document is not written again', workerSys.length && workerSys.every((sy) => /If what he asks for is already in the document as it stands, change nothing, and say that it is already there\./.test(sy)));
+    globalThis.fetch = standIn;
     listenerSays = 'not readable';          /* the listener's answer lost: the keyword reading decides */
     const edit = await runTurn({ house, project: world(), message: HIS });
     ok('and through the real turn, even with the listener\'s answer lost, it is written', edit.project.docs[0].text.includes('The packet was still in transit.'), edit.project.docs[0].text);
