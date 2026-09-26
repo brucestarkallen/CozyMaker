@@ -318,7 +318,18 @@ function actionsRow(t, index) {
 
 function cardsNode(t, index) {
   const box = el('div', 'cards');
-  for (const c of t.cards || []) {
+  /* SEVERAL CHANGES THAT DID NOT GO IN ARE ONE LINE. Four identical orange
+   * "not done: those words are not in the document as written" cards told him
+   * nothing four times; the reasons are one tap away */
+  const refused = (t.cards || []).filter((c) => c.status === 'refused');
+  if (refused.length > 1) {
+    const row = el('div', 'card refused');
+    row.append(el('span', 'dot'));
+    row.append(el('span', 'grow', `${refused.length} changes did not go in`));
+    box.append(row);
+    box.append(fold('why', el('div', 'diff', refused.map((c) => `${c.name ? c.name + ' \u2014 ' : ''}${c.why || 'refused'}`).join('\n')), { className: 'fold diff-fold' }));
+  }
+  for (const c of (t.cards || []).filter((x) => x.status !== 'refused' || refused.length === 1)) {
     const row = el('div', 'card' + (c.status === 'refused' ? ' refused' : ''));
     row.append(el('span', 'dot'));
     const text = el('span', 'grow');

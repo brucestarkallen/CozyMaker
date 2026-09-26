@@ -223,6 +223,8 @@ How they must behave:
 - Nothing you write into a document may be a note, a flag, a marker or an instruction. What goes into a document is what the story is, and nothing else.
 - If what he asks for is already in the document as it stands, change nothing, and say that it is already there.
 - Never remove a passage as a repeat of another unless every fact in it is stated in the one that stays; fold whatever differs into that one first.
+- Write each fact once, in the place the document keeps it. Never copy a fact into a second place so that two passages "carry the same information" \u2014 that is how a document ends up saying everything twice, and then contradicting itself.
+- Never invent a date, a time, an age or any other fact the documents do not hold or plainly imply. Where one is unknown, leave it unknown or mark it approximate (~).
 - If nothing should change, send neither.
 
 Last, and only if the job cannot be finished until he decides something — the craft tells you to get his go-ahead first, or there is a question only he can answer — put everything he has to decide between <ask> and </ask>: the plan or the options, and the questions, complete enough to answer with nothing else in front of him. Make only the changes that do not wait on his answer. His answer will come back to you together with what you asked, word for word.`;
@@ -671,23 +673,32 @@ export async function runTurn({
      * the real change, or leaves it out — and he never sees it either way. */
     const unchanged = applied.cards.filter((c) => c.status === 'refused' && c.find &&
       /leaves the words exactly as they were/.test(c.why || ''));
-    const placed = applied.cards.filter((c) => !missed.includes(c) && !unchanged.includes(c));
+    /* WHAT IS ALREADY THERE IS DONE, NOT "NOT DONE". An addition refused because
+     * the document already holds it, and a change that would only move spacing,
+     * reached him as orange "not done" cards over a document that was right.
+     * They are dropped. A change that came with nothing saying what to do goes
+     * back once, like a missed quote, instead of being handed to him. */
+    const settled = applied.cards.filter((c) => c.status === 'refused' && /already in the document|only the spacing would change/.test(c.why || ''));
+    const shapeless = applied.cards.filter((c) => c.status === 'refused' && /did not say what to do/.test(c.why || ''));
+    const placed = applied.cards.filter((c) => !missed.includes(c) && !unchanged.includes(c) && !settled.includes(c) && !shapeless.includes(c));
     allCards.push(...placed);
-    const back = [...missed, ...unchanged];
-    if (!back.length || requoting || stopped()) { allCards.push(...missed); return applied.cards; }
+    const back = [...missed, ...unchanged, ...shapeless];
+    if (!back.length || requoting || stopped()) { allCards.push(...missed, ...shapeless); return applied.cards; }
     status(`asking the ${worker} to look at ${back.length > 1 ? 'those changes' : 'that change'} again`);
     const seen = new Set();
     const list = back.filter((c) => { const k = `${c.name}\u0000${c.find}\u0000${c.why}`; if (seen.has(k)) return false; seen.add(k); return true; })
       .map((c, i) => (unchanged.includes(c)
         ? `${i + 1}. In ${c.name}, the change put back the very words it found, so nothing changed:\n"${c.find}"`
-        : `${i + 1}. In ${c.name}, the change quoted:\n"${c.find}"\n\u2014 ${c.why}.`)).join('\n\n');
+        : shapeless.includes(c)
+          ? `${i + 1}. In ${c.name || 'a document'}, a change came with nothing saying what to do \u2014 no "find", no "insert_after", no "append". Send it again whole, or leave it out.`
+          : `${i + 1}. In ${c.name}, the change quoted:\n"${c.find}"\n\u2014 ${c.why}.`)).join('\n\n');
     const again = await send(worker,
       `Some of your changes could not be placed, or changed nothing:\n\n${list}\n\n` +
       'A quote must match the document word for word \u2014 only spacing and the shape of quote marks may differ \u2014 using the shortest stretch that appears only once. ' +
       'A change that put back the words it found changed nothing: if you meant to change those words, send it again with the new words; if they were already right, leave it out. ' +
       'The documents are shown as they stand now, with every change that did land. Send only these changes again. Nothing else.',
       `${label} (looked at again)`, true, true);
-    if (!again.length) allCards.push(...missed);
+    if (!again.length) allCards.push(...missed, ...shapeless);
     return applied.cards;
   };
 
@@ -723,7 +734,7 @@ export async function runTurn({
       if (stopped() || repairsLeft-- <= 0) break;
       status(`the ${job.worker} is fixing ${job.check}`);
       await send(job.worker,
-        `Something in the documents needs putting right: ${job.check} — ${job.said}. Fix it properly, and check the rest of the documents for the same thing before you finish.`,
+        `Something in the documents needs putting right: ${job.check} — ${job.said}. Fix it properly, with facts the documents already hold \u2014 never invented ones \u2014 and check the rest of the documents for the same thing before you finish.`,
         `put right: ${job.check}`, true);
     }
   }
@@ -747,7 +758,7 @@ export async function runTurn({
     const wroteWhole = madeNow.some((c) => /^(started it|rewrote the whole thing|wrote it)$/.test(c.how || ''));
     const clip = (x) => String(x || '').replace(/\s+/g, ' ').trim().slice(0, 300);
     const listed = madeNow.slice(0, 24).map((c) => `- ${c.name}: ${c.how || 'changed'}${c.reason ? ` (${naturalize(c.reason)})` : ''}` +
-      `${c.was && !wroteWhole ? `\n  was: ${clip(c.was)}` : ''}${c.now && !wroteWhole ? `\n  now: ${clip(c.now)}` : ''}`).join('\n');
+      `${c.was && !wroteWhole ? `\n  was (gone from the document \u2014 never quote it): ${clip(c.was)}` : ''}${c.now && !wroteWhole ? `\n  now reads: ${clip(c.now)}` : ''}`).join('\n');
     await send('eye',
       `The documents were just changed. Check these changes, and what they touch:\n${listed}\n\n` +
       (wroteWhole ? 'A document was written whole this turn: read that one through. ' : '') +

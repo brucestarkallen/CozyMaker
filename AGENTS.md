@@ -904,13 +904,32 @@ front can receive inside that harness.
   the thinking box — so a model with no thinking channel, monologuing before it answers, no longer shows it as its
   reply.
 
+### The house's own check sent the crew to invent dates (v1.3.5)
+
+- **Every dated event in a world with its own calendar read as undated.** The date check took only the template's
+  shape (`[Mon 14 Apr 247]`); `[Sunday 5th of Hanami, 1001 AG, 09:00]` failed on the "th" and the "of", and so did
+  `[~980 AG]`. Every turn that touched the plot essential, the sweep handed the chronicler "e001, e003, e004 … have no
+  day and time", and the crew, told there was no date, INVENTED days ("Day was never assigned… Birth now falls the
+  Thursday two weeks before…"), respelled weekdays, restated dates — the date churn in his screenshots came from
+  the house, not the models. A date is now any bracket holding a year or a day of a month in any calendar's words,
+  approximate ones included; only an event with no date at all is flagged, and the crew is told to use what the
+  documents give, mark the unknown approximate (~), and never invent a day or an hour. Every repair job is told the
+  same: facts the documents hold, never invented ones.
+- **Cards that told him nothing**: an addition refused because the document already holds it ("not done: those words
+  are already in the document" — it was done), and a change that only moved spacing (a green "no change" card), are
+  dropped. A change that came with nothing saying what to do goes back to the worker once, like a missed quote.
+  Several changes that did not go in are one line ("4 changes did not go in", the reasons a tap away).
+- **The crew is told**: each fact once, in the place the document keeps it — never copied to a second place "so two
+  passages carry the same information" (the mirroring that the next pass then folded as a duplicate); and never an
+  invented date, time, age or fact. The read-back marks the words a change replaced as gone, never to be quoted.
+
 ## Testing
 
 ```
 bash tests/all.sh           all seven, exit code intact
 ```
 
-    node tests/units.mjs         805 checks — the real modules on a real document, and what the persona hears
+    node tests/units.mjs         813 checks — the real modules on a real document, and what the persona hears
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       49 checks — the real serve.py, real files on disk, streams timed
@@ -922,7 +941,7 @@ bash tests/all.sh           all seven, exit code intact
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-1,175 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
+1,183 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

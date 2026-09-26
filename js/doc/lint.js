@@ -33,7 +33,13 @@ const CHORE_LINES = [
   /^\s*Step \d+ found.*$/gim,
 ];
 const EVENT_LINE = /^(\s*)(e\d{3,})(\s*[-–]\s*(\d{3,}))?\s*(\[[^\]]*\])?/;
-const DATE_STAMP = /\[\s*(?:[A-Z][a-z]{2,8}\s+)?\d{1,2}\s+[A-Za-z]{3,12}\s+\d{1,5}[^\]]*\]/;
+/* WHAT COUNTS AS A DATE: a bracket holding a year, or a day of a month — in any
+ * calendar's words ("5th of Hanami", "14 Apr"), approximate ones included
+ * ("~980 AG"). It once took only the template's own shape, so every event in a
+ * world with its own calendar ("[Sunday 5th of Hanami, 1001 AG, 09:00]") read as
+ * undated, the crew was sent on every turn to date events that had dates, and,
+ * told they had "no day and time", it invented days. */
+const DATE_STAMP = /\[[^\]]*?(?:(?<![\w:])~?\d{3,5}(?!\d)|\b\d{1,2}(?:st|nd|rd|th)?\s+(?:of\s+)?[A-Za-z]{3,12}\b)[^\]]*\]/;
 const SCORES_NOW = /\(\s*now\s*:\s*P\s*:\s*(-?\d+)\s+R\s*:\s*(-?\d+)\s+S\s*:\s*(-?\d+)\s*\)/gi;
 const SCORES_BARE = /\(\s*P\s*:\s*(-?\d+)\s+R\s*:\s*(-?\d+)\s+S\s*:\s*(-?\d+)\s*\)/gi;
 
@@ -223,7 +229,7 @@ export function lint(text, { kind = 'pe', deliverable = true, keep = null } = {}
   }
   if (ev.undated.length) {
     found.push(finding('an event with no date',
-      `${ev.undated.slice(0, 6).join(', ')}${ev.undated.length > 6 ? ` and ${ev.undated.length - 6} more` : ''} have no day and time`,
+      `${ev.undated.slice(0, 6).join(', ')}${ev.undated.length > 6 ? ` and ${ev.undated.length - 6} more` : ''} carry no date at all \u2014 give each the date the documents already give or imply, or an approximate one (~); never invent a day or an hour`,
       { worker: 'chronicler', count: ev.undated.length }));
   }
 

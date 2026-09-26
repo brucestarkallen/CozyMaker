@@ -1962,8 +1962,9 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
     const worker = sent.find((s) => s.who === 'worker');
     eq('the one who decides who works rides the model he talks to, not the crew\'s', [listener && new URL(listener.url).host, worker && new URL(worker.url).host], ['front.example', 'crew.example']);
     const eye = sent.find((s) => s.who === 'eye');
-    ok('the read-back is handed this turn\'s changes, as they now read', eye && /Check these changes, and what they touch:\n- Plot Essential\.md: put it under/.test(eye.user) && /now: e006 \[Sun 5th of Hanami\] \[setup\]: The courier packet had not reached/.test(eye.user), eye && eye.user.slice(0, 400));
+    ok('the read-back is handed this turn\'s changes, as they now read', eye && /Check these changes, and what they touch:\n- Plot Essential\.md: put it under/.test(eye.user) && /now reads: e006 \[Sun 5th of Hanami\] \[setup\]: The courier packet had not reached/.test(eye.user), eye && eye.user.slice(0, 400));
     ok('and told to leave everything else exactly as it is — never the whole book, front to back', eye && /Leave everything else exactly as it is/.test(eye.user) && /change nothing for it/.test(eye.user) && !/front to back/.test(eye.user));
+    ok('the words a change replaced are marked as gone, never to be quoted', eye && /was \(gone from the document \u2014 never quote it\)/.test(eye.user) || !/was:/.test(eye.user));
     ok('the crew is told never to drop a fact by removing a "repeat"', worker && /Never remove a passage as a repeat of another unless every fact in it is stated in the one that stays/.test(worker.sys));
     const front = sent.filter((s) => s.who === 'front').pop();
     ok('the persona has a place to think that he never sees', front && /think inside <think> and <\/think> before you answer/.test(front.sys));
@@ -1972,6 +1973,49 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
     const eye2 = sent.find((s) => s.who === 'eye');
     ok('after a build the read-back reads the new document through', eye2 && /A document was written whole this turn: read that one through\./.test(eye2.user));
   } catch (e) { ok('the read-back tests ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
+}
+
+/* ============================ NO INVENTED DATES, NO NOISE CARDS */
+{
+  const { readEvents } = await import('../js/doc/lint.js');
+  const HIS = ['e001 [~980 AG] [setup]: Jovan was born.', 'e003 [Wednesday 3rd of Hanami, 1001 AG, 14:00] [LEVERAGE]:', 'e004 [Sunday 20th of Shiraume, 1000 AG, 18:40]:',
+    'e005 [Friday 3rd of Hanami, 1001 AG, 09:00] [POLITICAL]:', 'e006 [Mon 14 Apr 247, 09:00] [setup]: the template\'s own shape', 'e007 [setup]: a thing with no date at all', 'e008 [e005 follow-up]: an id is not a year'].join('\n');
+  eq('his own calendar\'s dates are dates — ordinals, "of", month names, an approximate year', readEvents(HIS).undated, ['e007', 'e008']);
+  const f = lint('# PLOT ESSENTIAL — Soul Society — V1.0\n\n## TIMELINE\n' + HIS + '\n', { kind: 'pe', deliverable: true }).found.find((x) => x.check === 'an event with no date');
+  ok('the crew is sent only for the ones with no date, and told never to invent a day or an hour', f && /e007, e008 carry no date at all/.test(f.said) && /never invent a day or an hour/.test(f.said), f && f.said);
+  eq('a change that only moves spacing is no change', applyEdit('WHERE: the  Ribway\nLAST: x', { find: 'WHERE: the  Ribway', replace: 'WHERE: the Ribway' }).why, 'only the spacing would change');
+
+  const { runTurn } = await import('../js/agents/run.js');
+  const { LISTENER_MARK } = await import('../js/agents/listener.js');
+  const realFetch = globalThis.fetch;
+  const asked = [];
+  let round = 0;
+  globalThis.fetch = async (url, init) => {
+    const req = JSON.parse(init.body);
+    const sys = (req.body.messages.find((m) => m.role === 'system') || {}).content || '';
+    const user = (req.body.messages.filter((m) => m.role === 'user').pop() || {}).content || '';
+    if (forFront(req)) return sseAnswer([{ choices: [{ delta: { content: 'Done.' }, finish_reason: 'stop' }] }, '[DONE]']);
+    if (sys.includes(LISTENER_MARK)) return wholeAnswer({ choices: [{ message: { content: '{"jobs":[{"worker":"editor","task":"Add the packet."}]}' }, finish_reason: 'stop' }] });
+    asked.push({ user, sys });
+    round++;
+    const out = round === 1
+      ? 'Done.\n<edits>' + JSON.stringify([
+        { file: 'Plot Essential.md', append: true, replace: 'e005 [Friday 3rd of Hanami, 1001 AG, 09:00] [POLITICAL]: Shunsui appointed Jovan.', reason: 'already there' },
+        { file: 'Plot Essential.md', find: 'WHERE: the 1st  Division', replace: 'WHERE: the 1st Division', reason: 'no change' },
+        { file: 'Plot Essential.md', replace: 'something with no instruction', reason: 'shapeless' },
+      ]) + '</edits>'
+      : 'Left it out.';
+    return wholeAnswer({ choices: [{ message: { content: out }, finish_reason: 'stop' }] });
+  };
+  try {
+    const house = { connections: [{ id: 'c1', url: 'https://relay.example/v1', model: 'm', key: 'k' }], agentConnections: {}, settings: { yourName: 'Bruce' }, personaFrame: '' };
+    const doc = '# PLOT ESSENTIAL — Soul Society — V1.0\n\n## TIMELINE\ne005 [Friday 3rd of Hanami, 1001 AG, 09:00] [POLITICAL]: Shunsui appointed Jovan.\n\n## SCENE\nWHERE: the 1st  Division\n';
+    const r = await runTurn({ house, project: { id: 'pn', docs: [{ id: 'd1', name: 'Plot Essential.md', kind: 'pe', text: doc }], chats: [], recentSections: [] }, message: 'add that Shunsui appointed Jovan' });
+    eq('what is already there, and a spacing-only change, reach him as no card at all', r.cards.filter((c) => /already in the document|only the spacing/.test(c.why || '')).length, 0);
+    ok('a change with nothing saying what to do goes back to the worker once, not to him', asked.length === 2 && /a change came with nothing saying what to do/.test(asked[1].user), asked.map((a) => a.user.slice(0, 80)).join(' | '));
+    ok('and the document is exactly as it was', r.project.docs[0].text === doc);
+    ok('the crew is told: one fact in one place, and nothing invented', /Write each fact once, in the place the document keeps it/.test(asked[0].sys) && /Never invent a date, a time, an age or any other fact the documents do not hold/.test(asked[0].sys));
+  } catch (e) { ok('the noise-card tests ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
 }
 
 /* ============================ BRANCH HERE: THE DOCUMENTS AS THEY STOOD, ON A COPY */

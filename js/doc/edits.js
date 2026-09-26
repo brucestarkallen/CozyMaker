@@ -532,6 +532,10 @@ export function applyEdit(text, edit) {
     /* a change that puts back the very words it found changes nothing, and
      * must not be reported as done */
     if (src.slice(at.from, at.to) === to) return { ok: false, why: 'that change leaves the words exactly as they were' };
+    /* one that only moves spacing about is no change either: it reached him as a
+     * green card saying "no change" */
+    const flat = (x) => String(x).replace(/\s+/g, ' ').trim();
+    if (flat(src.slice(at.from, at.to)) === flat(to)) return { ok: false, why: 'only the spacing would change' };
     return { ok: true, text: src.slice(0, at.from) + to + src.slice(at.to), how: at.how, was: src.slice(at.from, at.to), now: to };
   }
   return { ok: false, why: 'that change did not say what to do' };
