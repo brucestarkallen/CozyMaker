@@ -189,6 +189,8 @@ const PLAIN = [
   ] }],
   ['compressor', { always: [], statement: [
     /\b(optimi[sz]e|compress|shorten|tighten|trim)\b/i,
+    /* “make it shorter” — the very name of the button — reached nobody */
+    /\b(make|get|keep|cut)\b[^.?!]{0,30}\bshorter\b/i,
     /\btoo (long|big|many tokens|heavy)\b/i,
     /\b(cut|reduce) the (size|tokens|length)\b/i,
     /\bfewer tokens\b/i,
@@ -236,6 +238,22 @@ const BUILD_IT = new RegExp(
   '(?:\\s+(?:up|together|down|out))?' +
   '(?:\\s+(?:now|then|please|for me|already|from (?:all )?(?:this|that|what we (?:said|discussed|talked about|have|worked out)|everything|the (?:talk|conversation|brainstorm))))*' +
   '\\s*[.!?]*\\s*$', 'i');
+
+/* A NEW STORY, ASKED FOR IN PLAIN WORDS: “let's make a new plot essential for a Bleach
+ * story”, “start a new story about a glass steppe”. In a world that already has a
+ * plot essential it went to the builder THERE (reproduced), or was taken for talk.
+ * The listener says so itself (“new_story”); this is the reading used when its
+ * answer cannot be read. A question about one (“what would a new story look like?”)
+ * is not the ask. */
+/* the ask is a starting verb with it — “the empire declares a new world order” is the
+ * story, not a new one */
+const NEW_STORY = /\b(?:start|begin|make|build|create|write|do|try|want|open|play|run)\b[^.?!]{0,30}?\b(?:new|another|different|second|fresh)\s+(?:plot essential|pe|story|tale|world(?!\s+order)|campaign)\b/i;
+export function asksNewStory(message) {
+  const text = String(message || '').trim();
+  if (!NEW_STORY.test(text)) return false;
+  const polite = MANNERS.test(text);
+  return polite || !ASKING.test(text);
+}
 
 /* Somebody asking, not telling. */
 const ASKING = /^\s*(do|does|did|is|are|was|were|am|should|shall|would|could|can|may|might|will|have|has|what|why|how|who|whom|whose|when|where|which)\b/i;

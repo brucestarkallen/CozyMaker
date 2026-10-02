@@ -66,8 +66,8 @@ untangle it" all reach the right person. The old written commands (`*new`,
 `#q`, `*continuity`, `*optimize`, `#skip`, `*cleanup`…) still work if you
 prefer them. `*regress` keeps a line in the anti-regression registry every update reads; `*show_full_file`
 opens the plot essential whole; `*next` carries on a reply that was cut off. Every shortcut, what it
-does and how to type it, is under the cog, in **Shortcuts**. A new story typed as `*new` (or a story card) in a world
-that already has a plot essential gets a world of its own.
+does and how to type it, is under the cog, in **Shortcuts**. A new story — asked for in plain words, typed as `*new`, or a
+story card — in a world that already has a plot essential gets a world of its own, with the talk that led to it.
 
 If you are just talking, nobody gets sent anywhere. It is meant to be a
 comfortable place, and a comfortable place lets you talk.
@@ -163,7 +163,7 @@ of the whole. The cog, under the floor, shows exactly who reads what.
 Read `AGENTS.md` first.
 
 ```
-bash tests/all.sh    seven suites, 1,302 checks
+bash tests/all.sh    seven suites, 1,313 checks
 ```
 
 `docs/lineage.md` lists every version of Cozy Tavern and Cozy Chat and what

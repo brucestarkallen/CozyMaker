@@ -26,7 +26,7 @@ import { openingFor, personaOf, addressWriter } from './persona.js';
 import { pickConnection, FRONT } from './roster.js';
 import { callModel, streamModel, enqueue } from './call.js';
 import { parseDoc, brief, readNeed, stripNeed, resolveNeed, LEAD_SHORT, nameWorld, hasPlotEssential, DEFAULT_WORLD_TITLE } from '../doc/index.js';
-import { route, confirmsOffer, offersIn, writtenCommand, justGreeting, houseCommand, REGISTRY } from './router.js';
+import { route, confirmsOffer, offersIn, writtenCommand, justGreeting, houseCommand, REGISTRY, asksNewStory } from './router.js';
 import { listen, LISTENER, LISTEN_TALK } from './listener.js';
 import { parseEdits, stripEdits, stripThinking, applyRun, hash, openFileAtEnd } from '../doc/edits.js';
 import { lint, lostSomething } from '../doc/lint.js';
@@ -683,6 +683,12 @@ export async function runTurn({
       talk: conversationFor(past, p, LISTEN_TALK), signal: either(signal, s), stale,
     }));
     if (stopped()) { if (early) early.drop(); return { project, reply: '', cards: [], batches: [], crew: [], edits: [], asks: [], error: 'stopped', stopped: true }; }
+    /* A DIFFERENT STORY, IN A WORLD THAT HAS ONE: nothing is done here. The room starts
+     * it in a world of its own and says it there (app.js), the way *new and a card are. */
+    if (hasPE && !open.length && (heard && heard.ok ? heard.newStory : asksNewStory(message))) {
+      if (early) early.drop();
+      return { project, reply: '', cards: [], batches: [], crew: [], edits: [], asks: [], error: null, newStory: true };
+    }
     intents = heard && heard.ok ? heard.jobs.map((j) => jobFor(j, open, message, p)) : oldReading();
     heardNobody = Boolean(heard && heard.ok && !heard.jobs.length && !(heard.clear || []).length && !(heard.delete || []).length);
     if (heard && heard.ok) {

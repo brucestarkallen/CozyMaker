@@ -3040,6 +3040,49 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
   } catch (e) { ok('the pipeline turns ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
 }
 
+/* --- plain words are enough: a new story asked for in plain words gets a world of its own (v1.5.1) --- */
+{
+  const { asksNewStory } = await import('../js/agents/router.js');
+  const { readJobs, listenerPrompt } = await import('../js/agents/listener.js');
+  const { runTurn } = await import('../js/agents/run.js');
+  eq('a new story asked for in plain words is known', ["let's make a new plot essential for a Bleach story", 'start a new story about a glass steppe', 'I want to do another story now', 'can you build another world for me']
+    .map(asksNewStory), [true, true, true, true]);
+  eq('and the story itself, a question about one, or another job never is', ['the empire declares a new world order', 'they make a new world order out of the ashes', 'what would a new story look like?', 'the new captain arrives at dawn', 'fold this into the plot essential', 'make the tide stronger']
+    .map(asksNewStory), [false, false, false, false, false, false]);
+  eq('"make it shorter" — the button\'s own name — is a job in plain words too', route('make it shorter', { hasPlotEssential: true, hasDocs: true }).map((x) => x.worker), ['compressor']);
+  eq('the listener says when he starts a different story, and only then', [readJobs('{"jobs":[],"new_story":true}').newStory, 'newStory' in readJobs('{"jobs":[]}')], [true, false]);
+  ok('it is told what a new story is, and that the house starts it elsewhere', /"new_story" is true only when he is starting a different story/.test(listenerPrompt({ frame: '', reading: '', docs: [], talk: '', message: 'x' }).system));
+
+  const house = { connections: [{ id: 'c1', url: 'https://relay.example/v1', model: 'm', key: 'k' }], agentConnections: {}, settings: { yourName: 'Bruce' }, personaFrame: '' };
+  const PE = '# PLOT ESSENTIAL — Ash Harbour — V1.0\n## SCENE\nWHERE: the quay';
+  let listener = () => 'unreadable';
+  const seen = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    const req = JSON.parse(init.body);
+    if (forFront(req)) { seen.push('front'); return sseAnswer([{ choices: [{ delta: { content: 'ok' } }] }, '[DONE]']); }
+    const sys = (req.body.messages.find((m) => m.role === 'system') || {}).content || '';
+    const w = /You are the one who listens/.test(sys) ? 'listener' : /PROACTIVE CO-WRITER/.test(sys) ? 'builder' : 'other';
+    seen.push(w);
+    const out = w === 'listener' ? listener() : w === 'builder' ? 'Built.\n\n<file name="Plot Essential.md">\n# PLOT ESSENTIAL — Glass Steppe — V1.0\n## SCENE\nWHERE: the steppe\n</file>' : 'Nothing to change.';
+    return wholeAnswer({ choices: [{ message: { content: out }, finish_reason: 'stop' }] });
+  };
+  const withPE = () => ({ id: 'pn', title: 'Ash Harbour', docs: [{ id: 'd', name: 'Plot Essential.md', kind: 'pe', text: PE }], chats: [], recentSections: [] });
+  try {
+    listener = () => '{"jobs":[{"worker":"builder","task":"Build a Bleach story."}],"new_story":true}';
+    seen.length = 0;
+    let r = await runTurn({ house, project: withPE(), message: "let's make a new plot essential for a Bleach story" });
+    eq('in a world with a plot essential, a new story is handed back before anyone works, and nothing here changes', [r.newStory, seen, r.project.docs[0].text], [true, ['listener'], PE]);
+    listener = () => 'unreadable';
+    seen.length = 0;
+    r = await runTurn({ house, project: withPE(), message: "let's make a new plot essential for a Bleach story" });
+    eq('the same when the listener cannot be read', [r.newStory, seen], [true, ['listener']]);
+    seen.length = 0;
+    r = await runTurn({ house, project: { id: 'pe0', title: 'A new world', docs: [], chats: [], recentSections: [] }, message: "let's make a new plot essential for a Bleach story" });
+    eq('in a world with nothing in it, it is simply built there', [Boolean(r.newStory), seen.includes('builder'), (r.project.docs[0] || {}).name], [false, true, 'Plot Essential.md']);
+  } catch (e) { ok('the new-story turns ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
+}
+
 /* ================================================================ done */
 
 console.log(`\n${pass} passed, ${fail} failed`);

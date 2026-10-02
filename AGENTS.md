@@ -1099,18 +1099,36 @@ way a real worker does; every fault below was reproduced there before it was fix
   all four voices: develop what is missing with concrete options and why, tell people apart by what each does, say
   when the trouble would stall, ask only what only he can decide.
 
+### Plain words are enough — a new story included (v1.5.1)
+
+He asked whether he can simply talk, with no commands. Sixteen everyday sentences were run through the house's own
+routing (the keyword reading, which stands in whenever the listener's answer cannot be read; normally the listener — a
+model reading his engine's 7.6 — decides). All reached the right worker but two:
+
+- **"make it shorter"** — the name of the button — reached nobody: the reading knew "shorten", not "shorter". It is a
+  job now.
+- **A new story asked for in plain words, in a world that already has a plot essential.** "Let's make a new plot
+  essential for a Bleach story" went to the builder in THAT world; "start a new story about a glass steppe" was taken
+  for talk. The listener now says when he is starting a different story (`new_story`), and the reading knows the ask
+  when the listener cannot answer (`asksNewStory`: a starting verb with "a new/another story, world, plot essential",
+  never the story itself — "they make a new world order" is not one, never a question about one). The turn is handed
+  back before anyone works (run.js), and the room moves his words to a world of its own with the conversation that led
+  to them, as plain talk — the changes in it belong to the world he left, which is left exactly as it was — and reads
+  them again there: talk starts a brainstorm, an ask to build starts a build (app.js). With a worker waiting on his
+  answer, his words are that answer, never a new story.
+
 ## Testing
 
 ```
 bash tests/all.sh           all seven, exit code intact
 ```
 
-    node tests/units.mjs         906 checks — the real modules on a real document, and what the persona hears
+    node tests/units.mjs         914 checks — the real modules on a real document, and what the persona hears
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       49 checks — the real serve.py, real files on disk, streams timed
     python3 tests/browser.py      75 checks — real Chromium at 390x844, end to end
-    python3 tests/walk_worlds.py 218 checks — the drawer, conversations, swipes and versions, edit and
+    python3 tests/walk_worlds.py 221 checks — the drawer, conversations, swipes and versions, edit and
                                               send again, delete, branch, go on, re-quoting, crafts,
                                               the thinking box live, backup and restore, a model too
                                               small for the world, a real server killed mid-edit,
@@ -1118,7 +1136,7 @@ bash tests/all.sh           all seven, exit code intact
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-1,302 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
+1,313 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

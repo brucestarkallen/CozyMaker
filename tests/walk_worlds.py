@@ -1381,6 +1381,27 @@ def main():
             made = [p for p in api("/api/projects")["projects"] if p["id"] not in before_new]
             ok("*new typed in a world that has a plot essential gets a world of its own", len(made) == 1 and made[0]["title"] == "The Saltmarsh Court", made)
             ok("and the world it was typed in keeps its plot essential exactly", added and [d["text"] for d in world(added[0]["id"])["docs"] if d["name"] == "Plot Essential.md"][0] == ember_pe)
+            # the same asked for in plain words: a world of its own, the talk along with it, this world left as it was (v1.5.1)
+            here_id = page.evaluate("() => localStorage.getItem('cozymaker:open')")
+            here_before = world(here_id) if here_id else {"docs": [], "chats": []}
+            turns_here = sum(len(c.get("turns", [])) for c in here_before.get("chats", []))
+            before_plain = {p["id"] for p in api("/api/projects")["projects"]}
+            page.fill("#say", "let's make a new plot essential for a glass steppe story")
+            page.click("#sendBtn")
+            try:
+                page.wait_for_function("() => !document.querySelector('#sendBtn.stop') && document.querySelectorAll('.turn.maker').length >= 1 && /glass steppe/.test(document.querySelector('#stream').textContent)", timeout=30000)
+            except Exception:
+                pass
+            page.wait_for_timeout(1800)
+            made2 = [p for p in api("/api/projects")["projects"] if p["id"] not in before_plain]
+            here_after = world(here_id) if here_id else {"docs": [], "chats": []}
+            ok("a new story asked for in plain words gets a world of its own", len(made2) == 1, made2)
+            ok("and the world it was asked in is left exactly as it was — its documents and its talk",
+               here_after.get("docs") == here_before.get("docs") and sum(len(c.get("turns", [])) for c in here_after.get("chats", [])) == turns_here)
+            new_w = world(made2[0]["id"]) if made2 else {"docs": [], "chats": [{"turns": []}]}
+            nt = [t.get("text", "") for c in new_w.get("chats", []) for t in c.get("turns", [])]
+            ok("the talk came along, his words are there, and the plot essential is built there",
+               any("glass steppe" in t for t in nt) and any(d["kind"] == "pe" and d["text"].strip() for d in new_w.get("docs", [])) and len(nt) > 2, nt[-3:])
             page.click("#menuBtn")
             page.wait_for_timeout(400)
             page.locator(".world-row", has_text=re.compile("^The Leviathan Quarter")).first.click()

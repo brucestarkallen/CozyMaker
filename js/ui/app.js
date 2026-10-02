@@ -664,12 +664,13 @@ async function send(text, forceWorker, opts = {}) {
     : opts.from !== undefined ? chat.turns.slice(0, opts.from) : chat.turns.slice();
   const snapshot = new Map((world.docs || []).map((d) => [d.name, d.text]));
 
+  const saidAt = Date.now();
   if (fresh) {
     /* His words go in at once, where he asked. */
     await store.updateWorld(worldId, (w) => {
       const c = w.chats.find((x) => x.id === chatId);
       if (!c) return null;
-      c.turns = [...c.turns, forceWorker ? { role: 'writer', text, worker: forceWorker, at: Date.now() } : { role: 'writer', text, at: Date.now() }];
+      c.turns = [...c.turns, forceWorker ? { role: 'writer', text, worker: forceWorker, at: saidAt } : { role: 'writer', text, at: saidAt }];
       c.updated = Date.now();
       if (c.turns.filter((t) => t.role === 'writer').length === 1 && /^(First conversation|A new conversation)$/.test(c.title)) {
         c.title = text.replace(/\s+/g, ' ').slice(0, 42) + (text.length > 42 ? '\u2026' : '');
@@ -712,6 +713,33 @@ async function send(text, forceWorker, opts = {}) {
   }
 
   clearStatus();
+  /* A DIFFERENT STORY, ASKED FOR IN PLAIN WORDS IN A WORLD THAT HAS ONE (run.js): it
+   * gets a world of its own, as *new and a card do. His words leave this world —
+   * nothing of it changed — and go to the new one with the talk that led to them
+   * (plain words only: the changes in it belong to this world), where they are
+   * read again: talk starts a brainstorm there, an ask to build starts a build. */
+  if (result && result.newStory && fresh) {
+    running = null;
+    const before = history.map((t) => ({ role: t.role, text: t.text || '', at: t.at }));
+    const left = await store.updateWorld(worldId, (w) => {
+      const c = w.chats.find((x) => x.id === chatId);
+      if (!c) return null;
+      c.turns = c.turns.filter((t) => !(t.role === 'writer' && t.at === saidAt));
+      return w;
+    });
+    if (!left.ok) { toast('That could not be moved to a new world, so nothing was done.'); draw(); return; }
+    await store.flush();
+    await store.createProject(DEFAULT_WORLD_TITLE);
+    if (before.length) {
+      const fresh2 = store.getProject();
+      const first = { ...fresh2.chats[0], title: `From ${world.title}`, turns: before, updated: Date.now() };
+      await store.setProject({ ...fresh2, chats: [first], openChat: first.id }, { now: true });
+    }
+    toast('A new story gets a world of its own \u2014 the talk came along, and the world you were in is left as it was.');
+    draw();
+    if (drawerIsOpen()) drawDrawer();
+    return send(text, null);
+  }
   const stoppedByHim = result.stopped || abort.signal.aborted;
   const words = result.reply || '';
   const makerTurn = {
