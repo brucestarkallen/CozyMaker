@@ -26,7 +26,7 @@ import { openingFor, personaOf, addressWriter } from './persona.js';
 import { pickConnection, FRONT } from './roster.js';
 import { callModel, streamModel, enqueue } from './call.js';
 import { parseDoc, brief, readNeed, stripNeed, resolveNeed, LEAD_SHORT, nameWorld, hasPlotEssential, DEFAULT_WORLD_TITLE } from '../doc/index.js';
-import { route, confirmsOffer, offersIn, writtenCommand, justGreeting } from './router.js';
+import { route, confirmsOffer, offersIn, writtenCommand, justGreeting, houseCommand, REGISTRY } from './router.js';
 import { listen, LISTENER, LISTEN_TALK } from './listener.js';
 import { parseEdits, stripEdits, stripThinking, applyRun, hash, openFileAtEnd } from '../doc/edits.js';
 import { lint, lostSomething } from '../doc/lint.js';
@@ -663,6 +663,9 @@ export async function runTurn({
       if (!earlyKept) early.drop();
     }
   }
+  /* *regress: the house keeps the entry itself, in the registry (router.js houseCommand) */
+  const kept = forceWorker ? null : houseCommand(message);
+  if (kept && kept.what === 'regress' && kept.rest) acts.push({ house: true, registry: kept.rest, file: REGISTRY, reason: 'you asked for it to be kept' });
   const talk = conversationFor(past.concat([{ role: 'writer', text: message }]), p);
   /* the documents as he left them before this turn: what the checks never take out */
   const startTexts = new Map(docsOf(project).map((d) => [d.name, d.text]));
@@ -792,7 +795,11 @@ export async function runTurn({
     working = applied.project;
     turnEdits.push({ label: 'as you asked', edits: acts });
     if (applied.batch) batches.push(applied.batch);
-    allCards.push(...applied.cards);
+    /* what is already there is done, not "not done" (as for the crew's changes):
+     * no card, and the one he talks to is told it is already kept */
+    const already = applied.cards.filter((c) => c.status === 'refused' && /already in the document/.test(c.why || ''));
+    allCards.push(...applied.cards.filter((c) => !already.includes(c)));
+    if (already.length) crew.push({ worker: 'house', notes: already.map((c) => `${c.name} already holds that, word for word.`).join(' ') });
   }
 
   for (const intent of intents) {

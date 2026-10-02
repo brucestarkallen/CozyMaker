@@ -121,6 +121,11 @@ ok('the builder is NOT handed the alert list', !sliceFor(SECTIONS, 'builder').te
   const OWN = {
     scribe: { '8.7': 'section 8 names *ooc in its heading; that is the diagnostician\'s job' },
     compressor: { '8.5': 'its own Step 3 and Step 4 restate the Golden Rule and the four-question test in full' },
+    /* the showrunner reads the craft's command table (11) for #prune, defined nowhere else; the table names
+     * every other workflow too, and those are other workers' jobs */
+    showrunner: { '7.1': 'the command table names *new\'s setup; the builder\'s job', '7.2': 'the command table names *p and #q; the chronicler\'s job',
+      '8.5': 'the command table names *continuity\'s format; the scribe\'s job', '8.7': 'the command table names *ooc; the diagnostician\'s job',
+      '8.9': 'the command table names *import; the builder\'s job' },
     editor: { '7.2': 'the CBPA is named only on the *p row of its command table, the chronicler\'s job',
       '8.2': 'its Tier A carries the purity test itself, and the house\'s contract keeps anything but the story out of a document' },
   };
@@ -2874,6 +2879,56 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
   eq('a world with a worldbook can still start a plot essential, but not a second worldbook', labels([wb]), ['Start a plot essential', 'Build from a story card']);
   eq('a world with a plot essential makes its worldbook from it, so it offers no start', labels([pe]), []);
   eq('an empty worldbook is no worldbook yet', labels([{ ...wb, text: '' }]), ['Start a plot essential', 'Start a worldbook', 'Build from a story card']);
+}
+
+/* --- every command in his engine reaches someone who knows what it means (v1.4.1) --- */
+{
+  const { houseCommand, writtenCommand, REGISTRY } = await import('../js/agents/router.js');
+  const { runTurn } = await import('../js/agents/run.js');
+  const { guessKind } = await import('../js/doc/kind.js');
+  /* the craft's own definition of each command, wherever it lives, and the worker each is sent to */
+  const defined = (cmd) => [...SECTIONS.values()].filter((x) => x.text.includes('`' + cmd)).map((x) => x.id);
+  const silent = [];
+  for (const cmd of ['*new', '*source_new', '*hybrid_new', '*p', '#q', '*continuity', '*summarize brief', '*ooc', '*edit', '*retcon', '*import', '#skip', '*cleanup', '*optimize', '#prune', '*delete']) {
+    const w = (route(cmd + ' x', { hasPlotEssential: true, hasDocs: true })[0] || {}).worker;
+    const reads = w ? sliceFor(SECTIONS, w).ids : [];
+    if (!w || !defined(cmd).some((id) => reads.includes(id))) silent.push(`${cmd} -> ${w || 'nobody'}`);
+  }
+  eq('every command sent to a worker goes to one whose reading defines it', silent, []);
+  eq('the five the craft writes for a chat window are the house\'s, never a worker\'s', ['*regress Rukia is a lieutenant', '*next', '*show_full_file', '*show_spoilers', '*hide_spoilers']
+    .map((c) => [route(c, { hasPlotEssential: true, hasDocs: true }).length, (houseCommand(c) || {}).what, writtenCommand(c)]),
+  [[0, 'regress', true], [0, 'next', true], [0, 'show_full_file', true], [0, 'spoilers', true], [0, 'spoilers', true]]);
+  eq('only the bare command is one: words around *next are talk', [houseCommand('what comes *next in the story'), houseCommand('*regress')], [null, { what: 'regress', rest: '' }]);
+  eq('the registry is notes, never a plot essential', guessKind(REGISTRY), 'notes');
+
+  /* through the real turn: *regress keeps the entry, in the registry, and sends nobody */
+  const house = { connections: [{ id: 'c1', url: 'https://relay.example/v1', model: 'm', key: 'k' }], agentConnections: {}, settings: { yourName: 'Bruce' }, personaFrame: '' };
+  const PE = '# PLOT ESSENTIAL — X — V1.0\n## SCENE\nWHERE: the quay';
+  const crew = [];
+  let front = '';
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    const req = JSON.parse(init.body);
+    if (forFront(req)) { front = JSON.stringify(req.body.messages); return sseAnswer([{ choices: [{ delta: { content: 'Kept.' } }] }, '[DONE]']); }
+    crew.push(((req.body.messages.find((m) => m.role === 'system') || {}).content || '').slice(0, 60));
+    return wholeAnswer({ choices: [{ message: { content: 'Nothing to change.' }, finish_reason: 'stop' }] });
+  };
+  try {
+    const w0 = { id: 'preg', docs: [{ id: 'd1', name: 'Plot Essential.md', kind: 'pe', text: PE }], chats: [], recentSections: [] };
+    let r = await runTurn({ house, project: w0, message: '*regress Rukia is a lieutenant, never an unseated officer' });
+    const reg = r.project.docs.find((d) => d.name === REGISTRY);
+    eq('*regress: the entry is kept in the registry, a notes document, and nobody is sent', [Boolean(reg) && reg.kind, reg && reg.text.split('\n').filter((l) => l.startsWith('- ')), crew.length],
+      ['notes', ['- Rukia is a lieutenant, never an unseated officer'], 0]);
+    ok('the plot essential is left exactly as it was', r.project.docs.find((d) => d.name === 'Plot Essential.md').text === PE);
+    ok('and the one he talks to is told it was kept', /Changed: Anti-regression registry\.md/.test(front), front.slice(-300));
+    r = await runTurn({ house, project: r.project, message: '*regress Jovan is seventeen' });
+    eq('a second entry goes under the first', r.project.docs.find((d) => d.name === REGISTRY).text.split('\n').filter((l) => l.startsWith('- ')), ['- Rukia is a lieutenant, never an unseated officer', '- Jovan is seventeen']);
+    r = await runTurn({ house, project: r.project, message: '*regress Jovan is seventeen' });
+    ok('the same entry twice is kept once, and never shown as a failure', r.project.docs.find((d) => d.name === REGISTRY).text.split('\n').filter((l) => l === '- Jovan is seventeen').length === 1 && !r.cards.some((c) => c.status === 'refused'));
+    crew.length = 0;
+    await runTurn({ house, project: w0, message: '#prune the dead side threads' });
+    ok('#prune goes to the showrunner, whose reading now says what it means', crew.length >= 1 && /cleanup|craft work/i.test(crew[0]) && sliceFor(SECTIONS, 'showrunner').text.includes('#prune'), crew.join(' | '));
+  } catch (e) { ok('the command turns ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
 }
 
 /* ================================================================ done */

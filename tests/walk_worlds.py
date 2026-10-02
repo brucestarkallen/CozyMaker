@@ -1450,6 +1450,32 @@ def main():
             page.locator(".world-row", has_text=re.compile("^The Leviathan Quarter")).first.click()
             page.wait_for_timeout(700)
 
+            # ---------------------------------------- the craft's commands for a chat window, as they are here (v1.4.1)
+            page.mouse.click(372, 420)                       # the drawer shuts by a tap outside it
+            page.wait_for_timeout(300)
+            turns_before = page.locator(".turn").count()
+            page.fill("#say", "*show_full_file")
+            page.click("#sendBtn")
+            page.wait_for_timeout(700)
+            open_id = page.evaluate("() => localStorage.getItem('cozymaker:open')")
+            stored_pe = next((d["text"] for d in world(open_id)["docs"] if d["name"] == "Plot Essential.md"), None) if open_id else None
+            ok("*show_full_file opens the plot essential, whole — every word as it stands on the device",
+               page.locator("#docsSheet.open").count() == 1 and page.locator("#docsTitle").inner_text() == "Plot Essential.md"
+               and stored_pe is not None and page.locator("#docsBody textarea").first.input_value() == stored_pe, page.locator("#docsTitle").inner_text())
+            page.click("#docsSheet [data-close]")
+            page.wait_for_timeout(300)
+            page.fill("#say", "*next")
+            page.click("#sendBtn")
+            page.wait_for_timeout(400)
+            ok("*next with nothing cut off says so, and sends nobody", "Nothing was cut off" in page.locator("#toast").inner_text() and page.locator(".turn").count() == turns_before,
+               page.locator("#toast").inner_text())
+            page.wait_for_timeout(2700)
+            page.fill("#say", "*show_spoilers")
+            page.click("#sendBtn")
+            page.wait_for_timeout(400)
+            ok("*show_spoilers says plainly that nothing here is hidden", "Nothing here is hidden" in page.locator("#toast").inner_text() and page.locator(".turn").count() == turns_before,
+               page.locator("#toast").inner_text())
+
             # ---------------------------------------- a connection's last test result, and removing one
             h = api("/api/house")
             h["connections"].append({"id": "c9", "name": "spare", "url": f"http://127.0.0.1:{MODEL_PORT}/v1", "model": "spare-model", "key": "k9",

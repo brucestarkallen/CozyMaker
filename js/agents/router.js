@@ -33,10 +33,38 @@ const COMMANDS = [
   [/(^|\s)\*optimi[sz]e\b/i, 'compressor'],
   [/(^|\s)#skip\b/i, 'novelist'],
   [/(^|\s)\*ooc\b/i, 'diagnostician'],
-  [/(^|\s)\*(show_full_file|show_spoilers|hide_spoilers|regress|next)\b/i, 'eye'],
   /* the Summaryception auditor's own commands (its brief, carried over) */
   [/(^|\s)\*(audit|fix|brief)\b/i, 'auditor'],
 ];
+
+/* THE COMMANDS THE HOUSE ANSWERS ITSELF. Five of the craft's commands went to the
+ * eye, which reads neither the command table (11) nor the output protocol (7.4)
+ * where they are defined — a worker told to run something it was never given
+ * invents it (computed against the real slices, and seen through the real turn).
+ * Four describe a chat window that shows the plot essential, which this house
+ * does not have, and one keeps a list the craft never puts in a deliverable:
+ *   *regress <what>        an entry in the anti-regression registry, kept by the
+ *                          house in a notes document every worker reads — never
+ *                          inside the plot essential, whose purity forbids notes
+ *   *next                  the rest of a reply cut off at its limit (Go on)
+ *   *show_full_file        the plot essential, whole, opened on screen
+ *   *show_spoilers / *hide_spoilers   nothing is hidden here: said so
+ * (#prune stays the showrunner's, who now reads the table that defines it.) */
+const HOUSE = [
+  [/(^|\s)\*regress\b[ \t]*([\s\S]*)$/i, 'regress'],
+  [/^\s*\*next\s*$/i, 'next'],
+  [/^\s*\*show_full_file\s*$/i, 'show_full_file'],
+  [/^\s*\*(?:show|hide)_spoilers\s*$/i, 'spoilers'],
+];
+export function houseCommand(message) {
+  const text = String(message || '');
+  for (const [re, what] of HOUSE) {
+    const m = re.exec(text);
+    if (m) return { what, rest: what === 'regress' ? String(m[2] || '').trim() : '' };
+  }
+  return null;
+}
+export const REGISTRY = 'Anti-regression registry.md';
 
 /* A written command anywhere in the message: exact already, so it keeps its
  * instant path and never waits on the listener. */
@@ -70,7 +98,7 @@ export function storyCardTask(card, said = '') {
 
 export function writtenCommand(message) {
   const text = String(message || '');
-  return COMMANDS.some(([re]) => re.test(text));
+  return COMMANDS.some(([re]) => re.test(text)) || Boolean(houseCommand(text));
 }
 
 /* The craft's command words by the worker they belong to, for the listener. */
@@ -83,7 +111,6 @@ export const COMMAND_WORDS = {
   compressor: '*optimize',
   novelist: '#skip',
   diagnostician: '*ooc',
-  eye: '*regress, *show_full_file, *show_spoilers, *hide_spoilers',
   auditor: '*audit, *fix, *brief, and *cleanup or *optimize aimed at a transplant',
   worldbook: '*cleanup, *optimize, *edit aimed at a worldbook',
 };

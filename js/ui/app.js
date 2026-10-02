@@ -3,14 +3,14 @@
 
 import * as store from '../store.js';
 import { runTurn, capUndo, landTurn, commit, versionOf, FRONT_ONLY, GO_ON } from '../agents/run.js';
-import { isStoryCard } from '../agents/router.js';
+import { isStoryCard, houseCommand } from '../agents/router.js';
 import { stopWork, onLearn } from '../agents/call.js';
 import { undoBatch } from '../doc/edits.js';
 import { rollBackTo } from '../doc/branch.js';
 import { DEFAULT_WORLD_TITLE, hasPlotEssential, hasWorldbook } from '../doc/index.js';
 import { personaOf, names } from '../agents/persona.js';
 import { $, el, escape, closeSheet, toast, applyTheme, onRedraw, onAsk, fold, copyText } from './kit.js';
-import { openDocs, tidyOnLeaving, currentDocId, bringIn, startChoices } from './docs.js';
+import { openDocs, openDoc, tidyOnLeaving, currentDocId, bringIn, startChoices } from './docs.js';
 import { openHouse } from './settings.js';
 import { openDrawer, closeDrawer, drawerIsOpen, wireSwipe, setBusyCheck, draw as drawDrawer } from './drawer.js';
 
@@ -607,7 +607,36 @@ function onSendButton() {
   const text = say.value.trim();
   if (!text) return;
   say.value = ''; grow();
+  if (atOnce(text)) return;
   send(text, null);
+}
+
+/* THE CRAFT'S COMMANDS FOR A CHAT WINDOW, AS THEY ARE HERE (router.js houseCommand).
+ * They used to be sent to the eye, which was never told what they mean. The plot
+ * essential here is a document, always whole, so: *show_full_file opens it; *next
+ * is the rest of a reply that was cut off, the same as Go on; and nothing is ever
+ * hidden, which the spoiler pair says. *regress goes through the turn: the house
+ * keeps the entry itself (run.js). */
+function atOnce(text) {
+  const c = houseCommand(text);
+  if (!c || c.what === 'regress') return false;
+  const p = store.getProject() || {};
+  if (c.what === 'show_full_file') {
+    const pe = (p.docs || []).find((d) => (d.kind || 'pe') === 'pe' && String(d.text || '').trim());
+    if (pe) openDoc(pe.id);
+    else toast('There is no plot essential yet, so there is nothing to show.');
+    return true;
+  }
+  if (c.what === 'next') {
+    const chat = store.openChat();
+    const turns = (chat && chat.turns) || [];
+    const last = turns[turns.length - 1];
+    if (last && last.role === 'maker' && last.cut && !last.failed) goOn(turns.length - 1);
+    else toast('Nothing was cut off, so there is no second part \u2014 every answer here arrives whole.');
+    return true;
+  }
+  toast('Nothing here is hidden: The documents show every word of the plot essential, and so does what you copy or export.');
+  return true;
 }
 
 /* One way in for every kind of asking: a new message (the default), his

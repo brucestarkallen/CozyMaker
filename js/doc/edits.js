@@ -627,6 +627,24 @@ export function applyRun(docs, edits, { label = 'a change', putEntries = null } 
       cards.push({ status: 'applied', name, reason: e.reason || '', how: out.how, was: clip(out.was), now: clip(out.now) });
       continue;
     }
+    /* AN ANTI-REGRESSION REGISTRY ENTRY (*regress), written by the house: added
+     * to the registry, which is started when there is none. It is a notes
+     * document — every worker reads it beside the plot essential, and nothing of
+     * it ever goes into a deliverable. */
+    if (e.house === true && typeof e.registry === 'string' && typeof e.file === 'string') {
+      const what = e.registry.replace(/\s+/g, ' ').trim();
+      if (!what) { cards.push({ status: 'refused', name: e.file, reason: e.reason || '', why: 'nothing was said to keep' }); continue; }
+      const line = `- ${what}`;
+      const name = nameIn(texts, e.file) || e.file;
+      const had = texts.has(name) ? String(texts.get(name) || '') : null;
+      if (had !== null && had.split('\n').some((l) => l.trim() === line)) { cards.push({ status: 'refused', name, reason: e.reason || '', why: 'that is already in the document' }); continue; }
+      const head = '# Anti-regression registry\n\nWhat the storyteller has got wrong before, kept so every update is checked against it.\n\n';
+      const next = had === null || !had.trim() ? head + line + '\n' : had.replace(/\s*$/, '\n') + line + '\n';
+      if (had === null) created.push(name);
+      texts.set(name, next);
+      cards.push({ status: 'applied', name, reason: e.reason || '', how: had === null ? 'started it' : 'added at the end', was: '', now: line });
+      continue;
+    }
     /* CLEAR AND DELETE, WHEN HE ASKS FOR THEM. Only the house writes these (a
      * worker's own edits never carry "house"): "clear the plot essential"
      * used to reach a worker, whose rewrite to nothing was then refused by the

@@ -64,7 +64,8 @@ you already have. There are no commands to learn — "change Claire's age to
 fifteen", "fold all that into the plot essential", "this has got convoluted,
 untangle it" all reach the right person. The old written commands (`*new`,
 `#q`, `*continuity`, `*optimize`, `#skip`, `*cleanup`…) still work if you
-prefer them.
+prefer them. `*regress` keeps a line in the anti-regression registry every update reads; `*show_full_file`
+opens the plot essential whole; `*next` carries on a reply that was cut off.
 
 If you are just talking, nobody gets sent anywhere. It is meant to be a
 comfortable place, and a comfortable place lets you talk.
@@ -160,7 +161,7 @@ of the whole. The cog, under the floor, shows exactly who reads what.
 Read `AGENTS.md` first.
 
 ```
-bash tests/all.sh    seven suites, 1,260 checks
+bash tests/all.sh    seven suites, 1,273 checks
 ```
 
 `docs/lineage.md` lists every version of Cozy Tavern and Cozy Chat and what

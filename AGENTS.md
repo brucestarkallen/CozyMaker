@@ -1025,18 +1025,47 @@ below was reproduced before it was fixed.
   reports a failure; it never throws one. Every fix in this release was taken out one at a time and its tests went
   red (15 of 15); the walk's new section was proven the same way in the real browser.
 
+### Every command in his engine reaches someone who knows what it means (v1.4.1)
+
+His engine has 21 commands. Each was mapped to the worker the router sends it to, and that worker's reading was
+searched for the command's own definition — computed from the real slices, then seen through the real turn. Sixteen
+were sound. Five went to a worker that was never told what they mean, all defined only in the command table (11) or
+the output protocol (7.4), which no worker read:
+
+- **`#prune [scope]`** went to the showrunner, which knew the cleanup manifest (10.2) but not the command. The
+  showrunner now reads the command table (11); the workflows the table points at are other workers' jobs, and the
+  law test records why it need not hold them.
+- **`*regress [what]`** went to the eye. The craft's whole definition is "Add anti-regression registry entry": a list
+  the maker keeps, never in a deliverable (deliverable purity forbids notes in a plot essential, and an entry is a
+  note about the storyteller). The house keeps it itself — `Anti-regression registry.md`, a notes document every
+  worker reads beside the plot essential and nothing of which reaches the storyteller; the same entry twice is kept
+  once, and said to be there already.
+- **`*next`, `*show_full_file`, `*show_spoilers` / `*hide_spoilers`** describe a chat window showing the plot
+  essential, which this house does not have; sent to the eye, it could only invent (with 7.4 it could have written
+  `[HIDDEN]` over his values). They are what they mean here: `*show_full_file` opens the plot essential whole;
+  `*next` is the rest of a reply cut off at its limit, the same as Go on; nothing here is ever hidden, which the
+  spoiler pair says. Typed alone, they answer at once and send nobody (`houseCommand`, router.js).
+
+How his plot essential travels to Cozy Tavern (read from Cozy Tavern's own code, which is read-only from here):
+Copy all or Export here, pasted into the story's brief there (Settings → This story → The brief, Manual). Its
+storyteller reads the brief whole, as the fiction itself (its Brief Authority); its workers read up to 40,000
+characters of it. After that, Cozy Tavern's own ledger and record carry the story — no `*p` after every page. To
+bring a story back, Cozy Tavern's story export (markdown) is pasted here with `#q` (fold it into the plot essential)
+or `*continuity` (a continuation file). The two apps share no command words: Cozy Tavern's `#q`, `#p` and the like
+are his own preset's shortcuts there, and mean what his preset says.
+
 ## Testing
 
 ```
 bash tests/all.sh           all seven, exit code intact
 ```
 
-    node tests/units.mjs         874 checks — the real modules on a real document, and what the persona hears
+    node tests/units.mjs         884 checks — the real modules on a real document, and what the persona hears
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       49 checks — the real serve.py, real files on disk, streams timed
     python3 tests/browser.py      75 checks — real Chromium at 390x844, end to end
-    python3 tests/walk_worlds.py 208 checks — the drawer, conversations, swipes and versions, edit and
+    python3 tests/walk_worlds.py 211 checks — the drawer, conversations, swipes and versions, edit and
                                               send again, delete, branch, go on, re-quoting, crafts,
                                               the thinking box live, backup and restore, a model too
                                               small for the world, a real server killed mid-edit,
@@ -1044,7 +1073,7 @@ bash tests/all.sh           all seven, exit code intact
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-1,260 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
+1,273 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

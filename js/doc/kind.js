@@ -34,7 +34,7 @@ export function guessKind(name, text = '') {
   if (n.endsWith('.json') || n.includes('worldbook') || readsAsWorldbook(t)) return 'worldbook';
   if (/instruction|system prompt|preset/.test(n)) return 'instructions';
   if (n.includes('continuity') || n.includes('brief') || /file\s*\d/.test(n) || /^#\s*PLOT ESSENTIAL CONTINUITY/i.test(t)) return 'continuity';
-  if (n.includes('note')) return 'notes';
+  if (n.includes('note') || n.includes('registry')) return 'notes';
   return 'pe';
 }
 
