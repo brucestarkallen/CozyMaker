@@ -33,7 +33,7 @@ export function guessKind(name, text = '') {
   if (looksLikeTransplant(t) || n.includes('transplant')) return 'transplant';
   if (n.endsWith('.json') || n.includes('worldbook') || readsAsWorldbook(t)) return 'worldbook';
   if (/instruction|system prompt|preset/.test(n)) return 'instructions';
-  if (n.includes('continuity') || n.includes('brief') || /file\s*\d/.test(n) || /^#\s*PLOT ESSENTIAL CONTINUITY/i.test(t)) return 'continuity';
+  if (n.includes('continuity') || n.includes('brief') || /file\s*\d/.test(n) || /skip\s*bridge/.test(n) || /^#\s*(?:PLOT ESSENTIAL CONTINUITY|SKIP BRIDGE)\b/i.test(t)) return 'continuity';
   if (n.includes('note') || n.includes('registry')) return 'notes';
   return 'pe';
 }
@@ -41,7 +41,10 @@ export function guessKind(name, text = '') {
 /* The workers who only ever make one kind of document. The rest — the
  * builder above all, whose *import writes a plot essential AND continuation
  * files in one answer — are read by the name and the words. */
-const MAKES = { instructions: 'instructions', worldbook: 'worldbook', auditor: 'transplant', scribe: 'continuity' };
+/* the novelist's own documents are its bridges, which the craft writes as continuation
+ * files (9.6) — filed as a plot essential, a bridge was a second plot essential, checked
+ * by its rules (reproduced through the real turn) */
+const MAKES = { instructions: 'instructions', worldbook: 'worldbook', auditor: 'transplant', scribe: 'continuity', novelist: 'continuity' };
 
 export function kindFor(name, text = '', maker = null) {
   return (maker && MAKES[maker]) || guessKind(name, text);

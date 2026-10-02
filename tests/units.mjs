@@ -2962,6 +2962,84 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
   ok('the groups are in the order he works: making one first', SHORTCUTS[0].group === 'Making one' && SHORTCUTS[0].items[0].cmd === '*new');
 }
 
+/* --- the plot essential's pipelines, foolproofed (v1.5.0) --- */
+{
+  const { runTurn, frontBody, registryNote } = await import('../js/agents/run.js');
+  const { isNewStory, REGISTRY } = await import('../js/agents/router.js');
+  const { guessKind } = await import('../js/doc/kind.js');
+  const { hasPlotEssential } = await import('../js/doc/index.js');
+  eq('a new story typed as one is known: *new, *source_new, *hybrid_new and a card — and nothing else', ['*new a steppe', 'x *source_new Bleach', '*hybrid_new mine', '*card\nX', 'a new idea', '*news', '#q'].map(isNewStory), [true, true, true, true, false, false, false]);
+  eq('a skip bridge is a continuation file, by its name or by its heading', [guessKind('Skip Bridge 2.md', ''), guessKind('Bridge.md', '# SKIP BRIDGE 2 (skip target: the siege)\n## EVENTS')], ['continuity', 'continuity']);
+  {
+    const { commit: commitIt } = await import('../js/agents/run.js');
+    const c = commitIt({ id: 'pk', docs: [{ id: 'd', name: 'Plot Essential.md', kind: 'pe', text: '# PLOT ESSENTIAL — X — V1.0' }], chats: [] },
+      [{ file: 'The night of the siege.md', whole: true, replace: '## EVENTS\ne003 [Mon 14 Apr 247, 12:00] [siege]: The gates closed.' }], 'bridge', 'novelist');
+    eq('whatever the novelist calls a document it starts, it is a bridge: a continuation file', (c.project.docs.find((d) => d.name === 'The night of the siege.md') || {}).kind, 'continuity');
+  }
+  const voices = [{ you: 'Bruce', person: 'second' }, { you: '', person: 'second' }, { you: 'Bruce', person: 'first' }, { you: '', person: 'first' }].map((v) => frontBody(v));
+  ok('the one he brainstorms with is a co-writer, in all four voices', voices.every((t) => /as a co-writer, not a note-taker/.test(t) && /offer a couple of concrete ways it could go, and why/.test(t) && /only what only (?:Bruce|they) can decide/.test(t)));
+  ok('and it speaks each in its own voice: \"I\" where the persona is \"I\", \"you\" where it is \"you\"', /While Bruce and I work a world out, I think it through/.test(voices[2]) && /While you and Bruce work a world out, think it through/.test(voices[0]));
+
+  const OLD = '# PLOT ESSENTIAL — Ash Harbour — V2.0\n# STATE: Mon 14 Apr 247, 09:00 / the quay\n# CALENDAR: Gregorian\n\n## WORLD\n### Rules\n- Epistemic Law: NPCs know only what they witnessed.\n\n## MC — Jovan (17)\nID: lean\nCORE: patient\n\n### Mira (ferrywoman | core | 30)\nID: tall\nCORE: blunt\n→ Jovan: old friend (P:60 R:10 S:5)\n\n### Tal (priest | core | 50)\nID: bald\nCORE: pious\n→ Jovan: wary (P:20 R:0 S:0)\n\n## TIMELINE\ne001 [Mon 14 Apr 247, 08:00] [arrival]: Jovan reached the quay.\ne002 [Mon 14 Apr 247, 08:30] [omen]: The tide rose wrong.\n\n## SCENE\nWHERE: the quay / LAST: "Hold the rope," Mira said.';
+  const house = { connections: [{ id: 'c1', url: 'https://relay.example/v1', model: 'm', key: 'k' }], agentConnections: {}, settings: { yourName: 'Bruce' }, personaFrame: '' };
+  const role = (sys) => /You are the one who listens/.test(sys) ? 'listener' : /PROACTIVE CO-WRITER/.test(sys) ? 'builder' : /THE SKIP WORKFLOW/.test(sys) ? 'novelist'
+    : /worldbook architect/.test(sys) ? 'keeper' : /Evidenced CLEAN vs False CLEAN/.test(sys) ? 'eye' : /Update Pipeline/.test(sys) && /Narrative Truth/.test(sys) && /\b5\.2 Relationship Tracking/.test(sys) ? 'chronicler'
+      : /Edit Mode Discipline/.test(sys) && !/Update Pipeline \(`\*p`/.test(sys) ? 'editor' : 'other';
+  let answer = {};
+  const log = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    const req = JSON.parse(init.body);
+    if (forFront(req)) { log.push({ w: 'front', sys: req.body.messages[0].content }); return sseAnswer([{ choices: [{ delta: { content: 'ok' } }] }, '[DONE]']); }
+    const sys = (req.body.messages.find((m) => m.role === 'system') || {}).content || '';
+    const user = req.body.messages.filter((m) => m.role !== 'system').map((m) => m.content).join('\n');
+    const w = role(sys);
+    log.push({ w, user });
+    const out = answer[w] ? answer[w](user) : w === 'listener' ? 'unreadable' : 'Nothing else needed changing.';
+    return wholeAnswer({ choices: [{ message: { content: out }, finish_reason: 'stop' }] });
+  };
+  const world = (docs) => ({ id: 'pv', title: 'Ash Harbour', docs, chats: [], recentSections: [] });
+  const pe = (text = OLD) => ({ id: 'd', name: 'Plot Essential.md', kind: 'pe', text });
+  try {
+    /* every finding the checks hand on, one job per worker */
+    const MESSY = OLD.replace('e001 [Mon 14 Apr 247, 08:00] [arrival]:', 'e001:').replace('e002 [Mon 14 Apr 247, 08:30] [omen]: The tide rose wrong.', 'e002 [Mon 14 Apr 247, 08:30]: ' + 'The tide rose wrong and '.repeat(20) + 'it stopped.').replace('CORE: pious', 'CORE: pious, devoted to Mira since childhood');
+    answer = { builder: () => 'Built.\n\n<file name="Plot Essential.md">\n' + MESSY + '\n</file>' };
+    log.length = 0;
+    await runTurn({ house, project: { id: 'pb', title: 'A new world', docs: [], chats: [], recentSections: [] }, message: 'Build the plot essential now.', forceWorker: 'builder' });
+    const after = log.map((l) => l.w).filter((w) => !['builder', 'front'].includes(w));
+    const chron = log.filter((l) => l.w === 'chronicler');
+    eq('after a build, every finding is handed on: each worker once, the chronicler with all three of its own', [after, chron.length && ['without a full date-time', 'no tags', 'over its word budget'].every((x) => chron[0].user.includes(x))], [['chronicler', 'editor', 'eye'], true]);
+
+    /* a long paste, then "fold that in": the chronicler reads it from its first line */
+    const PASTE = 'FIRST LINE OF THE PASTED STORY: Mira cut the rope. ' + 'The quay burned through the night. '.repeat(1100);
+    answer = { chronicler: () => 'Folded.' };
+    log.length = 0;
+    await runTurn({ house, project: world([pe()]), history: [{ role: 'writer', text: PASTE, at: 1 }, { role: 'maker', text: 'What a night.', at: 2 }], message: 'fold that into the plot essential' });
+    const c2 = log.find((l) => l.w === 'chronicler');
+    ok(`"fold that in" after a ${PASTE.length.toLocaleString()}-character paste: the chronicler reads it from its first line`, Boolean(c2) && c2.user.includes('FIRST LINE OF THE PASTED STORY'));
+
+    /* the skip bridge lands as a continuation file, never a second plot essential */
+    answer = { novelist: () => 'Viable.\n\n<file name="Skip Bridge 1.md">\n# SKIP BRIDGE 1 (skip target: the siege)\n# STATE: Tue 15 Apr 247, 22:00 / the walls\n# CALENDAR: Gregorian\n\n## EVENTS\ne003 [Mon 14 Apr 247, 12:00] [siege]: The gates closed.\n\n## CURRENT SCENE\nWHERE: the walls\n</file>' };
+    const r4 = await runTurn({ house, project: world([pe()]), message: '#skip to the night of the siege' });
+    const br = r4.project.docs.find((d) => d.name === 'Skip Bridge 1.md');
+    eq('#skip: the bridge is a continuation file, and the world still has one plot essential', [br && br.kind, r4.project.docs.filter((d) => hasPlotEssential([d])).length], ['continuity', 1]);
+
+    /* the registry is said to every worker on his engine, and to nobody else */
+    const reg = { id: 'r', name: REGISTRY, kind: 'notes', text: '# Anti-regression registry\n\nWhat the storyteller has got wrong before.\n\n- Rukia is a lieutenant.\n- Jovan is seventeen.\n' };
+    answer = { chronicler: () => 'Folded.' };
+    log.length = 0;
+    await runTurn({ house, project: world([pe(), reg]), message: '*p Rukia, the unseated officer, saluted.' });
+    const c5 = log.find((l) => l.w === 'chronicler');
+    ok('with a registry, the worker folding a page is told it is there and that it is right', Boolean(c5) && /Anti-regression registry\.md lists what the storyteller has got wrong before — 2 things\. It is right/.test(c5.user), c5 && c5.user.slice(-400));
+    eq('and the note is for his engine\'s workers only, and only when there is something in it', [registryNote(world([pe(), reg]), 'worldbook'), registryNote(world([pe()]), 'chronicler'), registryNote(world([pe(), { ...reg, text: '# Anti-regression registry\n' }]), 'editor')], ['', '', '']);
+
+    /* the co-writer stance reaches the wire */
+    log.length = 0;
+    await runTurn({ house, project: world([]), message: 'hello, lovely evening' });
+    ok('the one he talks to is given it on the wire', log.some((l) => l.w === 'front' && /as a co-writer, not a note-taker/.test(l.sys || '')));
+  } catch (e) { ok('the pipeline turns ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
+}
+
 /* ================================================================ done */
 
 console.log(`\n${pass} passed, ${fail} failed`);

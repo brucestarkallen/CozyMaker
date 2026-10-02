@@ -1371,6 +1371,16 @@ def main():
             added = [p for p in api("/api/projects")["projects"] if p["id"] not in before_worlds]
             ok("a card typed in a world that has a plot essential gets a world of its own", len(added) == 1 and added[0]["title"] == "The Ember Crown", added)
             ok("and the world it was typed in keeps its plot essential exactly", card_world and [d["text"] for d in world(card_world[0]["id"])["docs"] if d["name"] == "Plot Essential.md"][0] == first_pe)
+            # *new typed in a world that has a plot essential: a world of its own, the first left as it was (v1.5.0)
+            before_new = {p["id"] for p in api("/api/projects")["projects"]}
+            ember_pe = [d["text"] for d in world(added[0]["id"])["docs"] if d["name"] == "Plot Essential.md"][0] if added else ""
+            page.fill("#say", "*new a saltmarsh court where the tide decides who rules")
+            page.click("#sendBtn")
+            page.wait_for_function("() => !document.querySelector('#sendBtn.stop') && document.querySelectorAll('.turn.maker').length >= 1", timeout=30000)
+            page.wait_for_timeout(1300)
+            made = [p for p in api("/api/projects")["projects"] if p["id"] not in before_new]
+            ok("*new typed in a world that has a plot essential gets a world of its own", len(made) == 1 and made[0]["title"] == "The Saltmarsh Court", made)
+            ok("and the world it was typed in keeps its plot essential exactly", added and [d["text"] for d in world(added[0]["id"])["docs"] if d["name"] == "Plot Essential.md"][0] == ember_pe)
             page.click("#menuBtn")
             page.wait_for_timeout(400)
             page.locator(".world-row", has_text=re.compile("^The Leviathan Quarter")).first.click()

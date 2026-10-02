@@ -1070,18 +1070,47 @@ are his own preset's shortcuts there, and mean what his preset says.
   Each was proven both ways. Measured at 390px in a real browser: the engine's words appear on 24 of 25 (`*card` is the
   house's own).
 
+### The plot essential's pipelines, foolproofed (v1.5.0)
+
+He asked for the plot essential — the most important thing here — to be a smart, creative collaboration with every
+pipeline foolproof, the agents above all. Each path was probed through the real turn with a stand-in answering the
+way a real worker does; every fault below was reproduced there before it was fixed, and each fix was proven both ways.
+
+- **`*new` typed in a world that already has a plot essential.** A build smaller than the plot essential there was
+  refused by the loss guard and lost; one as large REPLACED his world's plot essential with a different world. A new
+  story typed as one — `*new`, `*source_new`, `*hybrid_new`, a story card — gets a world of its own (`isNewStory`,
+  router.js), and the world it was typed in is left exactly as it was. A new story asked for in plain words inside
+  such a world still reaches the builder there; there the loss guard refuses a smaller rewrite, and put it back
+  undoes the rest.
+- **Findings handed on after a change were dropped.** The checks made one job per finding and two were allowed: a
+  fresh build with four findings sent the chronicler twice and the editor never, without a word. Each worker the
+  checks name now gets one job holding all of its findings; the cap is per worker (MAX_AUTO_REPAIRS, 4).
+- **“Fold that in” after a long paste lost its start.** The chronicler read the last 24,000 characters of the talk, so
+  a story pasted in one message and folded in the next reached it without its beginning. Everyone who makes or folds
+  a whole document out of the talk — the builder, the worldbook keeper, the chronicler, the scribe — reads all of it
+  (`WHOLE_TALK`).
+- **A skip bridge was a second plot essential.** The craft writes it as a continuation file (9.6); filed by its name
+  as a plot essential, it was checked by the plot essential's rules. Whatever the novelist starts is a continuation
+  file, and so is anything named or headed as a skip bridge.
+- **The anti-regression registry was seen and never checked.** Every worker on the craft is now told it is there,
+  how many things it lists, and that it is right: material that repeats one is the storyteller's mistake.
+- **The one he brainstorms with is a co-writer.** Talking a world through is the persona's alone, and the craft's
+  co-writer stance (7.1) reached only the builder, once he said build. It is said in plain words — no rule names — in
+  all four voices: develop what is missing with concrete options and why, tell people apart by what each does, say
+  when the trouble would stall, ask only what only he can decide.
+
 ## Testing
 
 ```
 bash tests/all.sh           all seven, exit code intact
 ```
 
-    node tests/units.mjs         895 checks — the real modules on a real document, and what the persona hears
+    node tests/units.mjs         906 checks — the real modules on a real document, and what the persona hears
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       49 checks — the real serve.py, real files on disk, streams timed
     python3 tests/browser.py      75 checks — real Chromium at 390x844, end to end
-    python3 tests/walk_worlds.py 216 checks — the drawer, conversations, swipes and versions, edit and
+    python3 tests/walk_worlds.py 218 checks — the drawer, conversations, swipes and versions, edit and
                                               send again, delete, branch, go on, re-quoting, crafts,
                                               the thinking box live, backup and restore, a model too
                                               small for the world, a real server killed mid-edit,
@@ -1089,7 +1118,7 @@ bash tests/all.sh           all seven, exit code intact
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-1,289 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
+1,302 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

@@ -76,6 +76,13 @@ export const REGISTRY = 'Anti-regression registry.md';
  * a card that says "clean up her messes" would have sent the showrunner too. */
 const CARD = /(^|\s)\*card\b/i;
 export function isStoryCard(message) { return CARD.test(String(message || '')); }
+/* A NEW STORY, TYPED AS ONE: *new, *source_new, *hybrid_new — the craft's setup of a
+ * world from nothing. Sent in a world that already has a plot essential, the build
+ * either lost to the guard against loss or, as large, replaced his world's plot
+ * essential with a different world (reproduced through the real turn); a new story
+ * gets a world of its own, as a story card does. */
+const NEW_BUILD = /(^|\s)\*(new|source_new|hybrid_new)\b/i;
+export function isNewStory(message) { const t = String(message || ''); return CARD.test(t) || NEW_BUILD.test(t); }
 export function storyCardTask(card, said = '') {
   return [
     'Build a plot essential from a story card he has pasted \u2014 the craft\'s *new, reading the card as a blueprint (the Blueprint Ingestion Protocol in 7.1).',

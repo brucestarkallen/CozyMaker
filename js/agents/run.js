@@ -34,7 +34,9 @@ import { kindFor } from '../doc/kind.js';
 import { putEntries } from '../doc/entries.js';
 
 export const MAX_NEED_ROUNDS = 2;
-export const MAX_AUTO_REPAIRS = 2;
+/* one repair job per worker the checks name (chronicler, editor, compressor, the
+ * worldbook keeper): enough for every one of them in a turn */
+export const MAX_AUTO_REPAIRS = 4;
 
 /* The one standing line every backstage worker carries. A worker reads pages
  * of somebody's fiction; its job is its own small task and never a judgment of
@@ -48,6 +50,12 @@ export const CRAFT_FRAME =
  * by his name: a house that talks about "the writer" and "he" reads like a
  * form, and the voice that reads it starts to sound like one (Cozy Tavern
  * M327). With no name set, it simply talks to him. */
+/* THE ONE HE BRAINSTORMS WITH IS A CO-WRITER. Talking a world through is the
+ * persona's alone — nothing is built until he asks — and the craft's co-writer
+ * stance (7.1: develop every gap with concrete options and reasons, tell similar
+ * people apart by what each does, say when the trouble would stall, ask only what
+ * only he can decide) reached only the builder, once he said build. It is said
+ * here in plain words, with none of the craft's names, in each of the four voices. */
 /* WRITTEN IN BOTH VOICES, never rewritten word by word: swapping pronouns by
  * pattern gave a first-person persona "Bruce only ever talks to I" and
  * "I and Bruce are building". */
@@ -65,6 +73,8 @@ When ${him} asked for something to be checked, audited, diagnosed or judged, wha
 
 When something cannot go further until ${him} decides, I put all of it to ${him} \u2014 every point there is to decide, in my own voice \u2014 and let ${him} choose.
 
+While ${him} and I work a world out, I think it through with ${him} as a co-writer, not a note-taker: where something is missing or does not hold together, I reason it out and offer a couple of concrete ways it could go, and why; I tell two people apart by what each one does that the other cannot, never by adjectives; and I say so plainly when the trouble would stall, or the place could not let it happen. I ask ${him} only what only ${him} can decide \u2014 a name, a taste, a yes or no.
+
 If ${him} is just talking, I just talk. Not every sentence is a job.\n\nWhat I write is what ${him} reads: I answer ${him} directly, never my notes to myself about how to answer. If I want to think it through first, I think inside <think> and </think> before I answer \u2014 ${him} never sees what is inside; what comes after it is my answer.`;
     return `The two of us are building ${WORLD}. This is the comfortable room where that gets made, so I talk like it: two people making something good, not a service desk.
 
@@ -75,6 +85,8 @@ Only what I am told changed has changed. If nothing is listed, nothing changed, 
 When they asked for something to be checked, audited, diagnosed or judged, what came back is the answer: I give them all of it that matters, in my own voice, not read out as a list. What was read back without being asked, I mention only if it matters.
 
 When something cannot go further until they decide, I put all of it to them \u2014 every point there is to decide, in my own voice \u2014 and let them choose.
+
+While we work a world out, I think it through with them as a co-writer, not a note-taker: where something is missing or does not hold together, I reason it out and offer a couple of concrete ways it could go, and why; I tell two people apart by what each one does that the other cannot, never by adjectives; and I say so plainly when the trouble would stall, or the place could not let it happen. I ask them only what only they can decide \u2014 a name, a taste, a yes or no.
 
 If they are just talking, I just talk. Not every sentence is a job.\n\nWhat I write is what they read: I answer them directly, never my notes to myself about how to answer. If I want to think it through first, I think inside <think> and </think> before I answer \u2014 they never see what is inside; what comes after it is my answer.`;
   }
@@ -88,6 +100,8 @@ When ${him} asked for something to be checked, audited, diagnosed or judged, wha
 
 When something cannot go further until ${him} decides, put all of it to ${him} \u2014 every point there is to decide, in your own voice \u2014 and let ${him} choose.
 
+While you and ${him} work a world out, think it through with ${him} as a co-writer, not a note-taker: where something is missing or does not hold together, reason it out and offer a couple of concrete ways it could go, and why; tell two people apart by what each one does that the other cannot, never by adjectives; and say so plainly when the trouble would stall, or the place could not let it happen. Ask ${him} only what only ${him} can decide \u2014 a name, a taste, a yes or no.
+
 If ${him} is just talking, just talk. Not every sentence is a job.\n\nWhat you write is what ${him} reads: answer ${him} directly, never your notes to yourself about how to answer. If you want to think it through first, think inside <think> and </think> before you answer \u2014 ${him} never sees what is inside; what comes after it is your answer.`;
   return `The two of you are building ${WORLD}. This is the comfortable room where that gets made, so talk like it: two people making something good, not a service desk.
 
@@ -98,6 +112,8 @@ Only what you are told changed has changed. If nothing is listed, nothing change
 When they asked for something to be checked, audited, diagnosed or judged, what came back is the answer: give them all of it that matters, in your own voice, not read out as a list. What was read back without being asked, mention only if it matters.
 
 When something cannot go further until they decide, put all of it to them \u2014 every point there is to decide, in your own voice \u2014 and let them choose.
+
+While the two of you work a world out, think it through with them as a co-writer, not a note-taker: where something is missing or does not hold together, reason it out and offer a couple of concrete ways it could go, and why; tell two people apart by what each one does that the other cannot, never by adjectives; and say so plainly when the trouble would stall, or the place could not let it happen. Ask them only what only they can decide \u2014 a name, a taste, a yes or no.
 
 If they are just talking, just talk. Not every sentence is a job.\n\nWhat you write is what they read: answer them directly, never your notes to yourself about how to answer. If you want to think it through first, think inside <think> and </think> before you answer \u2014 they never see what is inside; what comes after it is your answer.`;
 }
@@ -280,6 +296,24 @@ export function worldbookNote(project, p) {
   return 'There is no worldbook in this world yet: your entries start one. ' +
     (title ? `Call it ${title}.json.` : 'Call it after the world, by the name the talk gives it \u2014 Ash Harbour.json, say \u2014 or Worldbook.json if it has no name yet.') +
     ` If nothing in the talk or the documents tells you what this world is, write nothing yet: put to ${who}, in <ask>, the few things you need to begin \u2014 what the world is, who is in it, where it happens.`;
+}
+
+/* The workers who make or fold a whole document out of the conversation. */
+export const WHOLE_TALK = new Set(['builder', 'worldbook', 'chronicler', 'scribe']);
+
+/* THE ANTI-REGRESSION REGISTRY, SAID TO EVERY WORKER ON HIS ENGINE. *regress keeps an
+ * entry in it (router.js); a document every worker can see is not a document every
+ * worker checks against, and the registry's own first line says every update is
+ * checked against it — so every worker on the craft is told it is there and that
+ * it is right: what it lists may not come back, and material that repeats one is
+ * the storyteller's mistake (the craft's [REGRESSION_DETECTED], fixed as it goes). */
+const ON_THE_CRAFT = new Set(['builder', 'chronicler', 'scribe', 'editor', 'eye', 'showrunner', 'compressor', 'novelist', 'diagnostician']);
+export function registryNote(project, worker) {
+  if (!ON_THE_CRAFT.has(worker)) return '';
+  const reg = docsOf(project || {}).find((d) => d.name.toLowerCase() === REGISTRY.toLowerCase());
+  const lines = reg ? reg.text.split('\n').filter((l) => /^\s*-\s+\S/.test(l)) : [];
+  if (!lines.length) return '';
+  return `${REGISTRY} lists what the storyteller has got wrong before \u2014 ${lines.length} thing${lines.length === 1 ? '' : 's'}. It is right: nothing you write may bring any of it back, and where the material in front of you repeats one of them, that is the storyteller's mistake, written down as the registry has it.`;
 }
 
 /* WHAT WAITS ON HIM (the craft's approval gates: the cleanup manifest, a
@@ -711,9 +745,11 @@ export async function runTurn({
     catch (e) { return failed((e && e.message) || String(e)); }
     const res = await enqueue(project.id, worker, ({ signal: s, stale }) =>
       runWorker({ worker, sections, conn: connFor(worker), project: working, message: about,
-        /* the two who make a whole document from the talk read all of it (BUILD_TALK) */
-        talk: worker === 'builder' || worker === 'worldbook' ? buildTalk : talk,
-        note: worker === 'worldbook' ? worldbookNote(working, p) : '',
+        /* who makes or folds a whole document out of the talk reads all of it
+         * (BUILD_TALK): “fold that in” after a long paste reached the chronicler
+         * without the paste's start (reproduced through the real turn) */
+        talk: WHOLE_TALK.has(worker) ? buildTalk : talk,
+        note: worker === 'worldbook' ? worldbookNote(working, p) : registryNote(working, worker),
         fromHouse, onStatus: status, onProgress: progress, signal: either(signal, s), stale, craft }));
     if (!res || !res.ok) return failed((res && res.error) || 'did not finish');
     if (res.ask) asks.push({ worker, ask: res.ask, at: Date.now() });
@@ -820,12 +856,21 @@ export async function runTurn({
     const linted = sweep(working, touched(), startTexts);
     working = linted.project;
     if (linted.repaired.length) crew.push({ worker: 'house', notes: linted.repaired.join(' ') });
+    /* ONE JOB PER WORKER, EVERY FINDING IN IT. One job per finding, with two jobs
+     * allowed, dropped the rest without a word: a fresh build with four findings
+     * sent the chronicler twice and never the editor (reproduced through the real
+     * turn). Each worker now gets all of its findings at once. */
+    const byWorker = new Map();
     for (const job of linted.handOver) {
+      if (!byWorker.has(job.worker)) byWorker.set(job.worker, []);
+      byWorker.get(job.worker).push(job);
+    }
+    for (const [worker, jobs] of byWorker) {
       if (stopped() || repairsLeft-- <= 0) break;
-      status(`the ${job.worker} is fixing ${job.check}`);
-      await send(job.worker,
-        `Something in the documents needs putting right: ${job.check} — ${job.said}. Fix it properly, the way your craft says to, and check the rest of the documents for the same thing before you finish.`,
-        `put right: ${job.check}`, true);
+      status(`the ${worker} is fixing ${jobs.length > 1 ? `${jobs.length} things` : jobs[0].check}`);
+      await send(worker,
+        `Something in the documents needs putting right:\n${jobs.map((j) => `- ${j.check} \u2014 ${j.said}.`).join('\n')}\n\nFix each properly, the way your craft says to, and check the rest of the documents for the same thing before you finish.`,
+        `put right: ${jobs.map((j) => j.check).join('; ')}`, true);
     }
   }
 

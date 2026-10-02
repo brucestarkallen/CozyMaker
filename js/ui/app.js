@@ -3,7 +3,7 @@
 
 import * as store from '../store.js';
 import { runTurn, capUndo, landTurn, commit, versionOf, FRONT_ONLY, GO_ON } from '../agents/run.js';
-import { isStoryCard, houseCommand } from '../agents/router.js';
+import { isNewStory, houseCommand } from '../agents/router.js';
 import { stopWork, onLearn } from '../agents/call.js';
 import { undoBatch } from '../doc/edits.js';
 import { rollBackTo } from '../doc/branch.js';
@@ -647,12 +647,13 @@ async function send(text, forceWorker, opts = {}) {
   const house = store.getHouse();
   if (!house.connections.length) { openHouse(); toast('Set up a connection first \u2014 in the house, under Connections.'); return; }
   closeDrawer();
-  /* A STORY CARD GETS A WORLD OF ITS OWN. It is a whole new story: built into a
-   * world that already has a plot essential, it would be written over that one. */
-  if (opts.from === undefined && opts.continueAt === undefined && isStoryCard(text) && hasPlotEssential((store.getProject() || {}).docs)) {
+  /* A NEW STORY GETS A WORLD OF ITS OWN — a story card, or *new, *source_new,
+   * *hybrid_new typed in a world that already has a plot essential: built there,
+   * it would be written over that one. */
+  if (opts.from === undefined && opts.continueAt === undefined && isNewStory(text) && hasPlotEssential((store.getProject() || {}).docs)) {
     await store.flush();
     await store.createProject(DEFAULT_WORLD_TITLE);
-    toast('A story card gets a world of its own \u2014 this one is new, and takes the card\u2019s name once it is built.');
+    toast('A new story gets a world of its own \u2014 this one is new, and takes its plot essential\u2019s name once it is built.');
   }
 
   const world = store.getProject();
