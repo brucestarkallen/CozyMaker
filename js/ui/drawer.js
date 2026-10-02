@@ -103,7 +103,7 @@ export async function draw() {
   }
 
   const foot = el('div', 'drawer-foot');
-  const house = el('button', 'btn quiet', 'The house — connections, names, the look');
+  const house = el('button', 'btn quiet', 'The house — connections, names, shortcuts, the look');
   house.addEventListener('click', () => { closeDrawer(); openHouse(); });
   foot.append(house);
   body.append(foot);

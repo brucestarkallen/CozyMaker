@@ -94,6 +94,7 @@ js/agents/roster.js    who does what; which connection each of them rides
 js/agents/call.js      the one way anything speaks to a model + the work channel
 js/agents/listener.js  what he said -> the right workers, read for intent as the craft's 7.6 says
 js/agents/router.js    written commands, exactly; the old keyword reading, now only the fallback
+js/agents/shortcuts.js every shortcut, what it does here, who does it, and the craft's own words for it (v1.4.2)
 js/agents/run.js       the turn: workers backstage, one voice at the front
 js/doc/index.js        the whole shape always, full text only where it matters
 js/doc/edits.js        find, apply, undo, with a drift guard
@@ -1054,18 +1055,33 @@ bring a story back, Cozy Tavern's story export (markdown) is pasted here with `#
 or `*continuity` (a continuation file). The two apps share no command words: Cozy Tavern's `#q`, `#p` and the like
 are his own preset's shortcuts there, and mean what his preset says.
 
+### Every shortcut, looked up rather than remembered (v1.4.2)
+
+- **Nothing in the house listed the shortcuts.** A written command worked if he already knew it; he asked for a place
+  to see what each one is, so he knows and remembers. **Shortcuts**, under the cog (folded shut, like every busy part of
+  the house; the drawer's way into the house names it): every command his engine's table names, every one the memory
+  auditor's craft names, and the house's own `*card` — 25 — grouped the way he works (making one, keeping it up to
+  date, changing one thing, tidying and checking, where the story goes, on the screen, for a transplant). Each says
+  what it does HERE, who does it, how to type it, and his engine's own words for it.
+- **One list, held to the router** (`js/agents/shortcuts.js`). It says what happens in this house, never a law of the
+  craft; the craft's words are read out of `engine/generalist.md` (its command table, 11) and the auditor's craft by
+  `engineLines`, word for word, so the two can never disagree. A unit fails if a command the craft names is missing, if
+  a line names a command twice, or if any shortcut goes anywhere but where its line says — through the real router.
+  Each was proven both ways. Measured at 390px in a real browser: the engine's words appear on 24 of 25 (`*card` is the
+  house's own).
+
 ## Testing
 
 ```
 bash tests/all.sh           all seven, exit code intact
 ```
 
-    node tests/units.mjs         884 checks — the real modules on a real document, and what the persona hears
+    node tests/units.mjs         895 checks — the real modules on a real document, and what the persona hears
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       49 checks — the real serve.py, real files on disk, streams timed
     python3 tests/browser.py      75 checks — real Chromium at 390x844, end to end
-    python3 tests/walk_worlds.py 211 checks — the drawer, conversations, swipes and versions, edit and
+    python3 tests/walk_worlds.py 216 checks — the drawer, conversations, swipes and versions, edit and
                                               send again, delete, branch, go on, re-quoting, crafts,
                                               the thinking box live, backup and restore, a model too
                                               small for the world, a real server killed mid-edit,
@@ -1073,7 +1089,7 @@ bash tests/all.sh           all seven, exit code intact
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-1,273 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
+1,289 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

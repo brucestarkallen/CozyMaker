@@ -10,6 +10,7 @@ import { testConnection, listModels } from '../agents/call.js';
 import { spokenAs, learnedFacts, alwaysThinks, cannotStopThinking } from '../providers.js';
 import { loadEngine, sliceReport } from '../engine/slices.js';
 import { craftFor } from '../engine/crafts.js';
+import { SHORTCUTS, WHO, engineLines } from '../agents/shortcuts.js';
 
 const THEMES = [
   ['hearth', 'Hearth — warm and low'],
@@ -42,6 +43,7 @@ function draw() {
   body.append(whoSection(house));
   body.append(connectionsSection(house));
   body.append(crewSection(house));
+  body.append(shortcutsSection(house));
   body.append(lookSection(house));
   body.append(underTheFloorSection());
   body.append(versionLine());
@@ -375,6 +377,44 @@ function crewSection(house) {
     detailsInner.append(field(what, s));
   }
   g.append(details);
+  return g;
+}
+
+/* ------------------------------------------------------------ shortcuts */
+
+/* EVERY SHORTCUT, LOOKED UP RATHER THAN REMEMBERED (js/agents/shortcuts.js). Folded
+ * shut, like every busy part of the house; opened, each says what it does here,
+ * who does it, how to type it, and his engine's own words for it, read out of the
+ * engine file itself. */
+function shortcutsSection(house) {
+  const g = group('Shortcuts',
+    'You never need these \u2014 say it in plain words and it reaches the same one. They are for when you would rather type the short way. Each says what it does here, with your engine\u2019s own words for it underneath.');
+  const list = el('div', 'shortcuts');
+  const engineSlots = [];
+  for (const part of SHORTCUTS) {
+    list.append(el('h4', 'shortcut-group', part.group));
+    for (const s of part.items) {
+      const box = el('div', 'shortcut');
+      box.append(el('div', 'cmd', s.cmd));
+      box.append(el('div', 'does', s.does));
+      box.append(el('div', 'meta', `Who does it: ${WHO[s.who] || s.who}.`));
+      box.append(el('div', 'meta', `Try it: ${s.example}`));
+      const engine = el('div', 'engine', '');
+      engine.hidden = true;
+      box.append(engine);
+      engineSlots.push([s.cmd, engine]);
+      list.append(box);
+    }
+  }
+  const f = fold('every shortcut, and what it does', list);
+  g.append(f);
+  Promise.all([loadEngine(), craftFor('auditor', house).catch(() => '')]).then(([sections, auditor]) => {
+    const said = engineLines(sections, auditor);
+    for (const [cmd, node] of engineSlots) {
+      const words = said.get(cmd);
+      if (words) { node.textContent = `In your engine: ${words}`; node.hidden = false; }
+    }
+  }).catch(() => { /* the engine's own words are an addition; the list stands without them */ });
   return g;
 }
 

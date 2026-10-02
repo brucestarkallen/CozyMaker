@@ -436,3 +436,12 @@ textarea.plain { resize: vertical; min-height: 90px; font-family: var(--mono); f
 /* a connection's thinking, what it learned, and its last test — one quiet line each */
 .row .grow small.conn-line { display: block; margin-top: 3px; color: var(--ink-faint); font-size: 12.5px; line-height: 1.35; overflow-wrap: anywhere; }
 .row .grow small.conn-test { color: var(--ink-soft, var(--ink-faint)); }
+
+/* the shortcuts, under the cog: each one readable at a glance on a phone */
+.shortcuts { white-space: normal; }
+.shortcut-group { margin: 18px 0 8px; font-size: 13px; font-weight: 600; color: var(--ink-soft); }
+.shortcut { margin: 0 0 14px; padding-left: 10px; border-left: 2px solid var(--edge); }
+.shortcut .cmd { font-family: var(--mono); font-weight: 600; font-size: 14.5px; color: var(--ink); }
+.shortcut .does { margin-top: 3px; font-size: 14px; line-height: 1.45; color: var(--ink); }
+.shortcut .meta { margin-top: 3px; font-size: 13px; color: var(--ink-soft); overflow-wrap: anywhere; }
+.shortcut .engine { margin-top: 4px; font-size: 12.5px; color: var(--ink-faint); overflow-wrap: anywhere; }

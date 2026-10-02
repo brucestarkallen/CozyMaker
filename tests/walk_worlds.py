@@ -1476,6 +1476,29 @@ def main():
             ok("*show_spoilers says plainly that nothing here is hidden", "Nothing here is hidden" in page.locator("#toast").inner_text() and page.locator(".turn").count() == turns_before,
                page.locator("#toast").inner_text())
 
+            # ---------------------------------------- every shortcut, under the cog, looked up rather than remembered (v1.4.2)
+            page.click("#settingsBtn")
+            page.wait_for_timeout(600)
+            sc = page.locator("#houseBody .group", has=page.locator("h3", has_text=re.compile("^Shortcuts$")))
+            ok("the house has a Shortcuts section, by that name", sc.count() == 1)
+            ok("folded shut until he opens it, so the house is not crowded", sc.count() == 1 and not sc.locator(".shortcut").first.is_visible())
+            if sc.count():
+                sc.locator(".fold-head", has_text="every shortcut, and what it does").click()
+                page.wait_for_timeout(500)
+            cmds = sc.locator(".shortcut .cmd").all_inner_texts() if sc.count() else []
+            ok("opened, every shortcut is there, in the order he works", len(cmds) == 25 and cmds[:2] == ["*new", "*source_new"] and "*regress" in cmds and "#q" in cmds, cmds)
+            p_box = sc.locator(".shortcut", has=page.locator(".cmd", has_text=re.compile(r"^\*p$"))) if sc.count() else None
+            p_text = p_box.inner_text() if p_box is not None and p_box.count() else ""
+            ok("each says what it does, who does it, how to type it, and his engine's own words, read from the engine file",
+               "Folds the latest story" in p_text and "Who does it: the chronicler." in p_text and "Try it: *p" in p_text and "In your engine: Update Pipeline (7.2)" in p_text, p_text[:300])
+            page.click("#houseSheet [data-close]")
+            page.wait_for_timeout(300)
+            page.click("#menuBtn")
+            page.wait_for_timeout(400)
+            ok("and the drawer's way into the house says shortcuts are there", page.locator("#drawer .btn", has_text="shortcuts").count() == 1)
+            page.mouse.click(372, 420)
+            page.wait_for_timeout(300)
+
             # ---------------------------------------- a connection's last test result, and removing one
             h = api("/api/house")
             h["connections"].append({"id": "c9", "name": "spare", "url": f"http://127.0.0.1:{MODEL_PORT}/v1", "model": "spare-model", "key": "k9",

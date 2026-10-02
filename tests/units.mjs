@@ -2931,6 +2931,37 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
   } catch (e) { ok('the command turns ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
 }
 
+/* --- every shortcut, looked up rather than remembered (v1.4.2) --- */
+{
+  const { SHORTCUTS, allShortcuts, engineLines, WHO } = await import('../js/agents/shortcuts.js');
+  const { houseCommand } = await import('../js/agents/router.js');
+  const listed = allShortcuts();
+  const names = listed.map((x) => x.cmd);
+  const auditorCraft = readFileSync(join(ROOT, 'engine', 'sc-auditor.md'), 'utf8');
+  const said = engineLines(SECTIONS, auditorCraft);
+  /* every command his engine's table names, and every one the auditor's craft names, has its line */
+  const missing = [...said.keys()].filter((c) => !names.includes(c));
+  eq('every command in his engine and the auditor\'s craft is listed, so he can look it up', missing, []);
+  ok('and the house\'s own *card is listed too', names.includes('*card'));
+  eq('no command is listed twice', names.filter((c, i) => names.indexOf(c) !== i), []);
+  /* each one goes where its line says, through the real router */
+  const wrong = [];
+  for (const x of listed) {
+    if (x.who === 'house') { if (!houseCommand(x.cmd + (x.cmd === '*regress' ? ' a line' : '')) || route(x.cmd, { hasPlotEssential: true, hasDocs: true }).length) wrong.push(x.cmd); continue; }
+    const r = route(x.cmd + ' something', { hasPlotEssential: true, hasDocs: true });
+    if (!r.length || r[0].worker !== x.who) wrong.push(`${x.cmd} -> ${r.length ? r[0].worker : 'nobody'}, listed as ${x.who}`);
+  }
+  eq('each shortcut goes to the one its line says, through the real router', wrong, []);
+  ok('every line says what it does, who does it, and how to type it', listed.every((x) => x.does.length > 20 && WHO[x.who] && x.example.startsWith(x.cmd)), JSON.stringify(listed.filter((x) => !(x.does.length > 20 && WHO[x.who] && x.example.startsWith(x.cmd))).map((x) => x.cmd)));
+  /* his engine's own words, read out of the files, never retyped */
+  eq('*p is shown with his engine\'s own words for it', said.get('*p'), 'Update Pipeline (7.2); input = Storyteller output');
+  eq('#q too', said.get('#q'), 'Full PE update from bullets — complete 7.2 pipeline');
+  ok('*summarize brief is read as one command, not as *summarize', said.has('*summarize brief') && !said.has('*summarize'));
+  ok('the auditor\'s *audit is shown in its craft\'s words', /^full review, REPORT ONLY/.test(said.get('*audit') || ''), said.get('*audit'));
+  eq('every listed command but the house\'s own *card has its engine\'s words', names.filter((c) => c !== '*card' && !said.has(c)), []);
+  ok('the groups are in the order he works: making one first', SHORTCUTS[0].group === 'Making one' && SHORTCUTS[0].items[0].cmd === '*new');
+}
+
 /* ================================================================ done */
 
 console.log(`\n${pass} passed, ${fail} failed`);
