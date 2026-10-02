@@ -47,9 +47,27 @@ export function plotEssentialTitle(docs) {
   }
   return '';
 }
+/* WHETHER A WORLD HAS A WORLDBOOK: one with words in it — the same one rule
+ * for the room, the documents and the drawer, as for the plot essential. */
+export function hasWorldbook(docs) {
+  return (docs || []).some((d) => d.kind === 'worldbook' && String(d.text || '').trim());
+}
+/* A WORLD MADE WORLDBOOK FIRST TAKES ITS WORLDBOOK'S NAME, the way one made plot
+ * essential first takes the name on its first line — the keeper is told to name a
+ * new worldbook after its world. A name that only says what the document is
+ * ("Worldbook.json", "Lore", "World Info (copy)") names no world, and is left. */
+const GENERIC_BOOK = /^(?:world\s*book|world\s*info|lore\s*book|lore|untitled|new document|document|a new world)(?:\s*\(copy(?:\s*\d+)?\))?(?:\s*\d+)?$/i;
+export function worldbookTitle(docs) {
+  for (const d of docs || []) {
+    if (d.kind !== 'worldbook' || !String(d.text || '').trim()) continue;
+    const bare = String(d.name || '').replace(/\.(json|md|txt)$/i, '').replace(/\s*-\s*SillyTavern$/i, '').trim();
+    if (bare && !GENERIC_BOOK.test(bare)) return bare.slice(0, 80);
+  }
+  return '';
+}
 export function nameWorld(world) {
   if (!world || world.title !== DEFAULT_WORLD_TITLE) return false;
-  const t = plotEssentialTitle(world.docs);
+  const t = plotEssentialTitle(world.docs) || worldbookTitle(world.docs);
   if (!t) return false;
   world.title = t;
   return true;

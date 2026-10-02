@@ -23,6 +23,7 @@
 
 import { WORKERS } from './roster.js';
 import { callModel } from './call.js';
+import { WORKER_ROOM } from '../providers.js';
 import { COMMAND_WORDS } from './router.js';
 import { parseDoc } from '../doc/index.js';
 import { stripThinking, stripTrailingCommasOutsideStrings, escapeRawControlsInStrings } from '../doc/edits.js';
@@ -144,7 +145,11 @@ export function readJobs(text) {
 
 export async function listen({ conn, frame, sections, docs, talk, open, message, p, signal, stale }) {
   const { system, user } = listenerPrompt({ frame, reading: listenerReading(sections), docs, talk, open, message, p });
-  const out = await callModel(conn, { system, messages: [{ role: 'user', content: user }], maxTokens: 600, signal, stale });
+  /* ROOM FOR THE WHOLE ANSWER. It is told to spell each job out in full — the
+   * names, the numbers, his own words — and at 600 tokens a long one was cut
+   * mid-object, unreadable, so the turn fell back to the keyword reading. The
+   * same floor every worker has; a ceiling he set that is higher is his. */
+  const out = await callModel(conn, { system, messages: [{ role: 'user', content: user }], maxTokens: WORKER_ROOM, signal, stale });
   if (!out.ok) return { ok: false, error: out.error };
   let read = readJobs(out.text);
   if (!read.ok && out.thinking) {

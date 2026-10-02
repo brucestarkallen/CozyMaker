@@ -2683,6 +2683,199 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
   } finally { globalThis.fetch = realFetch; }
 }
 
+/* --- A WORLDBOOK, CHOSEN AND MADE: entries as plain data, put in by name (v1.4.0) --- */
+{
+  const { putEntries } = await import('../js/doc/entries.js');
+  const { readWorldbook } = await import('../js/doc/lint.js');
+  const read = (t) => (readWorldbook(t).entries || []);
+  const at = (t, i) => read(t)[i] || {};
+  const aldric = { name: 'Aldric', keys: ['Aldric', 'the general'], content: 'A blunt general. He says "never" when he means "not yet".', strategy: 'green', order: 200, position: 'after_char' };
+  const ribway = { name: 'The Ribway', keys: ['Ribway'], content: "The rope-bridges between the leviathan's ribs.", strategy: 'green', order: 120, position: 'before_char' };
+
+  const first = putEntries('', [aldric, ribway]);
+  eq('entries begin a worldbook from nothing, one readable list, quotes and all', [first.ok, read(first.text).map((e) => e.name), at(first.text, 0).content], [true, ['Aldric', 'The Ribway'], aldric.content]);
+  const keysOnly = putEntries(first.text, [{ name: 'aldric', keys: ['Aldric', 'the general', 'the old wolf'] }]);
+  const after = read(keysOnly.text);
+  eq('a change gives only what changes: his keys move, his content stays, his name is kept as it was', [after.length, (after[0] || {}).name, ((after[0] || {}).keys || []).length, (after[0] || {}).content], [2, 'Aldric', 3, aldric.content]);
+  ok('and the card says it changed Aldric', /changed Aldric/.test(keysOnly.how || ''), keysOnly.how);
+  const brin = putEntries(keysOnly.text, [{ name: 'Brin', keys: ['Brin'], content: 'The smith of the Ribway.', strategy: 'green' }]);
+  eq('a new name is added at the end', read(brin.text).map((e) => e.name), ['Aldric', 'The Ribway', 'Brin']);
+  eq('entries already there exactly as written change nothing, and say so the way the house drops', [putEntries(brin.text, [ribway]).ok, /already in the document/.test(putEntries(brin.text, [ribway]).why)], [false, true]);
+  ok('an entry with no name has nowhere to go', /no name/.test(putEntries(brin.text, [{ keys: ['x'], content: 'y' }]).why || ''));
+  ok('a new entry with nothing in it is refused', /no content/.test(putEntries(brin.text, [{ name: 'Ghost', keys: ['ghost'] }]).why || ''));
+  const st = putEntries('', [{ comment: 'The War', key: [], content: 'The long war is in its ninth year.', constant: true }]);
+  eq('an entry written in SillyTavern\'s shape is read for what it means', [at(st.text, 0).name, at(st.text, 0).strategy], ['The War', 'blue']);
+  ok('a worldbook that cannot be read is refused, never written over', !putEntries('[{"name": "A" "keys": []}]', [ribway]).ok);
+}
+
+{
+  const { putEntries } = await import('../js/doc/entries.js');
+  const { readWorldbook } = await import('../js/doc/lint.js');
+  const ent = [{ name: 'Aldric', keys: ['Aldric'], content: 'A general.', strategy: 'green' }];
+  const pe = { name: 'Plot Essential.md', kind: 'pe', text: '# PLOT ESSENTIAL — X — V1.0\n## SCENE\nWHERE: x' };
+  let r = applyRun([pe], [{ file: 'Ember Crown.json', entries: ent, reason: 'begin' }], { putEntries });
+  eq('with no worldbook in the world, entries start one by the name they give', [(r.cards[0] || {}).status, (r.cards[0] || {}).how, r.texts.has('Ember Crown.json') ? (readWorldbook(r.texts.get('Ember Crown.json')).entries || []).length : 0, r.created], ['applied', 'started it', 1, ['Ember Crown.json']]);
+  ok('and putting it back takes it away again', Boolean(r.batch) && (undoBatch([pe, { name: 'Ember Crown.json', text: r.texts.get('Ember Crown.json') }], r.batch).changes || []).some((c) => c.name === 'Ember Crown.json' && c.remove));
+  const lore = { name: 'Lore.json', kind: 'worldbook', text: '[]' };
+  r = applyRun([pe, lore], [{ file: 'Worldbook.json', entries: ent }], { putEntries });
+  eq('with a worldbook there under another name, entries for a name not here are refused, never a second worldbook', [r.cards[0].status, r.cards[0].why, r.texts.has('Worldbook.json')], ['refused', 'there is no document by that name', false]);
+  r = applyRun([pe, lore], [{ entries: ent }], { putEntries });
+  eq('naming no document, they go into the one worldbook there is', [r.cards[0].status, (readWorldbook(r.texts.get('Lore.json')).entries || []).map((e) => e.name)], ['applied', ['Aldric']]);
+  r = applyRun([pe, lore], [{ file: 'Plot Essential.md', entries: ent }], { putEntries });
+  eq('entries never go into a plot essential', [r.cards[0].status, /not a worldbook/.test(r.cards[0].why), r.texts.get('Plot Essential.md')], ['refused', true, pe.text]);
+  r = applyRun([pe], [{ file: 'Fresh.json', whole: true, replace: '[]' }, { file: 'Fresh.json', entries: ent }], { putEntries });
+  eq('a worldbook written whole earlier in the same answer takes the entries after it', (readWorldbook(r.texts.get('Fresh.json')).entries || []).map((e) => e.name), ['Aldric']);
+}
+
+/* --- the worldbook keeper, through the real turn --- */
+{
+  const { runTurn } = await import('../js/agents/run.js');
+  const { setCraftForTests } = await import('../js/engine/crafts.js');
+  const { readWorldbook } = await import('../js/doc/lint.js');
+  setCraftForTests('worldbook', readFileSync(join(ROOT, 'engine', 'worldbook-maker.md'), 'utf8'));
+  const PE = '# PLOT ESSENTIAL — The Ember Crown — V1.0\n# STATE: Mon 14 Apr 247, 09:00 / the Ribway\n# CALENDAR: Gregorian\n\n## WORLD\n### Rules\n- Epistemic Law: NPCs know only what they witnessed.\n\n## MC — Jovan (17)\nID: lean\nCORE: patient\n\n## SCENE\nWHERE: the Ribway / LAST: "Hold the rope," Mira said.';
+  const house = { connections: [{ id: 'c1', url: 'https://relay.example/v1', model: 'm', key: 'k' }], agentConnections: {}, settings: { yourName: 'Bruce' }, personaFrame: '' };
+  const world = (docs, title = 'The Ember Crown') => ({ id: 'pwb', title, docs, chats: [], recentSections: [] });
+  const ASK = 'Make a worldbook for SillyTavern from Plot Essential.md.';
+  const ents = [{ name: 'Aldric', keys: ['Aldric', 'the general'], content: 'He says "never" when he means "not yet".', strategy: 'green' }];
+  const block = (edits) => 'Done.\n\n<edits>\n' + JSON.stringify(edits) + '\n</edits>';
+  let keeper = () => '', builder = () => '', writer = () => '', listener = () => 'garbled';
+  const calls = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    const req = JSON.parse(init.body);
+    const sys = (req.body.messages.find((m) => m.role === 'system') || {}).content || '';
+    const msgs = req.body.messages.filter((m) => m.role !== 'system');
+    if (forFront(req)) {
+      calls.push({ who: 'front' });
+      return sseAnswer([{ choices: [{ delta: { content: 'Here it is.' } }] }, '[DONE]']);
+    }
+    const who = /You are the one who listens/.test(sys) ? 'listener' : /worldbook architect for SillyTavern/.test(sys) ? 'keeper'
+      : /PROACTIVE CO-WRITER/.test(sys) ? 'builder' : /Evidenced CLEAN vs False CLEAN/.test(sys) ? 'eye'
+        : /You write and keep AI instruction sets/.test(sys) ? 'writer' : 'other';
+    const user = msgs.map((m) => m.content).join('\n');
+    calls.push({ who, sys, user, max: req.body.max_tokens });
+    const out = { keeper, builder, writer, listener }[who] ? { keeper, builder, writer, listener }[who](user, calls.filter((c) => c.who === who).length) : 'Read it back; nothing needed changing.';
+    return wholeAnswer({ choices: [{ message: { content: out }, finish_reason: 'stop' }] });
+  };
+  const named = (r, n) => r.project.docs.find((d) => d.name === n);
+  try {
+    /* the craft's own first rule, into a world with no worldbook: it used to be refused and lost */
+    keeper = (user, n) => (n === 1 ? block([{ file: 'Worldbook.json', append: true, replace: JSON.stringify(ents), reason: 'begin it' }])
+      : block([{ file: 'The Ember Crown.json', entries: ents, reason: 'begin it' }]));
+    let r = await runTurn({ house, project: world([{ id: 'd1', name: 'Plot Essential.md', kind: 'pe', text: PE }]), message: ASK, forceWorker: 'worldbook' });
+    const book = named(r, 'The Ember Crown.json');
+    eq('the keeper\'s change for a worldbook that is not there goes back to it once, and its worldbook lands', [calls.filter((c) => c.who === 'keeper').length, book && book.kind, book && (readWorldbook(book.text).entries || [])[0].content], [2, 'worldbook', ents[0].content]);
+    ok('it was told, going back, which documents are here', /The documents here are: Plot Essential\.md/.test(calls.filter((c) => c.who === 'keeper')[1].user), calls.filter((c) => c.who === 'keeper')[1].user.slice(-400));
+    ok('and he never saw the first try as a failure', !r.cards.some((c) => c.status === 'refused'), JSON.stringify(r.cards.map((c) => [c.status, c.why])));
+    const first = calls.find((c) => c.who === 'keeper');
+    ok('the keeper is taught to write entries as data, never inside a string', /entries go into the block of changes as data/.test(first.sys) && first.sys.indexOf('as data') > first.sys.indexOf('worldbook architect'), first.sys.slice(-300));
+    ok('and told by name that there is no worldbook yet, and what to call it', /There is no worldbook in this world yet: your entries start one\. Call it The Ember Crown\.json\./.test(first.user), first.user.slice(-500));
+    ok('the plot essential\'s read-back is not sent over a worldbook', !calls.some((c) => c.who === 'eye'), calls.map((c) => c.who).join(','));
+
+    /* entries as data, quotes inside their words: one try, whole */
+    calls.length = 0;
+    keeper = () => block([{ file: 'The Ember Crown.json', entries: ents }]);
+    r = await runTurn({ house, project: world([{ id: 'd1', name: 'Plot Essential.md', kind: 'pe', text: PE }]), message: ASK, forceWorker: 'worldbook' });
+    eq('entries written as data land at the first try, their quotes untouched', [calls.filter((c) => c.who === 'keeper').length, (readWorldbook(named(r, 'The Ember Crown.json').text).entries || [])[0].content], [1, ents[0].content]);
+
+    /* two different sets of entries for one worldbook are two changes, never one made twice */
+    calls.length = 0;
+    const brinE = { name: 'Brin', keys: ['Brin'], content: 'The smith.' };
+    keeper = (user, n) => (n === 1 ? block([{ file: 'Lore.json', entries: ents }, { file: 'Missing.json', find: 'x', replace: 'y' }])
+      : block([{ file: 'Lore.json', entries: ents }, { file: 'Lore.json', entries: [brinE] }]));
+    r = await runTurn({ house, project: world([{ id: 'd2', name: 'Lore.json', kind: 'worldbook', text: '[]' }]), message: 'fill the worldbook', forceWorker: 'worldbook' });
+    eq('entries sent again beside new ones: the new ones land, never taken for the ones already made', (readWorldbook(named(r, 'Lore.json').text).entries || []).map((e) => e.name), ['Aldric', 'Brin']);
+
+    /* a worldbook already here is named to the keeper */
+    calls.length = 0;
+    keeper = () => block([{ file: 'Lore.json', entries: [{ name: 'Brin', keys: ['Brin'], content: 'The smith.' }] }]);
+    r = await runTurn({ house, project: world([{ id: 'd2', name: 'Lore.json', kind: 'worldbook', text: JSON.stringify(ents) }]), message: 'add Brin the smith to the worldbook', forceWorker: 'worldbook' });
+    ok('with a worldbook here, the keeper is told its name', /The worldbook in this world is Lore\.json: entries go into it, by that name\./.test(calls.find((c) => c.who === 'keeper').user));
+    eq('and the entry goes into it, the old one kept', (readWorldbook(named(r, 'Lore.json').text).entries || []).map((e) => e.name), ['Aldric', 'Brin']);
+
+    /* nothing said yet, nothing written: it asks first */
+    calls.length = 0;
+    keeper = () => 'There is nothing to build from yet.\n\n<ask>What is this world, who is in it, and where does it happen?</ask>';
+    r = await runTurn({ house, project: world([], 'A new world'), message: "Let's start a worldbook for this world.", forceWorker: 'worldbook' });
+    ok('a keeper with nothing to build from is told to ask first, and with no world name, what to call it', /write nothing yet: put to Bruce, in <ask>/.test(calls.find((c) => c.who === 'keeper').user) && /Worldbook\.json if it has no name yet/.test(calls.find((c) => c.who === 'keeper').user));
+    eq('its question waits on him, and nothing is written', [r.asks.map((a) => a.worker), r.project.docs.length], [['worldbook'], 0]);
+
+    /* his answer: the listener cannot be read, and the answer still reaches the keeper */
+    calls.length = 0;
+    keeper = (user) => (/What you put to Bruce last time, word for word/.test(user) ? block([{ file: 'Ash Harbour.json', entries: [{ name: 'Ash Harbour', keys: ['Ash Harbour'], content: 'A drowned harbour city.', strategy: 'blue' }] }]) : 'no');
+    const history = [{ role: 'writer', text: "Let's start a worldbook for this world.", worker: 'worldbook', at: 1 }, { role: 'maker', text: 'What is this world?', asks: r.asks, at: 2 }];
+    r = await runTurn({ house, project: world([], 'A new world'), history, message: 'A drowned harbour city called Ash Harbour, run by a tide-cult.' });
+    eq('with the listener unreadable, his answer goes back to the one waiting on it, and the worldbook is made', [calls.map((c) => c.who).filter((w) => w !== 'front').join(','), Boolean(named(r, 'Ash Harbour.json'))], ['listener,keeper', true]);
+    ok('it is handed its own question and his answer, word for word', /What you put to Bruce last time, word for word:\nWhat is this world, who is in it, and where does it happen\?\n\nWhat Bruce said back:\nA drowned harbour city called Ash Harbour/.test(calls.find((c) => c.who === 'keeper').user));
+    calls.length = 0;
+    r = await runTurn({ house, project: world([], 'A new world'), history, message: 'thanks!' });
+    ok('a thanks is not an answer: it is sent to nobody', !calls.some((c) => c.who === 'keeper'), calls.map((c) => c.who).join(','));
+    ok('the listener is given room for a whole answer when the connection sets none', calls.find((c) => c.who === 'listener').max >= 2400, calls.find((c) => c.who === 'listener').max);
+
+    /* the builder's interview, answered while the listener cannot be read */
+    calls.length = 0;
+    builder = (user) => (/What you put to Bruce last time/.test(user) ? 'Built.\n\n<file name="Plot Essential.md">\n# PLOT ESSENTIAL — Ash Harbour — V1.0\n## SCENE\nWHERE: the quay\n</file>' : 'no');
+    const asked = [{ worker: 'builder', ask: '1. What is the setting?\n2. Who is your main character?', at: 1 }];
+    r = await runTurn({ house, project: world([], 'A new world'), history: [{ role: 'writer', text: "Let's start a new plot essential for this world.", worker: 'builder', at: 1 }, { role: 'maker', text: 'A few questions first.', asks: asked, at: 2 }],
+      message: 'A drowned harbour city. Jovan, 17, a ferryman. The trouble is the tide-cult.' });
+    eq('the builder\'s interview answered: the answer reaches the builder and the plot essential is built', [calls.some((c) => c.who === 'builder'), Boolean(named(r, 'Plot Essential.md'))], [true, true]);
+    ok('and the plot essential\'s own read-back still reads a plot essential', calls.some((c) => c.who === 'eye'), calls.map((c) => c.who).join(','));
+
+    /* the keeper reads the whole brainstorm, as the builder does */
+    calls.length = 0;
+    keeper = () => block([{ file: 'Long Talk.json', entries: ents }]);
+    const talk = [{ role: 'writer', text: 'THE VERY FIRST IDEA: the moons are sisters. ' + 'x'.repeat(30000), at: 1 }, { role: 'maker', text: 'Lovely.', at: 2 }];
+    await runTurn({ house, project: world([], 'Long Talk'), history: talk, message: "Let's start a worldbook for this world.", forceWorker: 'worldbook' });
+    ok('a worldbook built from talk reads the whole of it, not its last 24,000 characters', /THE VERY FIRST IDEA: the moons are sisters/.test(calls.find((c) => c.who === 'keeper').user));
+
+    /* an instruction set is not read back by the plot essential's eye */
+    calls.length = 0;
+    writer = () => block([{ file: 'Eni.md', append: true, replace: '- Always answer as Eni, in her own voice.' }]);
+    r = await runTurn({ house, project: world([{ id: 'd3', name: 'Eni.md', kind: 'instructions', text: '# Eni\n- Speak warmly.' }]), message: 'add a rule that she always answers as herself', forceWorker: 'instructions' });
+    ok('the instructions writer\'s change lands', named(r, 'Eni.md').text.includes('Always answer as Eni'));
+    ok('and the plot essential\'s eye never reads an instruction set back', !calls.some((c) => c.who === 'eye'), calls.map((c) => c.who).join(','));
+  } catch (e) { ok('the worldbook keeper\'s turns ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
+}
+
+/* --- the worldbook's own checks: capitals, keys on one line, a stray quote --- */
+{
+  const { readWorldbook } = await import('../js/doc/lint.js');
+  const r1 = lint(JSON.stringify([{ name: 'Ghost', keys: [], content: 'x', strategy: 'Green' }]), { kind: 'worldbook' });
+  ok('"Green" is green: a capitalised green entry with no keys is seen, and handed to its keeper', r1.found.some((f) => /can never fire/.test(f.check) && f.worker === 'worldbook') && (JSON.parse(r1.text)[0] || {}).strategy === 'green', JSON.stringify(r1.found));
+  const r2 = lint(JSON.stringify([{ name: 'Aldric', keys: 'Aldric, the general', content: 'x', strategy: 'green' }]), { kind: 'worldbook' });
+  eq('keys written on one line are the keys, made a list — never an entry "that can never fire"', [JSON.parse(r2.text)[0].keys, r2.found.some((f) => /can never fire/.test(f.check))], [['Aldric', 'the general'], false]);
+  const bare = '[\n  {"name": "Aldric", "keys": ["Aldric"], "content": "He said "never" twice.", "strategy": "green"}\n]';
+  const r3 = readWorldbook(bare);
+  eq('a quote left bare in an entry\'s words is read for what it is', [r3.ok, r3.ok && r3.entries[0].content], [true, 'He said "never" twice.']);
+  const r4 = lint(bare, { kind: 'worldbook' });
+  eq('and the worldbook is written back as data that reads', (() => { try { return JSON.parse(r4.text)[0].content; } catch (_) { return 'not readable'; } })(), 'He said "never" twice.');
+}
+
+/* --- a world made worldbook first takes its worldbook's name --- */
+{
+  const { nameWorld, DEFAULT_WORLD_TITLE } = await import('../js/doc/index.js');
+  const w = (docs) => ({ title: DEFAULT_WORLD_TITLE, docs });
+  const book = (name) => ({ name, kind: 'worldbook', text: '[{"name":"x","keys":["x"],"content":"y"}]' });
+  const a = w([book('Ash Harbour.json')]); nameWorld(a);
+  const b = w([book('Worldbook.json')]); nameWorld(b);
+  const c = w([book('Ash Harbour.json'), { name: 'Plot Essential.md', kind: 'pe', text: '# PLOT ESSENTIAL — The Tide Court — V1.0\n## SCENE\nWHERE: x' }]); nameWorld(c);
+  const d = w([book('World Info (copy).json')]); nameWorld(d);
+  eq('a worldbook named for its world names the world; one named only for what it is does not; a plot essential\'s name comes first', [a.title, b.title, c.title, d.title], ['Ash Harbour', DEFAULT_WORLD_TITLE, 'The Tide Court', DEFAULT_WORLD_TITLE]);
+}
+
+/* --- one answer to how a world can be started --- */
+{
+  const { startChoices } = await import('../js/ui/docs.js');
+  const labels = (docs) => startChoices(docs).map((c) => c.label);
+  const pe = { name: 'P.md', kind: 'pe', text: '# PLOT ESSENTIAL — X — V1.0' };
+  const wb = { name: 'W.json', kind: 'worldbook', text: '[]' };
+  eq('a world with nothing in it can start either: a plot essential or a worldbook', labels([]), ['Start a plot essential', 'Start a worldbook', 'Build from a story card']);
+  eq('a world with a worldbook can still start a plot essential, but not a second worldbook', labels([wb]), ['Start a plot essential', 'Build from a story card']);
+  eq('a world with a plot essential makes its worldbook from it, so it offers no start', labels([pe]), []);
+  eq('an empty worldbook is no worldbook yet', labels([{ ...wb, text: '' }]), ['Start a plot essential', 'Start a worldbook', 'Build from a story card']);
+}
+
 /* ================================================================ done */
 
 console.log(`\n${pass} passed, ${fail} failed`);

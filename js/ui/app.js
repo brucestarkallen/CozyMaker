@@ -7,10 +7,10 @@ import { isStoryCard } from '../agents/router.js';
 import { stopWork, onLearn } from '../agents/call.js';
 import { undoBatch } from '../doc/edits.js';
 import { rollBackTo } from '../doc/branch.js';
-import { DEFAULT_WORLD_TITLE, hasPlotEssential } from '../doc/index.js';
+import { DEFAULT_WORLD_TITLE, hasPlotEssential, hasWorldbook } from '../doc/index.js';
 import { personaOf, names } from '../agents/persona.js';
 import { $, el, escape, closeSheet, toast, applyTheme, onRedraw, onAsk, fold, copyText } from './kit.js';
-import { openDocs, tidyOnLeaving, currentDocId, newPlotEssential, bringIn, storyCardIn } from './docs.js';
+import { openDocs, tidyOnLeaving, currentDocId, bringIn, startChoices } from './docs.js';
 import { openHouse } from './settings.js';
 import { openDrawer, closeDrawer, drawerIsOpen, wireSwipe, setBusyCheck, draw as drawDrawer } from './drawer.js';
 
@@ -141,16 +141,20 @@ function emptyRoom(p) {
   const them = who.maker === 'you' ? 'them' : who.maker;
   box.append(el('b', '', p.title));
   if (!hasPlotEssential(p.docs)) {
-    /* this room goes once he speaks, so it says where the button stays */
-    box.append(el('p', '', `Talk the world through with ${them} — the place, the people, the trouble. Nothing is written until you ask: when you're ready, say \u201cbuild it\u201d or tap Start a plot essential (it stays in The documents), and it's built from everything you said. Or import one you already have, or build one from a story card you found on Isekai Zero, AI Dungeon or the like.`));
+    /* this room goes once he speaks, so it says where the buttons stay; which
+     * ways to start are offered is the one answer docs.js startChoices gives */
+    box.append(el('p', '', hasWorldbook(p.docs)
+      ? `The worldbook is in The documents. Talk the world through with ${them} \u2014 nothing is written until you ask. To make a plot essential too, say \u201cbuild it\u201d or tap Start a plot essential (it stays in The documents), and it's built from everything you said and the worldbook.`
+      : `Talk the world through with ${them} \u2014 the place, the people, the trouble. Nothing is written until you ask. When you're ready, tap Start a plot essential or Start a worldbook, whichever you're making (both stay in The documents), and it's built from everything you said; saying \u201cbuild it\u201d starts a plot essential. Or import one you already have, or build one from a story card you found on Isekai Zero, AI Dungeon or the like.`));
     const row = el('div', 'btnrow center');
-    const start = el('button', 'btn', 'Start a plot essential');
-    start.addEventListener('click', newPlotEssential);
-    const card = el('button', 'btn quiet', 'Build from a story card');
-    card.addEventListener('click', storyCardIn);
+    for (const c of startChoices(p.docs)) {
+      const b = el('button', c.main ? 'btn' : 'btn quiet', c.label);
+      b.addEventListener('click', () => c.run());
+      row.append(b);
+    }
     const bring = el('button', 'btn quiet', 'Import');
     bring.addEventListener('click', bringIn);
-    row.append(start, card, bring);
+    row.append(bring);
     box.append(row);
   } else {
     box.append(el('p', '', `A fresh conversation about ${p.title}. Everything in the documents is still here — ask ${them} anything, or give the plot essential a job.`));

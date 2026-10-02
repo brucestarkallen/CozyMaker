@@ -25,12 +25,13 @@ import { craftFor } from '../engine/crafts.js';
 import { openingFor, personaOf, addressWriter } from './persona.js';
 import { pickConnection, FRONT } from './roster.js';
 import { callModel, streamModel, enqueue } from './call.js';
-import { parseDoc, brief, readNeed, stripNeed, resolveNeed, LEAD_SHORT, nameWorld, hasPlotEssential } from '../doc/index.js';
+import { parseDoc, brief, readNeed, stripNeed, resolveNeed, LEAD_SHORT, nameWorld, hasPlotEssential, DEFAULT_WORLD_TITLE } from '../doc/index.js';
 import { route, confirmsOffer, offersIn, writtenCommand, justGreeting } from './router.js';
 import { listen, LISTENER, LISTEN_TALK } from './listener.js';
 import { parseEdits, stripEdits, stripThinking, applyRun, hash, openFileAtEnd } from '../doc/edits.js';
 import { lint, lostSomething } from '../doc/lint.js';
 import { kindFor } from '../doc/kind.js';
+import { putEntries } from '../doc/entries.js';
 
 export const MAX_NEED_ROUNDS = 2;
 export const MAX_AUTO_REPAIRS = 2;
@@ -104,7 +105,10 @@ If they are just talking, just talk. Not every sentence is a job.\n\nWhat you wr
 /* Strip the crew's working shorthand out of anything the front will read. */
 /* One change, as a key: the same document, the same place, the same words. */
 function editKey(e) {
-  return JSON.stringify([e.file || e.create_file || '', e.find || '', e.insert_after || '', e.append === true, e.replace_all === true, e.all === true, e.whole === true, e.replace || '']);
+  /* the entries a worldbook change carries are its words: two different sets of
+   * entries for one worldbook are two changes, never one made twice */
+  const entries = e.entries !== undefined ? e.entries : e.entry;
+  return JSON.stringify([e.file || e.create_file || '', e.find || '', e.insert_after || '', e.append === true, e.replace_all === true, e.all === true, e.whole === true, e.replace || '', entries === undefined ? null : entries]);
 }
 
 export function naturalize(text) {
@@ -229,6 +233,55 @@ How they must behave:
 
 Last, and only if the job cannot be finished until he decides something — the craft tells you to get his go-ahead first, or there is a question only he can answer — put everything he has to decide between <ask> and </ask>: the plan or the options, and the questions, complete enough to answer with nothing else in front of him. Make only the changes that do not wait on his answer. His answer will come back to you together with what you asked, word for word.`;
 
+/* THE WORLDBOOK KEEPER'S ENTRIES, AS DATA (doc/entries.js). Its craft — the
+ * extension's, carried over word for word — writes a change to a worldbook as an
+ * append or a find and replace on the worldbook's text: a list of entries inside
+ * a JSON string, every quote escaped twice. One left bare lost every entry, and
+ * asked again in that form, the keeper slipped the same way (reproduced through
+ * the real turn). The house's own words, given after its craft, ask for entries
+ * as plain data instead; the craft's forms still land when they are well made. */
+export const WORLDBOOK_FORM = `For a worldbook, entries go into the block of changes as data \u2014 never inside a string:
+
+<edits>
+[
+  {"file": "the worldbook.json", "entries": [
+    {"name": "Aldric", "keys": ["Aldric", "the general"], "content": "\u2026", "strategy": "green", "order": 200, "position": "after_char"},
+    {"name": "The Ribway", "keys": ["Ribway", "the rope-bridges"], "content": "\u2026", "strategy": "green", "order": 120, "position": "before_char"}
+  ], "reason": "why"}
+]
+</edits>
+
+- An entry whose name is not in the worldbook yet is added: write it whole.
+- An entry whose name is already there is changed: give its name and only the fields that change \u2014 every field you leave out stays exactly as it is.
+- One change can carry as many entries as the job needs. A worldbook is never rewritten whole to add to it or to change part of it.
+- This is how entries are written here, in place of an append or a find and replace on the worldbook's text, and in place of beginning an empty one with an append: those put a list inside a string, where one stray quote loses every entry.
+- A worldbook rebuilt from start to finish \u2014 and only then \u2014 is written whole, as plain JSON, between <file name="\u2026"> and </file>.`;
+
+/* WHICH WORLDBOOK, SAID TO THE KEEPER BY NAME. Told only "put it in the
+ * worldbook here, or start one if there is none", the keeper followed its
+ * craft's first rule — begin with an append — into a document that did not
+ * exist, and the whole first worldbook was refused as "no document by that
+ * name" (reproduced through the real turn). The house knows what is here, so
+ * it says: the worldbook by its name, or that there is none yet and what to call
+ * it. And a keeper with nothing to build from asks first, the way the builder's
+ * craft interviews before a world it has never heard of (7.1). */
+function fileSafe(title) {
+  return String(title || '').replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
+}
+export function worldbookNote(project, p) {
+  const who = (p && p.you) || 'the author';
+  const books = docsOf(project || {}).filter((d) => d.kind === 'worldbook');
+  if (books.length === 1) {
+    const b = books[0];
+    return `The worldbook in this world is ${b.name}${(b.text || '').trim() ? '' : ' \u2014 empty so far'}: entries go into it, by that name.`;
+  }
+  if (books.length > 1) return `The worldbooks in this world are ${books.map((b) => b.name).join(', ')}: name the one each change is for.`;
+  const title = project && project.title && project.title !== DEFAULT_WORLD_TITLE ? fileSafe(project.title) : '';
+  return 'There is no worldbook in this world yet: your entries start one. ' +
+    (title ? `Call it ${title}.json.` : 'Call it after the world, by the name the talk gives it \u2014 Ash Harbour.json, say \u2014 or Worldbook.json if it has no name yet.') +
+    ` If nothing in the talk or the documents tells you what this world is, write nothing yet: put to ${who}, in <ask>, the few things you need to begin \u2014 what the world is, who is in it, where it happens.`;
+}
+
 /* WHAT WAITS ON HIM (the craft's approval gates: the cleanup manifest, a
  * scene proposed before a bridge is built, the new-world interview and seed,
  * a protected field, a change that outgrew its scope). A worker puts it in
@@ -290,10 +343,10 @@ export function joinSeam(a, b) {
   return head + tail;
 }
 
-async function runWorker({ worker, sections, conn, project, message, talk, fromHouse = false, onStatus, onProgress, signal, stale, craft = null }) {
+async function runWorker({ worker, sections, conn, project, message, talk, fromHouse = false, onStatus, onProgress, signal, stale, craft = null, note = '' }) {
   /* a worker with a craft of its own reads that; the rest read their slice */
   const own = craft || sliceFor(sections, worker).text;
-  const system = [CRAFT_FRAME, own, RETURN_CONTRACT].join('\n\n---\n\n');
+  const system = [CRAFT_FRAME, own, RETURN_CONTRACT, worker === 'worldbook' ? WORLDBOOK_FORM : ''].filter(Boolean).join('\n\n---\n\n');
   let asked = [];
   let answer = null;
   let nudged = false;
@@ -313,6 +366,8 @@ async function runWorker({ worker, sections, conn, project, message, talk, fromH
       talk ? `The conversation so far, newest last:\n\n${talk}\n` : '',
       'The documents as they stand:',
       context,
+      /* what the house knows about where this job's work goes (the keeper's worldbook, by name) */
+      note ? `\n${note}` : '',
       /* Whose job this is, said plainly: the author's own words, or the house
        * asking for a read-back or a repair. A house job presented as his
        * request is a note put in his mouth. */
@@ -492,6 +547,18 @@ export async function runTurn({
   /* THE OLD READING, kept for when the listener cannot answer: a bare yes runs
    * what the front just offered (router.js offersIn), else the keyword table. */
   const oldReading = () => {
+    /* HIS ANSWER GOES BACK TO WHOEVER IS WAITING ON IT. The builder, asked to
+     * start a plot essential with nothing to build from, interviews first (the
+     * craft's 7.1) and waits; when the listener's answer could not be read, the
+     * keyword reading below found no job in "a drowned harbour city, Jovan, a
+     * ferryman" and his answer reached nobody — the build stalled (reproduced
+     * through the real turn). What waits on him is his answer's first claim; only
+     * a greeting or a thanks is not an answer. */
+    if (open.length && !justGreeting(message)) {
+      const seen = new Set();
+      return open.filter((o) => !seen.has(o.worker) && seen.add(o.worker))
+        .map((o) => jobFor({ worker: o.worker, task: `The answer to what you put to ${addressWriter(p)} has come: carry on with the job, with that answer.`, resumes: true }, open, message, p));
+    }
     const offered = lastMaker && confirmsOffer(message) ? offersIn(lastMaker.text) : [];
     const agreed = [];
     for (const o of offered) {
@@ -640,7 +707,11 @@ export async function runTurn({
     try { craft = await craftFor(worker, house); }
     catch (e) { return failed((e && e.message) || String(e)); }
     const res = await enqueue(project.id, worker, ({ signal: s, stale }) =>
-      runWorker({ worker, sections, conn: connFor(worker), project: working, message: about, talk: worker === 'builder' ? buildTalk : talk, fromHouse, onStatus: status, onProgress: progress, signal: either(signal, s), stale, craft }));
+      runWorker({ worker, sections, conn: connFor(worker), project: working, message: about,
+        /* the two who make a whole document from the talk read all of it (BUILD_TALK) */
+        talk: worker === 'builder' || worker === 'worldbook' ? buildTalk : talk,
+        note: worker === 'worldbook' ? worldbookNote(working, p) : '',
+        fromHouse, onStatus: status, onProgress: progress, signal: either(signal, s), stale, craft }));
     if (!res || !res.ok) return failed((res && res.error) || 'did not finish');
     if (res.ask) asks.push({ worker, ask: res.ask, at: Date.now() });
     /* a change already made this turn is not made again: a re-quote that
@@ -680,10 +751,18 @@ export async function runTurn({
      * back once, like a missed quote, instead of being handed to him. */
     const settled = applied.cards.filter((c) => c.status === 'refused' && /already in the document|only the spacing would change/.test(c.why || ''));
     const shapeless = applied.cards.filter((c) => c.status === 'refused' && /did not say what to do/.test(c.why || ''));
-    const placed = applied.cards.filter((c) => !missed.includes(c) && !unchanged.includes(c) && !settled.includes(c) && !shapeless.includes(c));
+    /* A CHANGE THAT FOUND NOWHERE TO GO GOES BACK ONCE TOO, told what is here. The
+     * keeper, told to start a worldbook, did what its craft says — an append — into
+     * a document that did not exist, and the whole first worldbook was refused and
+     * lost without a word to the one who wrote it (reproduced through the real
+     * turn). A change for a document that is not here, or that named none, or
+     * entries with no name or nothing in them, is the worker's to put right. */
+    const unplaced = applied.cards.filter((c) => c.status === 'refused' &&
+      /there is no document by that name|did not say which document|is not a worldbook|entry came with no name|came with no content|was not an entry|carried no entries|cannot be read as data right now/.test(c.why || ''));
+    const placed = applied.cards.filter((c) => !missed.includes(c) && !unchanged.includes(c) && !settled.includes(c) && !shapeless.includes(c) && !unplaced.includes(c));
     allCards.push(...placed);
-    const back = [...missed, ...unchanged, ...shapeless];
-    if (!back.length || requoting || stopped()) { allCards.push(...missed, ...shapeless); return applied.cards; }
+    const back = [...missed, ...unchanged, ...shapeless, ...unplaced];
+    if (!back.length || requoting || stopped()) { allCards.push(...missed, ...shapeless, ...unplaced); return applied.cards; }
     status(`asking the ${worker} to look at ${back.length > 1 ? 'those changes' : 'that change'} again`);
     const seen = new Set();
     const list = back.filter((c) => { const k = `${c.name}\u0000${c.find}\u0000${c.why}`; if (seen.has(k)) return false; seen.add(k); return true; })
@@ -691,14 +770,18 @@ export async function runTurn({
         ? `${i + 1}. In ${c.name}, the change put back the very words it found, so nothing changed:\n"${c.find}"`
         : shapeless.includes(c)
           ? `${i + 1}. In ${c.name || 'a document'}, a change came with nothing saying what to do \u2014 no "find", no "insert_after", no "append". Send it again whole, or leave it out.`
-          : `${i + 1}. In ${c.name}, the change quoted:\n"${c.find}"\n\u2014 ${c.why}.`)).join('\n\n');
+          : unplaced.includes(c)
+            ? `${i + 1}. ${c.name ? `A change for ${c.name}` : 'A change'} could not go in: ${c.why}.`
+            : `${i + 1}. In ${c.name}, the change quoted:\n"${c.find}"\n\u2014 ${c.why}.`)).join('\n\n');
+    const here = ((working && working.docs) || []).map((d) => d.name);
     const again = await send(worker,
       `Some of your changes could not be placed, or changed nothing:\n\n${list}\n\n` +
-      'A quote must match the document word for word \u2014 only spacing and the shape of quote marks may differ \u2014 using the shortest stretch that appears only once. ' +
-      'A change that put back the words it found changed nothing: if you meant to change those words, send it again with the new words; if they were already right, leave it out. ' +
+      (missed.length ? 'A quote must match the document word for word \u2014 only spacing and the shape of quote marks may differ \u2014 using the shortest stretch that appears only once. ' : '') +
+      (unchanged.length ? 'A change that put back the words it found changed nothing: if you meant to change those words, send it again with the new words; if they were already right, leave it out. ' : '') +
+      (unplaced.length ? `The documents here are: ${here.length ? here.join(', ') : 'none yet'}. Name the one each change is for, exactly as it is listed; a new document is written whole between <file name="\u2026"> and </file>. ` : '') +
       'The documents are shown as they stand now, with every change that did land. Send only these changes again. Nothing else.',
       `${label} (looked at again)`, true, true);
-    if (!again.length) allCards.push(...missed, ...shapeless);
+    if (!again.length) allCards.push(...missed, ...shapeless, ...unplaced);
     return applied.cards;
   };
 
@@ -744,7 +827,16 @@ export async function runTurn({
    * a surgical edit is the scope creep it forbids, and doubles the wait. A
    * clear or a delete he asked for has nothing to read back. */
   const surgical = intents.length > 0 && intents.every((i) => i.worker === 'editor');
-  if (!stopped() && changed() && intents.length && !surgical) {
+  /* THE EYE READS BACK ITS OWN CRAFT'S DOCUMENTS. The eye is the Generalist's —
+   * its reading is the plot essential's laws (deliverable purity, the
+   * Named-Person Gate, the MC Exclusion …). Sent over a worldbook, a transplant or
+   * an instruction set, it held them to laws that are not theirs: an instruction
+   * set is made of instructions, which the plot essential's purity check exists to
+   * take out. Each of those has its own keeper and its own craft, and the checks
+   * by code (lint) still run on every one of them. */
+  const kindNow = new Map([...docsOf(project), ...docsOf(working)].map((d) => [d.name, d.kind || 'pe']));
+  const generalists = (c) => ['pe', 'continuity'].includes(kindNow.get(c.name) || 'pe');
+  if (!stopped() && changed() && intents.length && !surgical && allCards.some((c) => c.status === 'applied' && generalists(c))) {
     /* THE READ-BACK CHECKS WHAT CHANGED, NOT THE WHOLE BOOK FOR TASTE. It was
      * told to read everything front to back and "put right anything that is
      * wrong — not only near the change": an auditor told that always finds
@@ -754,7 +846,7 @@ export async function runTurn({
      * It checks this turn's changes and what they touch; anything else it
      * notices, it says, and changes nothing for. */
     status('reading the whole thing back');
-    const madeNow = allCards.filter((c) => c.status === 'applied');
+    const madeNow = allCards.filter((c) => c.status === 'applied' && generalists(c));
     const wroteWhole = madeNow.some((c) => /^(started it|rewrote the whole thing|wrote it)$/.test(c.how || ''));
     const clip = (x) => String(x || '').replace(/\s+/g, ' ').trim().slice(0, 300);
     const listed = madeNow.slice(0, 24).map((c) => `- ${c.name}: ${c.how || 'changed'}${c.reason ? ` (${naturalize(c.reason)})` : ''}` +
@@ -956,7 +1048,7 @@ export function commit(project, edits, label, maker = null) {
   if (!edits || !edits.length) return { project, cards: [], batch: null, guard: null };
   const docs = docsOf(project);
   const before = new Map(docs.map((d) => [d.name, d]));
-  const run = applyRun(docs, edits, { label });
+  const run = applyRun(docs, edits, { label, putEntries });
 
   let guard = null;
   for (const [name, text] of run.texts) {

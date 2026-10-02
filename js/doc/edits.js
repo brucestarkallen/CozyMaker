@@ -16,6 +16,8 @@
  *     the text has moved since — it will not overwrite something newer.
  */
 
+import { guessKind } from './kind.js';
+
 /* ------------------------------------------------------------ fingerprints */
 
 export function hash(text) {
@@ -574,16 +576,57 @@ export function nameIn(texts, want) {
   return null;
 }
 
-export function applyRun(docs, edits, { label = 'a change' } = {}) {
+export function applyRun(docs, edits, { label = 'a change', putEntries = null } = {}) {
   const texts = new Map();
   for (const d of docs) texts.set(d.name, d.text);
   const before = new Map(texts);
+  /* what kind each document is, for the one change that cares: worldbook
+   * entries go only into a worldbook (doc/entries.js) */
+  const books = new Set(docs.filter((d) => d.kind === 'worldbook').map((d) => d.name));
   const cards = [];
   const created = [];
   const cleared = [];
   const deleted = [];
 
   for (const e of edits) {
+    /* WORLDBOOK ENTRIES, AS PLAIN DATA (doc/entries.js): put in by name into
+     * the worldbook the change names. With no worldbook in the world at all,
+     * they start one by that name — the only thing an entry for a worldbook
+     * that is not there yet can mean. With one there under another name, the
+     * change is refused and goes back to its worker, told which there are. */
+    if (e.entries !== undefined || e.entry !== undefined) {
+      const given = Array.isArray(e.entries) ? e.entries : e.entries && typeof e.entries === 'object' ? [e.entries]
+        : Array.isArray(e.entry) ? e.entry : e.entry && typeof e.entry === 'object' ? [e.entry] : null;
+      if (!given || typeof putEntries !== 'function') { cards.push({ status: 'refused', name: e.file || '', reason: e.reason || '', why: 'the change carried no entries' }); continue; }
+      let name = e.file ? nameIn(texts, e.file) : null;
+      if (!e.file) {
+        const live = [...texts.keys()].filter((n) => books.has(n));
+        if (live.length === 1) name = live[0];
+        else if (texts.size === 1) name = [...texts.keys()][0];
+      }
+      if (!name && !e.file) { cards.push({ status: 'refused', name: '', reason: e.reason || '', why: 'the change did not say which document it belongs to' }); continue; }
+      if (!name) {
+        if ([...texts.keys()].some((n) => books.has(n))) { cards.push({ status: 'refused', name: e.file, reason: e.reason || '', why: 'there is no document by that name' }); continue; }
+        const start = putEntries('', given);
+        if (!start.ok) { cards.push({ status: 'refused', name: e.file, reason: e.reason || '', why: start.why }); continue; }
+        name = String(e.file).trim();
+        texts.set(name, start.text);
+        books.add(name);
+        created.push(name);
+        cards.push({ status: 'applied', name, reason: e.reason || '', how: 'started it', was: '', now: clip(start.text) });
+        continue;
+      }
+      if (!books.has(name)) {
+        cards.push({ status: 'refused', name, reason: e.reason || '', why: 'that document is not a worldbook, so entries cannot go into it' });
+        continue;
+      }
+      const out = putEntries(texts.get(name), given);
+      if (!out.ok) { cards.push({ status: 'refused', name, reason: e.reason || '', why: out.why }); continue; }
+      texts.set(name, out.text);
+      books.add(name);
+      cards.push({ status: 'applied', name, reason: e.reason || '', how: out.how, was: clip(out.was), now: clip(out.now) });
+      continue;
+    }
     /* CLEAR AND DELETE, WHEN HE ASKS FOR THEM. Only the house writes these (a
      * worker's own edits never carry "house"): "clear the plot essential"
      * used to reach a worker, whose rewrite to nothing was then refused by the
@@ -622,6 +665,8 @@ export function applyRun(docs, edits, { label = 'a change' } = {}) {
       }
       texts.set(name, body);
       created.push(name);
+      /* a worldbook written whole is a worldbook for the entries after it */
+      if (guessKind(name, body) === 'worldbook') books.add(name);
       cards.push({ status: 'applied', name, reason: e.reason || '', how: 'started it', was: '', now: clip(body) });
       continue;
     }
@@ -639,6 +684,7 @@ export function applyRun(docs, edits, { label = 'a change' } = {}) {
       }
       texts.set(name, typeof e.replace === 'string' ? e.replace : '');
       created.push(name);
+      if (guessKind(name, typeof e.replace === 'string' ? e.replace : '') === 'worldbook') books.add(name);
       cards.push({ status: 'applied', name, reason: e.reason || '', how: 'started it', was: '', now: clip(String(e.replace || '')) });
       continue;
     }

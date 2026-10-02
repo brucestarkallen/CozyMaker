@@ -99,6 +99,7 @@ js/doc/index.js        the whole shape always, full text only where it matters
 js/doc/edits.js        find, apply, undo, with a drift guard
 js/doc/lint.js         the checks that need no model
 js/doc/worldbook.js    the extension's worldbook reading and SillyTavern export, verbatim
+js/doc/entries.js      worldbook entries handed over as plain data, put in by name (v1.4.0)
 js/doc/transplant.js   the extension's Summaryception transplant check, verbatim
 js/engine/crafts.js    the three keepers with a craft of their own; his version, else the original
 engine/*.md            generalist (his engine), worldbook-maker, sc-auditor (the extension's)
@@ -966,25 +967,84 @@ front can receive inside that harness.
 - His hand edits are never trimmed by the checks on leaving (they keep every line he wrote), a bond line he types
   under his own MC included — checked.
 
+### A worldbook, chosen at the start and made whole (v1.4.0)
+
+He asked for CozyMaker to make a plot essential or a worldbook, whichever he chooses, with no mistakes. Both
+paths were run through the real turn with a stand-in model answering the way a real one does, and every fault
+below was reproduced before it was fixed.
+
+- **A worldbook could not be chosen.** The empty room, The documents and the drawer offered Start a plot
+  essential, a story card and Import; a worldbook could only be made out of a plot essential that already
+  existed. **Start a worldbook** now stands beside Start a plot essential wherever a world has neither. Which
+  starts are offered is one answer, `startChoices` (js/ui/docs.js), used by all three places — a world with a
+  worldbook still offers a plot essential, never a second worldbook; a world with a plot essential makes its
+  worldbook from it (“Make a worldbook from it”, on the plot essential).
+- **The keeper's first worldbook was lost.** Told only “put it in the worldbook here, or start one if there is
+  none”, the keeper did what its craft's own rule 7 says — begin with an append — into a document that did not
+  exist. The whole worldbook was refused as “no document by that name” and nobody asked again. Now the house
+  tells the keeper which worldbook is here, by name, or that there is none and what to call it (`worldbookNote`
+  in run.js: after the world's own name, so the export is named for it in SillyTavern); entries for a world
+  with no worldbook start one; and a change for a document that is not here goes back to its worker once, told
+  which documents there are (`unplaced` in run.js) — for every worker, not only the keeper.
+- **Entries were JSON inside a JSON string.** The craft writes a worldbook change as an append or a find and
+  replace on the worldbook's text, so every quote in every entry is escaped twice; one left bare lost every
+  entry, and asked again in the same form the keeper slipped the same way. The keeper is now taught (the
+  house's own words, after its craft — the craft file is unchanged) to hand entries over as data:
+  `{"file": "…json", "entries": [ … ]}` (js/doc/entries.js). Each is put in by name: a new name is added whole;
+  a name already there is that entry changed, and every field not given stays — changing an entry's keys can
+  never wipe its content. The craft's own forms still land when they are well made.
+- **A keeper with nothing to build from** is told to put what it needs to him in `<ask>` and write nothing, the
+  way the builder's craft interviews first (7.1).
+- **His answer to a question reached nobody when the listener could not be read.** The builder's interview and
+  the keeper's question wait on him; the keyword reading, used when the listener's reply cannot be read, found
+  no job in “a drowned harbour city, Jovan, a ferryman” and the build stalled. What waits on him now gets his
+  answer, with its own question word for word; a greeting or a thanks is not an answer.
+- **The listener had 600 tokens** to spell out every job in full; a long one was cut mid-object and the turn fell
+  back to the keyword reading. It has the floor every worker has (WORKER_ROOM, 2,400).
+- **The keeper read only the last 24,000 characters of the talk.** A worldbook built from a long brainstorm
+  missed its beginning. It reads all of it, as the builder does (BUILD_TALK).
+- **The plot essential's eye read back documents that are not plot essentials.** After the keeper, the
+  instructions writer or the memory auditor changed something, the Generalist's eye read it back under the plot
+  essential's laws — and its purity check exists to take instructions out of a document, which is what an
+  instruction set is made of. The eye reads back plot essentials and continuation files only; the checks by code
+  still run on every kind.
+- **“Green” and keys on one line.** A capitalised strategy passed one check and missed the next, so a green entry
+  with no keys was never seen; keys written as one line (“Aldric, the general”) read as no keys, and a sound
+  entry was handed to the keeper as one that can never fire. Both are put right by code.
+- **A quote left bare inside a worldbook written plainly** is read for what it is (`escapeStrayQuotes`, last of
+  all, as the block of changes does) instead of sending the keeper back to write it all again.
+- **A world made worldbook first was called “A new world” for ever.** It takes its worldbook's name
+  (`worldbookTitle`), unless that name only says what the document is (“Worldbook”, “Lore”, “World Info
+  (copy)”). A plot essential's name still comes first.
+- **The export, held to SillyTavern's own code.** Read against SillyTavern's `world-info.js` and its server's
+  `worldinfo.js` (release branch): the importer requires `entries` (written); activation reads `constant`, `key`,
+  `selective` and `keysecondary` (all written, the right types); positions 0/1/4 are its before/after/at-depth;
+  a null `role` falls back to system; `triggers` and the `match…` fields left out read as off. Nothing to change.
+- **Found in this release's own tests, and a law now:** two of the new tests threw instead of failing when the fix
+  they hold was taken out, and the suite stopped there — so the proof script read “nothing failed”. A test
+  reports a failure; it never throws one. Every fix in this release was taken out one at a time and its tests went
+  red (15 of 15); the walk's new section was proven the same way in the real browser.
+
 ## Testing
 
 ```
 bash tests/all.sh           all seven, exit code intact
 ```
 
-    node tests/units.mjs         829 checks — the real modules on a real document, and what the persona hears
+    node tests/units.mjs         874 checks — the real modules on a real document, and what the persona hears
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       49 checks — the real serve.py, real files on disk, streams timed
     python3 tests/browser.py      75 checks — real Chromium at 390x844, end to end
-    python3 tests/walk_worlds.py 192 checks — the drawer, conversations, swipes and versions, edit and
+    python3 tests/walk_worlds.py 208 checks — the drawer, conversations, swipes and versions, edit and
                                               send again, delete, branch, go on, re-quoting, crafts,
                                               the thinking box live, backup and restore, a model too
-                                              small for the world, a real server killed mid-edit
+                                              small for the world, a real server killed mid-edit,
+                                              a worldbook chosen, asked for, made and exported
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-1,199 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
+1,260 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

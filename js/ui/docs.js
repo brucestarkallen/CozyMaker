@@ -14,7 +14,7 @@ import { $, el, openSheet, closeSheet, toast, redraw, field, select, group, ask,
 import { lintTransplant } from '../doc/transplant.js';
 import { guessKind } from '../doc/kind.js';
 import { originalCraft, ownCraft } from '../engine/crafts.js';
-import { parseDoc, indexLines, estimateTokens, nameWorld, hasPlotEssential } from '../doc/index.js';
+import { parseDoc, indexLines, estimateTokens, nameWorld, hasPlotEssential, hasWorldbook } from '../doc/index.js';
 import { lint, readEvents, readWorldbook } from '../doc/lint.js';
 import { parseWorldbook, worldbookToST } from '../doc/worldbook.js';
 import { WHOLE_LIMIT } from '../agents/run.js';
@@ -115,16 +115,21 @@ function drawList() {
   const docs = p.docs || [];
 
   if (!hasPlotEssential(docs)) {
-    const g = group('No plot essential yet',
-      'Talk the world through first \u2014 nothing is written until you ask. When you\u2019re ready, say \u201cbuild it\u201d or tap Start a plot essential, and it is built from everything you said; or import one you already have.');
+    const book = hasWorldbook(docs);
+    const g = book
+      ? group('No plot essential yet',
+        'Talk the world through first \u2014 nothing is written until you ask. When you\u2019re ready, say \u201cbuild it\u201d or tap Start a plot essential, and it is built from everything you said and the worldbook; or import one you already have.')
+      : group('Nothing made yet',
+        'Talk the world through first \u2014 nothing is written until you ask. When you\u2019re ready, tap Start a plot essential or Start a worldbook, whichever you are making, and it is built from everything you said (saying \u201cbuild it\u201d starts a plot essential); or import one you already have.');
     const row = el('div', 'btnrow');
-    const start = el('button', 'btn', 'Start a plot essential');
-    start.addEventListener('click', () => { closeSheet('docsSheet'); newPlotEssential(); });
-    const card = el('button', 'btn quiet', 'Build from a story card');
-    card.addEventListener('click', storyCardIn);
+    for (const c of startChoices(docs)) {
+      const b = el('button', c.main ? 'btn' : 'btn quiet', c.label);
+      b.addEventListener('click', () => { if (!c.inSheet) closeSheet('docsSheet'); c.run(); });
+      row.append(b);
+    }
     const bring = el('button', 'btn quiet', 'Import');
     bring.addEventListener('click', bringIn);
-    row.append(start, card, bring);
+    row.append(bring);
     g.append(row);
     body.append(g);
   }
@@ -194,6 +199,30 @@ function kindLabel(kind) {
  * with him, and writes the plot essential as it goes. */
 export function newPlotEssential() {
   ask("Let's start a new plot essential for this world.", 'builder');
+}
+
+/* A WORLDBOOK, CHOSEN AT THE START. He builds either one: a plot essential to
+ * play in Cozy Tavern, or a worldbook for SillyTavern's World Info. A worldbook
+ * could only be made out of a plot essential that already existed ("Make a
+ * worldbook from it"), so choosing it first was not possible. The keeper
+ * builds it from everything said, told by the house what to call it (run.js
+ * worldbookNote), and asks first when nothing has been said yet. */
+export function newWorldbook() {
+  ask("Let's start a worldbook for this world.", 'worldbook');
+}
+
+/* WHAT A WORLD CAN BE STARTED WITH — one answer, for the room, The documents and
+ * the drawer, so the three can never disagree (v1.2.6: three answers to whether a
+ * world had a plot essential). A plot essential and a story card while there is
+ * no plot essential; a worldbook while there is neither (a world with a plot
+ * essential makes its worldbook from it: "Make a worldbook from it", on it). */
+export function startChoices(docs) {
+  const out = [];
+  if (hasPlotEssential(docs)) return out;
+  out.push({ label: 'Start a plot essential', run: newPlotEssential, main: true });
+  if (!hasWorldbook(docs)) out.push({ label: 'Start a worldbook', run: newWorldbook, main: false });
+  out.push({ label: 'Build from a story card', run: storyCardIn, main: false, inSheet: true });
+  return out;
 }
 
 async function newDoc() {
@@ -267,10 +296,14 @@ function jobsFor(doc) {
   ];
   /* a plot essential's world, as a SillyTavern worldbook: the keeper writes it
    * (its own craft: blue always on, green on keys and vectors, chain on vectors
-   * only) and Export for SillyTavern on the worldbook hands it over */
+   * only) and Export for SillyTavern on the worldbook hands it over. THE JOB SAYS
+   * WHAT IT IS FOR: the keeper's craft keeps a worldbook to what lies BEYOND the
+   * plot essential, while this job asks for every character and place in it —
+   * told both, a keeper could do either. Which worldbook it goes into, or what a
+   * new one is called, the house tells the keeper itself (run.js worldbookNote). */
   if ((doc.kind || 'pe') === 'pe') {
     jobs.push(['Make a worldbook from it', 'worldbook',
-      `Make a worldbook for SillyTavern from ${n}: an entry for every character, place, faction, item and piece of lore a scene could name \u2014 green, with generous keys \u2014 and blue only for the few facts the story can never be without. Put it in the worldbook here, or start one if there is none.`]);
+      `Make a worldbook for SillyTavern from ${n}: an entry for every character, place, faction, item and piece of lore a scene could name \u2014 green, with generous keys \u2014 and blue only for the few facts the story can never be without. It carries this world into SillyTavern's World Info on its own, so it holds what the plot essential holds, not only what lies beyond it.`]);
   }
   return jobs;
 }

@@ -208,6 +208,16 @@ class Model(http.server.BaseHTTPRequestHandler):
             body = ('I tidied it: the rule now says what it means.\n\n<edits>\n'
                     '[{"file":"Plot Essential.md","find":"- The city lives inside a dormant leviathan.",'
                     '"replace":"- The city lives inside a leviathan that is dormant, not dead.","reason":"clearer"}]\n</edits>')
+        elif who == "worldbook" and "What you put to" in rest[0]["content"]:
+            # his answer came back to it: the world, as entries written as data, quotes and all
+            book = [{"name": "Ash Harbour", "keys": [], "content": "A drowned harbour city where the tide-cult rules the quays.", "strategy": "blue", "order": 300, "position": "before_char"},
+                    {"name": "The Tide-Mother", "keys": ["Tide-Mother", "the cult's mother"], "content": 'The cult\'s leader. She says "the sea keeps what it is owed."',
+                     "strategy": "green", "order": 200, "position": "after_char"}]
+            body = ('I started the worldbook from what you told me.\n\n<edits>\n' +
+                    json.dumps([{"file": "Ash Harbour.json", "entries": book, "reason": "the world, from what you told me"}]) + '\n</edits>')
+        elif who == "worldbook" and "There is no worldbook in this world yet" in rest[0]["content"] and "Nothing has been written yet" in rest[0]["content"]:
+            # nothing to build from: the question, put to him, waiting
+            body = "There is nothing to build from yet.\n\n<ask>What is this world called, who rules it, and where does it happen?</ask>"
         elif who == "worldbook":
             # a worldbook keeper: the whole list again, with the entry it was asked for
             wb = [{"name": "The War", "keys": [], "content": "The long war is in its ninth year and every city feels it.", "strategy": "blue"},
@@ -1363,6 +1373,80 @@ def main():
             ok("and the world it was typed in keeps its plot essential exactly", card_world and [d["text"] for d in world(card_world[0]["id"])["docs"] if d["name"] == "Plot Essential.md"][0] == first_pe)
             page.click("#menuBtn")
             page.wait_for_timeout(400)
+            page.locator(".world-row", has_text=re.compile("^The Leviathan Quarter")).first.click()
+            page.wait_for_timeout(700)
+
+            # ---------------------------------------- a worldbook, chosen at the start, made and exported (v1.4.0)
+            if not page.locator("#drawer.open").count():     # choosing a world leaves the drawer open
+                page.click("#menuBtn")
+                page.wait_for_timeout(400)
+            before_worlds = {p["id"] for p in api("/api/projects")["projects"]}
+            page.locator(".drawer-head .btn", has_text="New world").click()      # the standing handler takes the offered name
+            page.wait_for_timeout(900)
+            ok("an empty world offers both: Start a plot essential and Start a worldbook",
+               page.locator(".empty .btn", has_text=re.compile("^Start a plot essential$")).count() == 1 and page.locator(".empty .btn", has_text=re.compile("^Start a worldbook$")).count() == 1)
+            ok("and the room says which is which", "Start a worldbook" in page.locator(".empty").inner_text())
+            wb_world = [p["id"] for p in api("/api/projects")["projects"] if p["id"] not in before_worlds]
+            calls.clear()
+            # a check reports; it never stops the walk — with no button there, every step after it fails by name
+            if page.locator(".empty .btn", has_text=re.compile("^Start a worldbook$")).count():
+                page.locator(".empty .btn", has_text=re.compile("^Start a worldbook$")).click()
+                page.wait_for_function("() => document.querySelectorAll('.turn.maker').length >= 1 && !document.querySelector('#sendBtn.stop')", timeout=30000)
+                page.wait_for_timeout(1300)
+            ok("the job is in the conversation in his words", page.locator(".turn.writer .bubble").count() > 0 and "Let's start a worldbook for this world." in page.locator(".turn.writer .bubble").first.inner_text())
+            keeper1 = [c for c in calls if c["who"] == "worldbook"]
+            ok("the worldbook keeper was the one sent, told there is no worldbook yet and to ask first",
+               len(keeper1) == 1 and "There is no worldbook in this world yet" in keeper1[0]["messages"][0]["content"] and "in <ask>" in keeper1[0]["messages"][0]["content"],
+               [c["who"] for c in calls])
+            ok("with nothing to build from, nothing is written", wb_world and not world(wb_world[0])["docs"], wb_world and world(wb_world[0])["docs"])
+            front_q = [c for c in calls if c["who"] == "front"]
+            ok("and its question is put to him by the one he talks to", front_q and "What is this world called" in json.dumps(front_q[-1]["messages"]), [c["who"] for c in calls])
+            calls.clear()
+            page.fill("#say", "A drowned harbour city called Ash Harbour, ruled by a tide-cult.")
+            page.click("#sendBtn")
+            try:
+                page.wait_for_function("() => document.querySelectorAll('.turn.maker').length >= 2 && !document.querySelector('#sendBtn.stop')", timeout=30000)
+            except Exception:
+                pass                         # the checks below say what did not happen
+            page.wait_for_timeout(1500)
+            ok("his answer reaches the keeper even though the listener's reply could not be read",
+               [c["who"] for c in calls if c["who"] != "front"] == ["listener", "worldbook"], [c["who"] for c in calls])
+            ok("and the plot essential's read-back is not sent over a worldbook", not any(c["who"] == "eye" for c in calls))
+            saved = world(wb_world[0]) if wb_world else {"docs": [], "title": ""}
+            book = [d for d in saved["docs"] if d["name"] == "Ash Harbour.json"]
+            ok("the worldbook is on the device, a worldbook, every entry in it", book and book[0]["kind"] == "worldbook" and [e["name"] for e in json.loads(book[0]["text"])] == ["Ash Harbour", "The Tide-Mother"],
+               json.dumps(saved["docs"])[:300])
+            ok("its words arrive as written, quotes and all", book and json.loads(book[0]["text"])[1]["content"] == 'The cult\'s leader. She says "the sea keeps what it is owed."')
+            ok("the world takes the name its worldbook gives it", page.locator("#worldName").inner_text() == "Ash Harbour" and saved["title"] == "Ash Harbour",
+               [page.locator("#worldName").inner_text(), saved["title"]])
+            page.click("#docsBtn")
+            page.wait_for_timeout(400)
+            ok("with a worldbook made, The documents no longer offer a second one, and still offer a plot essential",
+               page.locator("#docsBody .btn", has_text=re.compile("^Start a worldbook$")).count() == 0 and page.locator("#docsBody .btn", has_text=re.compile("^Start a plot essential$")).count() == 1)
+            # a check reports; it never stops the walk — with no worldbook made, what follows fails by name
+            st3, name3 = {"entries": {}}, "no worldbook was made, so there was nothing to export"
+            if page.locator("#docsBody .row .grow", has_text="Ash Harbour.json").count():
+                page.locator("#docsBody .row .grow", has_text="Ash Harbour.json").click()
+                page.wait_for_timeout(400)
+                try:
+                    with page.expect_download(timeout=5000) as dl3:
+                        page.locator(".doc-jobs .btn", has_text="Export for SillyTavern").click()
+                    st3 = json.loads(Path(dl3.value.path()).read_text())
+                    name3 = dl3.value.suggested_filename
+                except Exception as e:
+                    st3, name3 = {"entries": {}}, "no download"
+            e3 = st3.get("entries", {})
+            ok("Export for SillyTavern hands over the worldbook it made, named for the world", name3 == "Ash Harbour - SillyTavern.json", name3)
+            ok("in SillyTavern's shape: the always-on entry constant, the green one on its keys",
+               e3.get("0", {}).get("constant") is True and e3.get("0", {}).get("key") == [] and e3.get("1", {}).get("key") == ["Tide-Mother", "the cult's mother"] and e3.get("1", {}).get("selective") is True,
+               json.dumps(e3)[:300])
+            ok("and its words reach SillyTavern exactly", e3.get("1", {}).get("content") == 'The cult\'s leader. She says "the sea keeps what it is owed."')
+            page.click("#docsSheet [data-close]")
+            page.wait_for_timeout(300)
+            page.click("#menuBtn")
+            page.wait_for_timeout(400)
+            ok("the drawer agrees: a plot essential still to start, no second worldbook",
+               page.locator("#drawer .btn", has_text=re.compile("^Start a plot essential$")).count() == 1 and page.locator("#drawer .btn", has_text=re.compile("^Start a worldbook$")).count() == 0)
             page.locator(".world-row", has_text=re.compile("^The Leviathan Quarter")).first.click()
             page.wait_for_timeout(700)
 

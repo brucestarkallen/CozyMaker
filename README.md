@@ -89,8 +89,10 @@ one are its conversations — as many as you like, all working on the same
 documents — and its documents. Every world and conversation can be renamed or
 deleted from its ⋯.
 
-**Start a plot essential** (or just saying "build it") starts one with the crew: talk the world through first
-— nothing is written until you ask — and it is built from everything you said. **Build from a story card**
+**Start a plot essential** (or just saying "build it") or **Start a worldbook** — whichever you are making — starts
+it with the crew: talk the world through first — nothing is written until you ask — and it is built from everything
+you said. If nothing has been said yet, you are asked what you need first. A worldbook made this way is named after
+its world, and so is the world. **Build from a story card**
 (or `*card` followed by the paste) takes a community story from Isekai Zero, AI Dungeon or the like — its
 premise, plot, characters and opening — and builds a plot essential ready to play, in a world of its own, with
 whatever makes it more immersive added. On a plot essential, **Make a worldbook from it** has the worldbook keeper
@@ -150,7 +152,7 @@ The last three work from the Plot Essential and Instructions Maker's own crafts
 (its Worldbook Maker and Summaryception Auditor, word for word) and your own for
 instructions; each can be changed from its document, with the original one tap
 away. The craft the rest work from lives in one file, `engine/generalist.md`. Each of them
-is handed only the parts of it their job needs — the biggest share is a third
+is handed only the parts of it their job needs — the biggest share is about half
 of the whole. The cog, under the floor, shows exactly who reads what.
 
 ## For anyone working on the code
@@ -158,7 +160,7 @@ of the whole. The cog, under the floor, shows exactly who reads what.
 Read `AGENTS.md` first.
 
 ```
-bash tests/all.sh    seven suites, 785 checks
+bash tests/all.sh    seven suites, 1,260 checks
 ```
 
 `docs/lineage.md` lists every version of Cozy Tavern and Cozy Chat and what

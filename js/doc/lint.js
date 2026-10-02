@@ -387,8 +387,17 @@ export function readWorldbook(src) {
     try { v = JSON.parse(escapeRawControlsInStrings(stripTrailingCommasOutsideStrings(text))); fixed = true; }
     catch (e) {
       const joined = listsInARow(text);
-      if (!joined) return { ok: false, why: 'it is not valid JSON right now' };
-      v = joined;
+      /* A QUOTE LEFT BARE INSIDE AN ENTRY'S WORDS ('she said "no"' with the
+       * inner quotes unescaped) is read for what it is by what follows it — the
+       * same repair the block of changes gets, tried only after every other has
+       * failed, so data that reads never reaches it. Without it a worldbook the
+       * keeper wrote plainly went back to the keeper to be written again. */
+      let lone = null;
+      if (!joined) {
+        try { lone = JSON.parse(stripTrailingCommasOutsideStrings(escapeRawControlsInStrings(escapeStrayQuotes(text)))); } catch (__) { lone = null; }
+      }
+      if (!joined && !lone) return { ok: false, why: 'it is not valid JSON right now' };
+      v = joined || lone;
       fixed = true;
     }
   }
@@ -427,6 +436,14 @@ function lintWorldbook(src) {
     if (name) { if (seen.has(name)) dupes.push(name); else seen.set(name, true); }
     const strat = String(e.strategy || '').toLowerCase();
     if (!['blue', 'green', 'chain'].includes(strat)) { e.strategy = 'green'; repaired++; }
+    /* "Green" is green: written in capitals it passed the check above and
+     * then missed the one below, so a green entry with no keys was never seen */
+    else if (e.strategy !== strat) { e.strategy = strat; repaired++; }
+    /* keys written as one line ("Aldric, the general") are the keys the
+     * export reads them as (worldbook.js splits them on commas); left as a line
+     * they read here as no keys at all, and a sound entry was handed to the
+     * keeper as one that can never fire */
+    if (typeof e.keys === 'string') { e.keys = e.keys.split(',').map((k) => k.trim()).filter(Boolean); repaired++; }
     if (e.strategy === 'green' && (!Array.isArray(e.keys) || !e.keys.filter(Boolean).length)) {
       keyless.push(name || 'an unnamed entry');
     }
