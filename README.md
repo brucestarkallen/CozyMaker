@@ -76,9 +76,14 @@ Changes land in the documents themselves and show as small cards underneath the
 reply, each with **put it back** if you want it gone. Tap **what changed** on a card
 to see what was there before and what is there now.
 
-When a model thinks, a **Thinking** box sits above its reply: it counts the
-seconds while the model thinks and fills as the thinking arrives, then says how
-long it thought. Tap it to read the thinking; **Copy the thinking** takes it away.
+When a model thinks, a **Thinking** box sits above its reply. It opens the moment
+the model starts thinking and fills as the thinking arrives, from its first word,
+counting the seconds — even while the house is still reading what you said. When
+the reply begins, it folds itself shut and says how long the model thought. Tap
+it to read the thinking again; **Copy the thinking** takes it away. If the house
+decides the crew has work to do after all, the reply that had started is let go
+with its thinking, and the one written after the work thinks from its own first
+word. While nothing has arrived yet, the ember keeps glowing.
 
 **Tap any message** for **Copy**, **Edit**, **Branch here** and **Delete**. The last
 reply has **Another answer**; ◂ ▸ walks between the answers, and only the one shown
@@ -133,6 +138,11 @@ behind the room — purple sky, two moons, an aurora, lanterns strung across a
 yard, a bard mid-song and somebody buying a round. It is one hand-drawn file,
 nothing is fetched from anywhere, and the words stay at 17.0:1 contrast over
 it, measured rather than assumed.
+
+**Smooth streaming** (on unless you turn it off) evens out how a reply arrives. A
+provider sends words in clumps; with it on, each clump flows in over the next
+moment instead of landing all at once, and the words keep pace with the model —
+never more than a moment behind it. Off, each piece shows the moment it arrives.
 
 ## The crew
 

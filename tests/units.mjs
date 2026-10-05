@@ -2240,11 +2240,12 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
     return wholeAnswer({ choices: [{ message: { content: 'Added it.\n<edits>[{"file":"Plot Essential.md","insert_after":"- The tide decides who rules.","replace":"- The kingdom has a second moon."}]</edits>' }, finish_reason: 'stop' }] });
   };
   const run = async (message, extra = {}) => {
-    const heard = { text: [], thinking: [] };
+    const heard = { text: [], thinking: [], letGo: [], order: [] };
     setTimeout(() => open(), 120);
     const r = await runTurn({ house, project: world(), message,
-      onText: (t, at) => heard.text.push([t, at, Date.now(), log.includes('listener answered')]),
-      onThinking: (t, at) => heard.thinking.push([t, at, Date.now(), log.includes('listener answered')]), ...extra });
+      onText: (t, at) => { heard.text.push([t, at, Date.now(), log.includes('listener answered')]); heard.order.push('text:' + t); },
+      onThinking: (t, at) => { heard.thinking.push([t, at, Date.now(), log.includes('listener answered')]); heard.order.push('thinking:' + t); },
+      onLetGo: () => { heard.letGo.push(Date.now()); heard.order.push('let go'); }, ...extra });
     return { r, heard };
   };
   try {
@@ -2323,12 +2324,77 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
     eq('"ok build it" builds even when the listener\'s answer cannot be read', [builderSaid.length, r.project.docs.map((d) => d.name)], [1, ['Plot Essential.md']]);
     eq('and nothing was started early for it: one reply, after the build', [fronts.length, log.includes('builder') && log.indexOf('front asked') > log.indexOf('builder')], [1, true]);
 
-    /* thinking held while the listener read keeps the moment it really arrived */
+    /* THE STREAM STARTS AT THE THINKING (v1.6.0): the early reply's thinking is
+     * shown the moment it arrives, while the listener still reads; only its
+     * words wait for the listener. (Before, both waited, and the thinking
+     * reached the room all at once when the listener answered.) */
     reset();
-    frontSays = () => [{ choices: [{ delta: { reasoning_content: 'Mm, the tide as a character...' } }] }, { choices: [{ delta: { content: 'Yes.' }, finish_reason: 'stop' }] }, '[DONE]'];
+    frontSays = () => [{ choices: [{ delta: { reasoning_content: 'Mm, the tide ' } }] }, { choices: [{ delta: { reasoning_content: 'as a character...' } }] },
+      { choices: [{ delta: { content: 'Yes.' }, finish_reason: 'stop' }] }, '[DONE]'];
     ({ r, heard } = await run('the tide should feel like a character'));
-    ok('thinking held unseen carries the moment it really arrived', heard.thinking.length === 1 && heard.thinking[0][3] === true && heard.thinking[0][1] > 0 && heard.thinking[0][1] < heard.thinking[0][2] - 40,
+    ok('talk: its thinking is shown the moment it arrives, before the listener has answered', heard.thinking.length === 2 && heard.thinking.every(([, , , after]) => after === false),
+      JSON.stringify(heard.thinking.map(([t, , , after]) => [t, after])));
+    ok('and each piece carries the moment it arrived, drawn the same moment', heard.thinking.every(([, at, shown]) => at > 0 && shown - at < 20),
       JSON.stringify(heard.thinking.map(([, at, shown]) => shown - at)));
+    ok('its words still wait for the listener, and keep the moment they arrived', heard.text.length === 1 && heard.text[0][3] === true && heard.text[0][1] > 0 && heard.text[0][2] - heard.text[0][1] >= 20,
+      JSON.stringify(heard.text.map(([t, at, shown, after]) => [t, shown - at, after])));
+    eq('kept as the reply\'s own: its thinking and its words, nothing let go', [r.thinking, r.reply, heard.letGo.length], ['Mm, the tide as a character...', 'Yes.', 0]);
+
+    /* a job after all: the thinking the early reply showed is let go with it, and
+     * the reply written after the work thinks from its own first word */
+    reset();
+    listenerSays = '{"jobs":[{"worker":"editor","task":"Add a second moon to the rules."}]}';
+    frontSays = (n) => (n === 1
+      ? [{ choices: [{ delta: { reasoning_content: 'EARLY THOUGHT ' } }] }, { choices: [{ delta: { content: 'EARLY WORDS' }, finish_reason: 'stop' }] }, '[DONE]']
+      : [{ choices: [{ delta: { reasoning_content: 'With the moon in, ' } }] }, { choices: [{ delta: { content: 'Two moons it is.' }, finish_reason: 'stop' }] }, '[DONE]']);
+    ({ r, heard } = await run('give the kingdom a second moon'));
+    eq('a job after all: what the early reply showed is let go once, before the reply after the work thinks',
+      heard.order, ['thinking:EARLY THOUGHT ', 'let go', 'thinking:With the moon in, ', 'text:Two moons it is.']);
+    eq('and the reply he keeps carries only its own thinking', [r.reply, r.thinking], ['Two moons it is.', 'With the moon in, ']);
+
+    /* an early reply that showed no thinking is let go without a word to the room */
+    reset();
+    listenerSays = '{"jobs":[{"worker":"editor","task":"Add a second moon to the rules."}]}';
+    frontSays = (n) => (n === 1 ? [{ choices: [{ delta: { content: 'EARLY WORDS' }, finish_reason: 'stop' }] }, '[DONE]'] : [{ choices: [{ delta: { content: 'Two moons it is.' }, finish_reason: 'stop' }] }, '[DONE]']);
+    ({ r, heard } = await run('give the kingdom a second moon'));
+    eq('nothing shown, nothing to let go', [heard.letGo.length, r.reply], [0, 'Two moons it is.']);
+
+    /* Stop while the listener reads, after some thinking was shown: it stays — his
+     * Stop, not the house's choice (Cozy Tavern M301) — and nothing is let go */
+    reset();
+    frontSays = () => [{ choices: [{ delta: { reasoning_content: 'Hm. ' } }] }, { choices: [{ delta: { reasoning_content: 'The tide...' } }] }, { choices: [{ delta: { content: 'never shown' }, finish_reason: 'stop' }] }, '[DONE]'];
+    const halt = new AbortController();
+    setTimeout(() => halt.abort(), 60);
+    ({ r, heard } = await run('the tide should feel like a character', { signal: halt.signal }));
+    eq('Stop while the listener reads: the thinking shown stays, the words never come', [r.stopped === true, heard.thinking.length > 0, heard.text.length, heard.letGo.length], [true, true, 0, 0]);
+
+    /* a piece already on its way when the early reply is let go never reaches the
+     * room: a provider that ignores the hang-up keeps streaming, and none of it lands */
+    reset();
+    listenerSays = '{"jobs":[{"worker":"editor","task":"Add a second moon to the rules."}]}';
+    const deaf = (lines) => new Response(new ReadableStream({
+      async start(c) {
+        const enc = new TextEncoder();
+        for (const l of lines) { try { c.enqueue(enc.encode('data: ' + (typeof l === 'string' ? l : JSON.stringify(l)) + '\n\n')); } catch (_) { return; } await new Promise((res) => setTimeout(res, 25)); }
+        try { c.close(); } catch (_) {}
+      },
+    }), { status: 200 });
+    frontSays = (n) => (n === 1
+      ? deaf(Array.from({ length: 16 }, (_, i) => ({ choices: [{ delta: { reasoning_content: `late ${i} ` } }] })).concat(['[DONE]']))
+      : [{ choices: [{ delta: { content: 'Two moons it is.' }, finish_reason: 'stop' }] }, '[DONE]']);
+    ({ r, heard } = await run('give the kingdom a second moon'));
+    const cut = heard.order.indexOf('let go');
+    ok('after the let-go, nothing more of the early reply reaches the room', cut > 0 && !heard.order.slice(cut + 1).some((x) => /^thinking:late/.test(x)), JSON.stringify(heard.order));
+
+    /* a passing failure after its thinking was shown: the ordinary reply is asked
+     * for, and the failed one's thinking is let go first, so the box starts over */
+    reset();
+    frontSays = (n) => (n === 1
+      ? [{ choices: [{ delta: { reasoning_content: 'FIRST TRY ' } }] }, { error: { message: 'Overloaded, try again', code: 529 } }]
+      : [{ choices: [{ delta: { reasoning_content: 'second try ' } }] }, { choices: [{ delta: { content: 'Here I am.' }, finish_reason: 'stop' }] }, '[DONE]']);
+    ({ r, heard } = await run('the tide should feel like a character'));
+    eq('a passing failure after thinking: let go, then the ordinary reply from its own first thought',
+      [heard.order, r.reply, r.thinking], [['thinking:FIRST TRY ', 'let go', 'thinking:second try ', 'text:Here I am.'], 'Here I am.', 'second try ']);
   } catch (e) { ok('the early-reply tests ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
 }
 
@@ -3081,6 +3147,28 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
     r = await runTurn({ house, project: { id: 'pe0', title: 'A new world', docs: [], chats: [], recentSections: [] }, message: "let's make a new plot essential for a Bleach story" });
     eq('in a world with nothing in it, it is simply built there', [Boolean(r.newStory), seen.includes('builder'), (r.project.docs[0] || {}).name], [false, true, 'Plot Essential.md']);
   } catch (e) { ok('the new-story turns ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
+}
+
+/* ============================ SMOOTH STREAMING: the pace (js/ui/pace.js, v1.6.0) */
+{
+  const { revealCount, takeChars, PACE_MS } = await import('../js/ui/pace.js');
+  eq('nothing waiting, nothing shown', [revealCount(0, 16), revealCount(-5, 16)], [0, 0]);
+  eq('at least one character a frame while anything waits, so it always ends', [revealCount(1, 16), revealCount(3, 1)], [1, 1]);
+  eq('never more than is waiting', revealCount(10, 900), 10);
+  /* a clump of 120 characters at sixty frames a second is spread over several
+   * frames, not drawn at once; drawn frame by frame, the clump is all on screen
+   * within a few multiples of PACE_MS and never stalls */
+  let left = 120, frames = 0, first = 0;
+  while (left > 0 && frames < 1000) { const n = revealCount(left, 16); if (!frames) first = n; left -= n; frames++; }
+  ok('a clump is spread over several frames', first > 0 && first < 120 && frames >= 6, JSON.stringify({ first, frames }));
+  ok('and is all on screen within about four times the pace', frames * 16 <= PACE_MS * 4 + 16, frames * 16);
+  /* a model streaming steadily is followed at its own speed: the backlog settles
+   * near its rate times the pace, so the words on screen lag it by about PACE_MS */
+  let backlog = 0, drawn = 0;
+  for (let f = 0; f < 600; f++) { backlog += 6; const n = revealCount(backlog, 16); backlog -= n; drawn += n; }
+  ok('a steady stream is followed at its own speed, about PACE_MS behind', backlog <= 6 * (PACE_MS / 16) + 6 && drawn >= 600 * 6 - backlog, JSON.stringify({ backlog, drawn }));
+  eq('a long frame (a busy or hidden page) catches up rather than stretching', revealCount(400, 1000), 400);
+  eq('a character in two halves is never split', [takeChars('ab\ud83d\ude00cd', 3), takeChars('ab\ud83d\ude00cd', 2), takeChars('abc', 9)], ['ab\ud83d\ude00', 'ab', 'abc']);
 }
 
 /* ================================================================ done */

@@ -107,6 +107,8 @@ engine/*.md            generalist (his engine), worldbook-maker, sc-auditor (the
 engine/crafts.json     where each carried craft came from, its hash, and the only words changed
 js/store.js            the open world, its conversations, backups, and the one save line
 js/ui/                 kit, app (the room), drawer, docs, settings
+js/ui/streamtext.js    the live thinking drawn line by line (Cozy Tavern's M279, as it is)
+js/ui/pace.js          Smooth streaming: how much of what arrived is drawn this frame (v1.6.0)
 docs/lineage.md        every version of Cozy Tavern, Cozy Chat and the Plot Essential Maker
 ```
 
@@ -1117,26 +1119,105 @@ model reading his engine's 7.6 — decides). All reached the right worker but tw
   them again there: talk starts a brainstorm, an ask to build starts a build (app.js). With a worker waiting on his
   answer, his words are that answer, never a new story.
 
+### The stream starts at the thinking, and flows (v1.6.0)
+
+He asked why the streaming did not start at the thinking, as Cozy Tavern's does, and for smooth streaming. Four
+causes, each found in the code and measured in a real Chromium at a phone's viewport with the CPU slowed 6x
+(`tests/perf_stream.py`, Cozy Tavern's perf_housekeeper.py carried over):
+
+- **The live thinking box was shut.** `thinkingBox` hid its body while live as well as after, so the first thing
+  that moved on screen was the reply. Cozy Tavern's box opens at the first thought and folds at the first word of the
+  page; so does this one now, drawn line by line from its first word (`js/ui/streamtext.js`, Cozy Tavern's M279, as it
+  is), "Thinking… 7s" while it runs. A finished box is still shut until tapped. A tap opens or shuts it any time.
+- **On plain talk, the early reply's thinking was held until the listener answered** (v1.2.3's `heldFront`). The
+  listener rides the model he talks to, so on a thinking model he watched "reading that" for its whole read and then
+  got the thinking all at once. Now only the WORDS wait for the listener — a reply that may be let go is never read
+  — and the thinking goes to the room the moment it arrives. When the crew is sent after all, that reply is let go and
+  so is what it showed (`onLetGo`, the way Cozy Tavern's M378 clears a try's thinking when the next begins); the same
+  when a passing failure is asked again, which before left the failed try's thinking in front of the new one's and
+  in the kept turn. A piece already on its way after a let-go never reaches the room (`dropped`). His Stop while the
+  listener reads keeps the thinking shown, as Cozy Tavern's M301 does.
+- **Every piece rewrote everything and forced a layout**: the whole reply written back over itself
+  (`textContent = reply`), the whole thinking read and rewritten (`textContent +=`), and the scroll measured and set,
+  per piece — Cozy Tavern's M269 fault. A piece now only joins a string; once a frame what came is drawn, the words
+  appended as new text, the scroll measured once BEFORE the change (keepPlace's rule kept), and only the conversation
+  on screen is ever scrolled.
+- **When the crew was done, nothing moved until the reply's first piece.** `status('')` took the ember away; on a
+  provider that thinks without sending its thinking, that was the whole think. The ember now stays, with no words,
+  until the first thought or word is on screen (`setWaiting`).
+
+**Smooth streaming** (The look, on unless he turns it off; SillyTavern's name for it). A provider sends words in
+clumps; drawn as they come, a line lands, the screen stands still, another line lands. `js/ui/pace.js` draws each
+frame the share of what is waiting that would empty it within 150ms: a clump flows in over the next moment, a fast
+model is followed as fast, and the words on screen are never more than about 150ms behind the words that arrived —
+unlike a fixed-speed typewriter, it never falls behind a fast model. The last words of a finished reply are drawn at
+that pace for at most 400ms before it lands. The setting is read on every frame, so a change applies to a reply
+already being written.
+
+Measured, the same stream (3,000 thinking pieces, 600 answer pieces in clumps of twelve, a listener that thinks 4s),
+6x CPU, 390x844:
+
+    before (1.5.1)                                  now (1.6.0)
+    first thought on screen    never, unless tapped    539 ms after the press, 151 ms after the model sent it,
+                                                       while the listener still read (it answered at 4,389 ms)
+    worst frame                717 ms                  150 ms
+    frames over 100 ms         7                       1
+    long tasks                 1,985 ms                113 ms
+    frames with no new words
+      while words were coming  46%                     1%
+    most drawn in one frame    972 characters          51
+    all 102,000 thinking characters and 5,399 reply characters kept, both
+
+The thinking box was shut before, so its 102,000 characters were never laid out; now they are drawn, open, and the
+frames are still better.
+
+- `tests/perf_stream.py` (twice: Smooth streaming on and off) holds the first thought on screen before the listener
+  answers and within a second, the box open with no tap and its first words still there when long, the fold at the
+  first word, the frame budget, the even arrival, that turning the setting off reaches the live path, and that
+  everything is kept. On 1.5.1 it fails six of its laws.
+- `tests/stream_flows.py` walks talk that becomes a job (the early thinking on screen, then gone, "the editor is on
+  it", the reply after the work thinking from its own first word, only its own thinking kept) and the quiet before
+  a reply (the ember, alone, until the first thought). On 1.5.1 it fails six of fourteen; one of them is a stretch of
+  the turn with nothing on screen moving at all.
+- Units: the early reply's thinking reaches the room before the listener answers, with its true moment; its words
+  still wait; let go once on a job, never when nothing was shown; Stop keeps it; a late piece after a let-go never
+  lands; a passing failure lets the failed try's thinking go. Six of them fail on 1.5.1's run.js. The pace: a clump
+  is spread over several frames, a steady stream followed about 150ms behind, a stall caught up, a two-part
+  character never split.
+- Old expectations changed, and why: the walk said the live box was shut ("▸ Thinking…", opened by a tap) — that is
+  the behaviour he asked to change; `units.mjs` said the early reply's thinking was held until the listener answered —
+  same. `browser.py` read the reply the instant its word "fifteen" appeared; with Smooth streaming its last words come
+  a few frames later, so it reads it when the turn is done (the words are the same).
+
 ## Testing
 
 ```
-bash tests/all.sh           all seven, exit code intact
+bash tests/all.sh           every suite, exit code intact
 ```
 
-    node tests/units.mjs         914 checks — the real modules on a real document, and what the persona hears
+    node tests/units.mjs         931 checks — the real modules on a real document, and what the persona hears
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       49 checks — the real serve.py, real files on disk, streams timed
-    python3 tests/browser.py      75 checks — real Chromium at 390x844, end to end
-    python3 tests/walk_worlds.py 221 checks — the drawer, conversations, swipes and versions, edit and
+    python3 tests/browser.py      79 checks — real Chromium at 390x844, end to end
+    python3 tests/walk_worlds.py 225 checks — the drawer, conversations, swipes and versions, edit and
                                               send again, delete, branch, go on, re-quoting, crafts,
                                               the thinking box live, backup and restore, a model too
                                               small for the world, a real server killed mid-edit,
                                               a worldbook chosen, asked for, made and exported
+    python3 tests/perf_stream.py  12 checks — the live stream at a phone's speed (CPU 6x): the first thought
+                                              on screen before the listener answers, the box open with
+                                              no tap, frames, even arrival, everything kept
+    SMOOTH=off python3 tests/perf_stream.py
+                                  12 checks — the same with Smooth streaming off: the switch reaches the
+                                              live path (a clump lands the frame it arrives)
+    python3 tests/stream_flows.py 14 checks — talk that becomes a job (the early thinking let go, the reply
+                                              after the work thinking from its own first word) and the
+                                              ember in the quiet before a reply
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-1,313 checks. All seven must be green before a push. `tests/fixtures/` holds answers recorded from the
+1,376 checks. Every suite must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

@@ -541,7 +541,7 @@ export const GO_ON = 'Your last reply was cut off partway through. Carry straigh
 
 export async function runTurn({
   house, project, history = [], message, forceWorker = null,
-  onStatus = () => {}, onText = () => {}, onThinking = () => {},
+  onStatus = () => {}, onText = () => {}, onThinking = () => {}, onLetGo = () => {},
   signal,
 } = {}) {
   const sections = await loadEngine();
@@ -651,6 +651,11 @@ export async function runTurn({
   };
   let early = null;
   let earlyKept = false;
+  /* AN EARLY REPLY LET GO TAKES WHAT IT SHOWED WITH IT. Its thinking is on
+   * screen from its first word (below); when the crew is sent after all, that
+   * reply is never written, so the room is told to take its thinking away — the
+   * reply written after the work thinks again, from its own first word. */
+  const letEarlyGo = () => { const showed = early.thought; early.drop(); if (showed) onLetGo(); };
   let heardNobody = false;
   let intents;
   let acts = [];
@@ -676,7 +681,7 @@ export async function runTurn({
       !(lastMaker && confirmsOffer(message) && offersIn(lastMaker.text).length);
     if (plainTalk) {
       const sameWords = frontMessages(project, '', []);
-      early = heldFront((t, th, sig) => streamModel(frontConn, { system: frontSystem, messages: sameWords, onText: t, onThinking: th, signal: either(signal, sig) }));
+      early = heldFront((t, th, sig) => streamModel(frontConn, { system: frontSystem, messages: sameWords, onText: t, onThinking: th, signal: either(signal, sig) }), { onThinking });
     }
     const heard = await enqueue(project.id, LISTENER, ({ signal: s, stale }) => listen({
       conn: connFor(LISTENER), frame: CRAFT_FRAME, sections, docs, open, message, p,
@@ -686,7 +691,7 @@ export async function runTurn({
     /* A DIFFERENT STORY, IN A WORLD THAT HAS ONE: nothing is done here. The room starts
      * it in a world of its own and says it there (app.js), the way *new and a card are. */
     if (hasPE && !open.length && (heard && heard.ok ? heard.newStory : asksNewStory(message))) {
-      if (early) early.drop();
+      if (early) letEarlyGo();
       return { project, reply: '', cards: [], batches: [], crew: [], edits: [], asks: [], error: null, newStory: true };
     }
     intents = heard && heard.ok ? heard.jobs.map((j) => jobFor(j, open, message, p)) : oldReading();
@@ -700,7 +705,7 @@ export async function runTurn({
     /* nobody to send and nothing to clear: what was started is what he gets */
     if (early) {
       earlyKept = !intents.length && !acts.length;
-      if (!earlyKept) early.drop();
+      if (!earlyKept) letEarlyGo();
     }
   }
   /* *regress: the house keeps the entry itself, in the registry (router.js houseCommand) */
@@ -941,7 +946,7 @@ export async function runTurn({
   try {
     const out = early && earlyKept
       ? await early.keep((t, at) => { reply += t; onText(t, at); }, onThinking,
-        () => streamModel(frontConn, { system: frontSystem, messages, onText: (t) => { reply += t; onText(t); }, onThinking, signal }))
+        () => { onLetGo(); return streamModel(frontConn, { system: frontSystem, messages, onText: (t) => { reply += t; onText(t); }, onThinking, signal }); })
       : await streamModel(frontConn, {
         system: frontSystem, messages,
         onText: (t) => { reply += t; onText(t); },
@@ -960,29 +965,47 @@ export async function runTurn({
   return { project: working, reply, thinking: frontThought, cards: allCards, batches, crew, edits: turnEdits, asks, error: null };
 }
 
-/* A REPLY STARTED EARLY AND HELD UNSEEN (see the listener, in runTurn). What
- * arrives is kept with the moment it arrived, so a thinking box shown later
- * still says how long the model really thought. keep() shows what was held,
- * then lets the rest arrive live; if the early reply failed before a word of
- * it came, for a reason that starting early could have caused — the provider
- * busy, a limit on calls at once, a dropped line — the ordinary one is asked
- * for instead (again()), so starting early can never cost him his answer. A
- * bad key or a wrong model fails the same way twice, so it is said as it is.
- * drop() lets it go unseen. */
+/* A REPLY STARTED EARLY (see the listener, in runTurn). Its WORDS are held
+ * unseen until the listener has answered — if the crew is sent after all, this
+ * reply is let go and he never reads a reply that was not his. Its THINKING is
+ * not held: it goes to showThinking the moment it arrives, so what he watches
+ * starts at the thinking, as Cozy Tavern's does, while the listener reads.
+ * (Held, it reached him all at once when the listener answered — on a model
+ * that thinks, a screen of nothing for the listener's whole read, then a lurch.)
+ * What is held keeps the moment it arrived, so the box still says how long the
+ * model really thought. keep() shows what was held, then lets the rest arrive
+ * live; if the early reply failed before a word of it came, for a reason that
+ * starting early could have caused — the provider busy, a limit on calls at
+ * once, a dropped line — the ordinary one is asked for instead (again()), so
+ * starting early can never cost him his answer. A bad key or a wrong model
+ * fails the same way twice, so it is said as it is. drop() lets it go;
+ * `thought` says whether any of its thinking was shown, so the caller can take
+ * that away with it. With no showThinking, thinking is held like the words. */
 const PASSING = (status) => !status || status === 408 || status === 429 || status >= 500;
-export function heldFront(start) {
+export function heldFront(start, { onThinking: showThinking = null } = {}) {
   const ctl = new AbortController();
   const held = [];
   let live = null;
   let spoke = false;
-  const toText = (t) => { spoke = true; if (live) live.text(t); else held.push(['text', t, Date.now()]); };
-  const toThinking = (t) => { if (live) live.thinking(t); else held.push(['thinking', t, Date.now()]); };
+  let thought = false;
+  /* once let go, nothing more of it reaches anyone: a piece already on its way
+   * when Stop or the crew let it go must not draw a new box after the room took
+   * the old one away */
+  let dropped = false;
+  const toText = (t) => { if (dropped) return; spoke = true; if (live) live.text(t); else held.push(['text', t, Date.now()]); };
+  const toThinking = (t) => {
+    if (dropped) return;
+    if (live) return live.thinking(t);
+    if (showThinking) { thought = true; return showThinking(t, Date.now()); }
+    held.push(['thinking', t, Date.now()]);
+  };
   const done = Promise.resolve().then(() => start(toText, toThinking, ctl.signal)).then((out) => ({ ok: true, out }), (e) => ({ ok: false, e }));
   return {
-    drop() { ctl.abort(); },
+    get thought() { return thought; },
+    drop() { dropped = true; ctl.abort(); },
     async keep(onText, onThinking, again) {
       for (const [k, t, at] of held.splice(0)) (k === 'text' ? onText : onThinking)(t, at);
-      live = { text: (t) => onText(t), thinking: (t) => onThinking(t) };
+      live = { text: (t) => onText(t), thinking: (t) => { thought = true; onThinking(t); } };
       const r = await done;
       if (r.ok) return r.out;
       if (!spoke && !(r.e && r.e.name === 'AbortError') && PASSING(Number(r.e && r.e.status) || 0)) return again();

@@ -429,6 +429,18 @@ function lookSection(house) {
   const turns = input(house.settings.turnsOnScreen || 40, '40', 'number');
   turns.addEventListener('change', () => save('turnsOnScreen', Math.max(6, Number(turns.value) || 40)));
   g.append(field('How much of the conversation they are given each time', turns));
+
+  /* SMOOTH STREAMING (SillyTavern's name for it). A provider sends words in
+   * clumps; on, a clump flows in over the next moment instead of landing at once,
+   * and the words on screen keep pace with the model (js/ui/pace.js). Off, each
+   * piece is drawn the frame it arrives. Read on every frame: a change applies to
+   * a reply already being written. */
+  const smooth = select([
+    ['on', 'On \u2014 the words flow in evenly as they are written'],
+    ['off', 'Off \u2014 each piece shows the moment it arrives'],
+  ], house.settings.smoothStreaming === 'off' ? 'off' : 'on');
+  smooth.addEventListener('change', () => save('smoothStreaming', smooth.value));
+  g.append(field('Smooth streaming', smooth));
   return g;
 }
 

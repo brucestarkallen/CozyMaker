@@ -13,6 +13,8 @@ import { $, el, escape, closeSheet, toast, applyTheme, onRedraw, onAsk, fold, co
 import { openDocs, openDoc, tidyOnLeaving, currentDocId, bringIn, startChoices } from './docs.js';
 import { openHouse } from './settings.js';
 import { openDrawer, closeDrawer, drawerIsOpen, wireSwipe, setBusyCheck, draw as drawDrawer } from './drawer.js';
+import { streamText } from './streamtext.js';
+import { revealCount, takeChars } from './pace.js';
 
 const stream = $('stream');
 const say = $('say');
@@ -22,6 +24,8 @@ const sendBtn = $('sendBtn');
 let running = null;       /* { worldId, chatId, startedAt, abort } */
 let statusEl = null;
 const SEND_ICON = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>';
+/* how long the last words of a finished reply may take to be drawn at their own pace */
+const SETTLE_MS = 400;
 const STOP_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2.5"/></svg>';
 
 /* ------------------------------------------------------------------ boot */
@@ -118,6 +122,11 @@ export function draw() {
   const same = chat && p && lastDrawn === p.id + ':' + chat.id;
   const keepAt = same && !pinned ? stream.scrollTop : null;
   lastDrawn = chat && p ? p.id + ':' + chat.id : null;
+  /* a redraw while a reply is being written takes its bubble out and puts it
+   * back, and a box taken out of the page forgets where it was scrolled: the
+   * live thinking would jump to its top and stop following. Its place is kept. */
+  const liveBox = running && running.bubble ? running.bubble.querySelector('.thinking-text') : null;
+  const liveAt = liveBox && liveBox.isConnected ? { follow: liveBox.scrollHeight - liveBox.scrollTop - liveBox.clientHeight < 24, top: liveBox.scrollTop } : null;
   stream.innerHTML = '';
   if (!p || !chat) return;
   const turns = chat.turns || [];
@@ -127,6 +136,8 @@ export function draw() {
   else turns.forEach((t, i) => { if (i !== replacing) stream.append(turnNode(t, i)); });
   if (running && running.worldId === p.id && running.chatId === chat.id && running.bubble) {
     stream.append(running.bubble);
+    /* back on screen after he walked away and back, it follows its own end again */
+    if (liveBox && liveBox.isConnected) liveBox.scrollTop = !liveAt || liveAt.follow ? liveBox.scrollHeight : liveAt.top;
     if (statusEl) stream.append(statusEl);
   }
   drawComposer();
@@ -200,23 +211,31 @@ function drawComposer() {
   }
 }
 
-/* THE THINKING BOX, where a thinking box goes: above the reply, shut until
- * tapped, "Thinking… 7s" while the model thinks and "Thought for 12s" after
- * (SillyTavern's words; Cozy Tavern M40's clock, M105's copy). A plain button
- * opens it: native <details> did not open on his phone. */
+/* THE THINKING BOX, where a thinking box goes: above the reply. A finished one
+ * is shut until tapped and says "Thought for 12s" (SillyTavern's words; Cozy
+ * Tavern M40's clock, M105's copy). A plain button opens it: native <details>
+ * did not open on his phone.
+ *
+ * A LIVE ONE IS OPEN WHILE THE MODEL THINKS (Cozy Tavern's own: its box opens at
+ * the first thought and folds at the first word of the page). It used to be shut
+ * while live too, so the first thing he saw move was the reply — the stream
+ * never started at the thinking unless he tapped. It is drawn line by line
+ * (streamtext.js), from its first word, says "Thinking… 7s" while it runs, and
+ * folds itself shut when the reply's words reach the screen. A tap still opens
+ * or shuts it whenever he likes; Copy takes everything thought so far. */
 function tookWords(ms) {
   const sec = Math.max(0, ms || 0) / 1000;
   return sec < 60 ? Math.round(sec) + 's' : Math.floor(sec / 60) + 'm ' + Math.round(sec % 60) + 's';
 }
-function thinkingBox(text, ms, { live = false, since = 0 } = {}) {
+function thinkingBox(text, ms, { live = false, since = 0, source = null } = {}) {
   const box = el('div', 'thinking-box');
   const head = el('button', 'thinking-head');
   head.type = 'button';
   const body = el('div', 'thinking-body');
-  body.hidden = true;
-  const words = el('div', 'thinking-text', text || '');
+  body.hidden = !live;
+  const words = el('div', 'thinking-text', live ? undefined : (text || ''));
   const copy = el('button', 'btn quiet small', 'Copy the thinking');
-  copy.addEventListener('click', (e) => { e.stopPropagation(); copyText(words.textContent); });
+  copy.addEventListener('click', (e) => { e.stopPropagation(); copyText(source ? source() : words.textContent); });
   body.append(words, copy);
   box.append(head, body);
   let label = live ? 'Thinking\u2026' : Number.isFinite(ms) && ms > 0 ? `Thought for ${tookWords(ms)}` : 'Thinking';
@@ -224,14 +243,14 @@ function thinkingBox(text, ms, { live = false, since = 0 } = {}) {
   head.addEventListener('click', (e) => { e.stopPropagation(); body.hidden = !body.hidden; show(); });
   show();
   if (!live) return { node: box };
-  /* a reply held while the listener read arrives with the moments its thinking
-   * really began and ended, so the box says how long the model truly thought */
+  /* a reply started early arrives with the moment its thinking really began,
+   * so the box says how long the model truly thought */
   const start = since > 0 ? since : Date.now();
   let stopped = 0;
-  const tick = setInterval(() => { label = `Thinking\u2026 ${tookWords(Date.now() - start)}`; show(); }, 1000);
+  const tick = setInterval(() => { if (!stopped) { label = `Thinking\u2026 ${tookWords(Date.now() - start)}`; show(); } }, 1000);
   return {
     node: box,
-    add(chunk) { words.textContent += chunk; },
+    words,
     stop(at = 0) {
       if (stopped) return stopped;
       clearInterval(tick);
@@ -240,6 +259,140 @@ function thinkingBox(text, ms, { live = false, since = 0 } = {}) {
       show();
       return stopped;
     },
+    fold() { body.hidden = true; show(); },
+    quiet() { clearInterval(tick); },
+  };
+}
+
+/* THE REPLY WHILE IT IS BEING WRITTEN.
+ *
+ * Every piece used to be drawn the moment it came: the whole reply written back
+ * over itself (textContent = reply), the whole thinking read and rewritten
+ * (textContent += piece), and the scroll measured and set — per piece, so each
+ * cost more than the last and a long thinking froze the phone (Cozy Tavern's
+ * M269 fault: there, a five-second stream took 158 seconds to show). Now a piece
+ * only joins a string. Once a frame, what has come is drawn: the thinking line
+ * by line, the words added at the end as new text, and the scroll measured once,
+ * BEFORE the change — he owns the scroll (keepPlace's rule, kept).
+ *
+ * Smooth streaming (the house's setting, on unless he turns it off) draws what
+ * has arrived a share at a time (pace.js), so a clump of words from the provider
+ * flows in over the next moment instead of landing at once; off, everything
+ * that has come is drawn each frame.
+ *
+ * The thinking's clock starts at the first thought and stops when the first
+ * word ARRIVES — how long the model really thought — and the box folds when that
+ * word is DRAWN. letGo() takes back everything a reply started early showed,
+ * when the crew is sent after all and that reply will never be written. */
+function liveTurn(turn, inner) {
+  let thinkAll = '';
+  let thinkQueue = '';
+  let wordsAll = '';
+  let wordQueue = '';
+  let box = null;
+  let lines = null;
+  let since = 0;
+  let thoughtMs = 0;
+  let wordsShown = false;
+  let shown = false;
+  let frame = 0;
+  let lastFrame = 0;
+  let ended = false;
+  const settlers = [];
+  const smooth = () => ((store.getHouse() || {}).settings || {}).smoothStreaming !== 'off';
+  const nextFrame = (fn) => (typeof requestAnimationFrame === 'function' ? requestAnimationFrame(fn) : setTimeout(() => fn(performance.now()), 16));
+  const schedule = () => { if (!frame && !ended) frame = nextFrame(paint); };
+  const settled = () => { if (thinkQueue || wordQueue) return; for (const r of settlers.splice(0)) r(); };
+  function paint(now) {
+    frame = 0;
+    if (ended) return;
+    const t = Number.isFinite(now) ? now : performance.now();
+    const dt = lastFrame ? t - lastFrame : 16;
+    lastFrame = t;
+    const pace = smooth();
+    /* the scroll is his, and only the conversation on screen is touched: a reply
+     * still being written in a world he has walked out of never moves the one he
+     * is reading */
+    const onScreen = turn.isConnected;
+    const stay = onScreen && pinned && nearBottom();
+    if (thinkQueue && !wordsShown) {
+      if (!box) {
+        box = thinkingBox('', 0, { live: true, since, source: () => thinkAll });
+        turn.insertBefore(box.node, inner);
+        lines = streamText(box.words);
+        if (thoughtMs) box.stop(since + thoughtMs);
+      }
+      const part = pace ? takeChars(thinkQueue, revealCount(thinkQueue.length, dt)) : thinkQueue;
+      lines.append(part);
+      thinkQueue = thinkQueue.slice(part.length);
+      if (!shown) { shown = true; clearWaiting(); }
+    }
+    if (wordQueue) {
+      if (!wordsShown) {
+        wordsShown = true;
+        /* the reply has begun: what is left of the thinking goes in at once, and the box shuts */
+        if (box) { if (thinkQueue) lines.append(thinkQueue); thinkQueue = ''; box.fold(); }
+        shown = true;
+        clearStatus();
+      }
+      const part = pace ? takeChars(wordQueue, revealCount(wordQueue.length, dt)) : wordQueue;
+      inner.append(document.createTextNode(part));
+      wordQueue = wordQueue.slice(part.length);
+    }
+    if (stay) stream.scrollTop = stream.scrollHeight;
+    else if (onScreen) pinned = false;
+    if (thinkQueue || wordQueue) schedule();
+    else { lastFrame = 0; settled(); }
+  }
+  const stopClock = (at = 0) => {
+    if (!since || thoughtMs) return;
+    thoughtMs = Math.max(1, (at > 0 ? at : Date.now()) - since);
+    if (box) box.stop(since + thoughtMs);
+  };
+  return {
+    thinking(chunk, at = 0) {
+      if (!chunk || ended) return;
+      if (!since) since = at > 0 ? at : Date.now();
+      thinkAll += chunk;
+      if (wordsShown) { if (lines) lines.append(chunk); return; }
+      thinkQueue += chunk;
+      schedule();
+    },
+    text(chunk, at = 0) {
+      if (!chunk || ended) return;
+      stopClock(at);
+      wordsAll += chunk;
+      wordQueue += chunk;
+      schedule();
+    },
+    /* the reply this belonged to will not be written: everything it showed goes */
+    letGo() {
+      if (box) { box.quiet(); box.node.remove(); }
+      box = null; lines = null;
+      thinkAll = ''; thinkQueue = ''; since = 0; thoughtMs = 0;
+      wordsAll = ''; wordQueue = ''; wordsShown = false;
+      inner.textContent = '';
+      shown = false;
+      settled();
+    },
+    /* the last of it drawn at the pace it was coming, for at most `ms` */
+    settle(ms) {
+      if (!thinkQueue && !wordQueue) return Promise.resolve();
+      return new Promise((resolve) => { settlers.push(resolve); setTimeout(resolve, ms); });
+    },
+    stopClock,
+    /* the stream is over: no more frames, and the clock stops where it stands */
+    end() {
+      stopClock();
+      ended = true;
+      if (frame) { if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(frame); frame = 0; }
+      if (box) box.quiet();
+      for (const r of settlers.splice(0)) r();
+    },
+    get shown() { return shown; },
+    get thought() { return thinkAll; },
+    get thinkingMs() { return thoughtMs; },
+    get reply() { return wordsAll; },
   };
 }
 
@@ -685,32 +838,36 @@ async function send(text, forceWorker, opts = {}) {
   if (who.maker && who.maker !== 'you') bubble.append(el('div', 'who', who.maker));
   const inner = el('div', 'bubble');
   bubble.append(inner);
-  let liveThinking = null;
-  let thinkingMs = 0;
-  const thoughtDone = (at = 0) => { if (liveThinking && !thinkingMs) thinkingMs = liveThinking.stop(at); };
+  const live = liveTurn(bubble, inner);
   const titled = (store.getProject().chats || []).find((c) => c.id === chatId);
   running = { worldId, chatId, chatTitle: (titled || chat).title, startedAt: Date.now(), abort, bubble, replaceAt: opts.replaceAt };
   draw();
   setStatus('reading that');
 
-  let reply = '', thinking = '', result;
+  let result;
   try {
     result = await runTurn({
       house, project: store.getProject(), history, message: text, forceWorker,
-      onStatus: setStatus,
-      onText: (chunk, at) => { thoughtDone(at); keepPlace(() => { reply += chunk; inner.textContent = reply; clearStatus(); }); },
-      onThinking: (chunk, at) => {
-        thinking += chunk;
-        keepPlace(() => {
-          if (!liveThinking) { liveThinking = thinkingBox('', 0, { live: true, since: at }); bubble.insertBefore(liveThinking.node, inner); clearStatus(); }
-          liveThinking.add(chunk);
-        });
-      },
+      /* the house's work said in words; when it is done and nothing of the reply
+       * is on screen yet, the ember alone breathes until the first piece comes */
+      onStatus: (label, detail) => (label ? setStatus(label, detail) : live.shown ? clearStatus() : setWaiting()),
+      onText: (chunk, at) => live.text(chunk, at),
+      onThinking: (chunk, at) => live.thinking(chunk, at),
+      /* the early reply was let go: its thinking goes; while nothing says what the
+       * house is doing (a retry after a passing failure), the ember stays */
+      onLetGo: () => { live.letGo(); if (!statusLabel) setWaiting(); },
       signal: abort.signal,
     });
   } catch (e) {
-    result = { project: store.getProject(), reply, cards: [], batches: [], edits: [], error: (e && e.message) || String(e) };
+    result = { project: store.getProject(), reply: live.reply, cards: [], batches: [], edits: [], error: (e && e.message) || String(e) };
   }
+  /* the stream is over: the clock stops where it stands, and the last words are
+   * drawn at the pace they were coming — briefly, never holding a stop or a failure */
+  live.stopClock();
+  if (!result.error && !result.stopped && !abort.signal.aborted && !result.newStory) await live.settle(SETTLE_MS);
+  const thinking = live.thought;
+  const thinkingMs = live.thinkingMs;
+  live.end();
 
   clearStatus();
   /* A DIFFERENT STORY, ASKED FOR IN PLAIN WORDS IN A WORLD THAT HAS ONE (run.js): it
@@ -749,7 +906,7 @@ async function send(text, forceWorker, opts = {}) {
     failed: !words,
     /* a thought the reader moved off the words once they were all in is kept too */
     thinking: (result.thinking || '').length > thinking.length ? result.thinking : thinking,
-    thinkingMs: (thoughtDone(), thinkingMs) || undefined,
+    thinkingMs: thinkingMs || undefined,
     cards: (result.cards || []).filter((c) => c.status === 'refused' || c.reason || c.how),
     batches: result.batches || [],
     edits: result.edits || [],
@@ -824,19 +981,33 @@ let statusTick = null;
  * word count arriving never starts it again */
 function statusWords() {
   const s = Math.floor((Date.now() - statusSince) / 1000);
-  const bits = [statusLabel];
+  const bits = statusLabel ? [statusLabel] : [];
   if (statusDetail) bits.push(statusDetail);
   if (s >= 15) bits.push(`${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`);
   return bits.join(' \u00b7 ');
 }
-function setStatus(label, detail = '') {
-  if (!label) return clearStatus();
+/* NOTHING ON SCREEN MOVING IS NOT ALLOWED WHILE A TURN RUNS. When the crew is
+ * done, the line that said what they were doing used to go at once, and until
+ * the reply's first piece came nothing moved at all — on a provider that thinks
+ * without sending its thinking, for the whole of its think. Now the ember stays,
+ * with no words (past fifteen seconds, how long it has been), until the first
+ * thought or word is on screen. */
+let waiting = false;
+function setWaiting() {
+  if (!running) return clearStatus();
+  if (!waiting) { clearStatus(); waiting = true; statusSince = Date.now(); }
+  setStatus('', '', true);
+}
+function clearWaiting() { if (waiting) clearStatus(); }
+function setStatus(label, detail = '', quiet = false) {
+  if (!label && !quiet) return clearStatus();
+  if (label) waiting = false;
   if (!statusEl) {
     statusEl = el('div', 'status');
     statusEl.append(el('span', 'ember'));
     statusEl.append(el('span', 'label'));
   }
-  if (label !== statusLabel) { statusLabel = label; statusSince = Date.now(); }
+  if (label !== statusLabel) { statusLabel = label; if (label) statusSince = Date.now(); }
   statusDetail = detail || '';
   if (!statusTick) statusTick = setInterval(() => { if (statusEl) keepPlace(() => { statusEl.querySelector('.label').textContent = statusWords(); }); }, 1000);
   const p = store.getProject(), chat = store.openChat();
@@ -850,6 +1021,7 @@ function clearStatus() {
   if (statusTick) { clearInterval(statusTick); statusTick = null; }
   statusLabel = '';
   statusDetail = '';
+  waiting = false;
 }
 
 boot().catch((e) => {

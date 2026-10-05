@@ -214,6 +214,9 @@ def main():
                 "return n.length && n[n.length-1].textContent.includes('fifteen'); }",
                 timeout=30000)
             took = time.time() - t0
+            # the reply is read once the turn is done: with Smooth streaming its last
+            # words are drawn a few frames after the first ones (v1.6.0)
+            page.wait_for_function("() => !document.querySelector('#sendBtn.stop')", timeout=30000)
 
             said = page.locator(".turn.maker .bubble").last.inner_text()
             ok("the one at the front answers in its own voice", "majority is fifteen now" in said, said)
@@ -391,6 +394,18 @@ def main():
             frame_box.fill(was_frame)
             page.wait_for_timeout(1500)
             ok("and put back the same way", house_now()["settings"].get("makerName") == "Eni" and house_now().get("personaFrame") == was_frame)
+
+            # -- smooth streaming, under its own name (SillyTavern's) -------------
+            smooth = page.locator("label.field", has_text="Smooth streaming").locator("select")
+            ok("Smooth streaming is in The look, by that name", smooth.count() == 1)
+            ok("and is on when he has never set it", smooth.count() == 1 and smooth.input_value() == "on", smooth.input_value() if smooth.count() else None)
+            smooth.select_option("off")
+            page.wait_for_timeout(600)
+            ok("turned off, it is kept on the device", house_now()["settings"].get("smoothStreaming") == "off", house_now()["settings"].get("smoothStreaming"))
+            smooth = page.locator("label.field", has_text="Smooth streaming").locator("select")
+            smooth.select_option("on")
+            page.wait_for_timeout(600)
+            ok("and on again the same way", house_now()["settings"].get("smoothStreaming") == "on", house_now()["settings"].get("smoothStreaming"))
 
             # -- the coats of paint --------------------------------------------
             coat = page.locator("label.field", has_text="Coat of paint").locator("select")

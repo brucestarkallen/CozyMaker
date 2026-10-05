@@ -12,6 +12,9 @@ echo; echo "— saves, through an outage —"; node tests/saves.mjs || fail=1
 echo; echo "— the server —"; python3 tests/server.py  || fail=1
 echo; echo "— the browser —"; python3 tests/browser.py || fail=1
 echo; echo "— worlds, conversations, stop, merge —"; python3 tests/walk_worlds.py || fail=1
+echo; echo "— the live stream, measured at a phone's speed —"; python3 tests/perf_stream.py || fail=1
+echo; echo "— the live stream, Smooth streaming off —"; SMOOTH=off python3 tests/perf_stream.py || fail=1
+echo; echo "— the live stream: talk that becomes a job, and the quiet before a reply —"; python3 tests/stream_flows.py || fail=1
 echo; echo "— the launcher —"; bash tests/launcher.sh || fail=1
 echo
 if [ "$fail" -eq 0 ]; then echo "all green"; else echo "SOMETHING IS RED"; fi

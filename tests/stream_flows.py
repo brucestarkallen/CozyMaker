@@ -1,0 +1,240 @@
+#!/usr/bin/env python3
+"""CozyMaker — tests/stream_flows.py
+
+The live stream's two harder roads, in a real browser against the real serve.py
+(v1.6.0). The stand-in model reads who is asking and answers the way a thinking
+model does.
+
+  1. Talk that turns out to be a job. His words read as talk to the keyword
+     reading, so the reply he talks to starts at once and its thinking is on
+     screen while the listener reads. The listener then sends the editor: that
+     reply will never be written, so its thinking is taken away, the line says
+     the editor is on it, and the reply written after the work thinks from its
+     own first word. Nothing of the first one is kept.
+
+  2. The quiet before the reply. When the crew is done and the reply has not
+     sent its first piece yet (a provider that thinks without sending its
+     thinking), the ember stays on screen with no words, and goes the moment
+     the first thought is there.
+
+    python3 tests/stream_flows.py
+"""
+
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+import urllib.request
+import http.server
+import socketserver
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+PORT = 8813
+FAKE = 8814
+
+passed = 0
+failed = []
+fronts = []
+
+
+def ok(name, cond, detail=""):
+    global passed
+    if cond:
+        passed += 1
+    else:
+        failed.append(f"{name}{' — ' + str(detail)[:300] if detail else ''}")
+
+
+class Fake(http.server.BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+
+    def log_message(self, *a):
+        pass
+
+    def do_POST(self):
+        n = int(self.headers.get("Content-Length") or 0)
+        sent = json.loads(self.rfile.read(n).decode() or "{}")
+        msgs = sent.get("messages", [])
+        system = next((m.get("content", "") for m in msgs if m.get("role") == "system"), "")
+        said = json.dumps([m for m in msgs if m.get("role") != "system"][-1:])
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Connection", "close")
+        self.end_headers()
+
+        def send(delta, fin=None):
+            self.wfile.write(("data: " + json.dumps({"choices": [{"index": 0, "delta": delta, "finish_reason": fin}]}) + "\n\n").encode())
+            self.wfile.flush()
+
+        def done():
+            self.wfile.write(b"data: [DONE]\n\n")
+            self.wfile.flush()
+
+        try:
+            if "You are the one who listens." in system:
+                time.sleep(1.2)
+                if "second moon" in said:
+                    send({"content": '{"jobs": [{"worker": "editor", "task": "Add a second moon to the rules."}]}'}, "stop")
+                else:
+                    send({"content": '{"jobs": []}'}, "stop")
+                return done()
+            if "craft work on a piece of fiction" in system:
+                time.sleep(1.0)  # the editor at work, long enough to be seen
+                send({"content": 'Added it.\n<edits>[{"file": "Plot Essential.md", "insert_after": "- The tide decides who rules.", '
+                                 '"replace": "- The kingdom has a second moon.", "reason": "a second moon"}]</edits>'}, "stop")
+                return done()
+            # the one he talks to
+            fronts.append(time.time())
+            k = len(fronts)
+            if k == 1:
+                # the early reply: it thinks out loud, slowly, until it is let go
+                for i in range(40):
+                    send({"reasoning_content": f"EARLY THOUGHT {i}. "})
+                    time.sleep(0.1)
+                send({"content": "EARLY WORDS"}, "stop")
+                return done()
+            # the reply after the work: a provider that thinks without a word for a while first
+            time.sleep(1.5)
+            for piece in ["With the moon in, ", "the nights change. ", "Say so warmly."]:
+                send({"reasoning_content": piece})
+                time.sleep(0.3)
+            send({"content": "Two moons it is."}, "stop")
+            done()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        self.close_connection = True
+
+
+class Threaded(socketserver.ThreadingMixIn, http.server.HTTPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+
+
+PE_SEED = """# PLOT ESSENTIAL — Tide — V1.0
+
+## WORLD
+### Rules
+- The tide decides who rules.
+
+## SCENE
+WHERE: the salt flats
+"""
+
+
+def call(path, method="GET", body=None):
+    req = urllib.request.Request(f"http://127.0.0.1:{PORT}{path}", data=json.dumps(body).encode() if body is not None else None, method=method)
+    req.add_header("Content-Type", "application/json")
+    return json.loads(urllib.request.urlopen(req).read() or b"{}")
+
+
+def main():
+    from playwright.sync_api import sync_playwright
+
+    home = Path(tempfile.mkdtemp(prefix="cozymaker-flows-"))
+    env = dict(os.environ, COZYMAKER_HOME=str(home), COZYMAKER_PORT=str(PORT))
+    server = subprocess.Popen([sys.executable, str(ROOT / "serve.py")], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    fake = Threaded(("127.0.0.1", FAKE), Fake)
+    threading.Thread(target=fake.serve_forever, daemon=True).start()
+    try:
+        for _ in range(200):
+            try:
+                urllib.request.urlopen(f"http://127.0.0.1:{PORT}/api/version", timeout=1).read()
+                break
+            except Exception:
+                time.sleep(0.1)
+        house = call("/api/house")
+        house["connections"] = [{"id": "c1", "name": "thinks", "url": f"http://127.0.0.1:{FAKE}/v1", "model": "thinker", "key": "k"}]
+        house["agentConnections"] = {"keeper": "c1"}
+        house["settings"].update({"makerName": "Eni", "yourName": "Bruce", "person": "second"})
+        house["personaFrame"] = "You are Eni."
+        call("/api/house", "PUT", house)
+        call("/api/project/p_flow", "PUT", {"id": "p_flow", "title": "Tide", "docs": [{"id": "d1", "name": "Plot Essential.md", "kind": "pe", "text": PE_SEED}],
+                                             "turns": [], "undo": [], "recentSections": []})
+
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch()
+            page = browser.new_context(viewport={"width": 390, "height": 844}, service_workers="block").new_page()
+            errors = []
+            page.on("pageerror", lambda e: errors.append(str(e)))
+            page.goto(f"http://127.0.0.1:{PORT}/", wait_until="networkidle")
+            page.wait_for_timeout(600)
+            # what the room shows, every 50ms, from the press to the landing
+            page.evaluate("""() => {
+              const W = window.__watch = [];
+              setInterval(() => {
+                const turns = [...document.querySelectorAll('#stream .turn.maker')];
+                const live = turns[turns.length - 1];
+                const st = document.querySelector('#stream .status');
+                const tt = live && live.querySelector('.thinking-text');
+                W.push({
+                  t: Date.now(),
+                  running: Boolean(document.querySelector('#sendBtn.stop')),
+                  thinking: tt && tt.checkVisibility() ? tt.textContent : '',
+                  anyEarly: document.getElementById('stream').textContent.includes('EARLY'),
+                  status: st ? st.querySelector('.label').textContent : null,
+                  ember: Boolean(st && st.querySelector('.ember')),
+                  words: live ? (live.querySelector('.bubble') || {}).textContent || '' : '',
+                });
+              }, 50);
+            }""")
+            page.fill("#say", "give the kingdom a second moon")
+            page.click("#sendBtn")
+            page.wait_for_selector("#sendBtn.stop", timeout=10000)
+            page.wait_for_function("() => !document.querySelector('#sendBtn.stop')", timeout=60000)
+            page.wait_for_timeout(500)
+            w = page.evaluate("window.__watch")
+            run = [x for x in w if x["running"]]
+
+            # 1. talk that turns out to be a job
+            early_seen = [x for x in run if "EARLY THOUGHT 0." in x["thinking"]]
+            ok("the early reply's thinking was on screen while the listener read", bool(early_seen))
+            editor_at = next((i for i, x in enumerate(run) if (x["status"] or "").startswith("the editor is on it")), None)
+            ok("the line then says the editor is on it", editor_at is not None, [x["status"] for x in run][:40])
+            after = run[editor_at:] if editor_at is not None else []
+            ok("and from then on nothing of the early reply is anywhere on screen", after and not any(x["anyEarly"] for x in after),
+               [x["thinking"][:30] for x in after if x["anyEarly"]][:3])
+            ok("its words were never shown", not any("EARLY WORDS" in x["words"] for x in w))
+
+            # 2. the quiet before the reply
+            second = next((i for i, x in enumerate(run) if "With the moon in" in x["thinking"]), None)
+            ok("the reply after the work thinks from its own first word, in an open box", second is not None and run[second]["thinking"].startswith("With the moon in"),
+               run[second]["thinking"][:60] if second is not None else None)
+            # the gap ends at the first moment any of the new thinking is on screen (it is drawn a few letters at a time)
+            first = next((i for i in range(editor_at or 0, len(run)) if run[i]["thinking"]), None) if editor_at is not None else None
+            gap = [x for x in run[editor_at:first] if not (x["status"] or "").startswith("the editor")] if first is not None else []
+            ok("between the crew and the first thought, the ember stays", gap and all(x["ember"] for x in gap), [(x["status"], x["ember"]) for x in gap][:8])
+            ok("with no words beside it", gap and all((x["status"] or "") == "" or x["status"].startswith("0:") for x in gap), sorted({str(x["status"]) for x in gap}))
+            ok("and it goes the moment the first thought is there", first is not None and run[first]["status"] is None and not run[first]["ember"], run[first] if first is not None else None)
+            ok("nothing on screen stood still: every moment of the turn had the ember, the thinking or the words", all(x["ember"] or x["thinking"] or x["words"] for x in run[2:]),
+               [x for x in run[2:] if not (x["ember"] or x["thinking"] or x["words"])][:2])
+
+            if os.environ.get("SHOW"):
+                for x in run:
+                    print(round((x["t"] - run[0]["t"]) / 1000, 2), repr(x["status"]), x["ember"], repr(x["thinking"][:24]), repr(x["words"][:20]), x["anyEarly"])
+            world = call("/api/project/p_flow")
+            chat = next(c for c in world["chats"] if c["id"] == world["openChat"])
+            kept = chat["turns"][-1]
+            ok("the turn keeps the reply after the work", kept.get("text") == "Two moons it is.", kept.get("text"))
+            ok("and only its own thinking", kept.get("thinking") == "With the moon in, the nights change. Say so warmly.", kept.get("thinking"))
+            ok("its clock is its own: from its first thought to its first word", 500 <= (kept.get("thinkingMs") or 0) < 2500, kept.get("thinkingMs"))
+            ok("the change landed", "- The kingdom has a second moon." in world["docs"][0]["text"])
+            ok("nothing threw", not errors, errors[:2])
+            browser.close()
+    finally:
+        server.terminate()
+        fake.shutdown()
+        shutil.rmtree(home, ignore_errors=True)
+
+    print(f"\n{passed} passed, {len(failed)} failed")
+    for f in failed:
+        print("  ✗ " + f)
+    sys.exit(1 if failed else 0)
+
+
+if __name__ == "__main__":
+    main()
