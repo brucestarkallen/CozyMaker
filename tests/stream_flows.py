@@ -21,6 +21,7 @@ model does.
 """
 
 import json
+import re
 import os
 import shutil
 import subprocess
@@ -40,6 +41,7 @@ FAKE = 8814
 passed = 0
 failed = []
 fronts = []
+ANSWERS = []
 
 
 def ok(name, cond, detail=""):
@@ -62,6 +64,9 @@ class Fake(http.server.BaseHTTPRequestHandler):
         msgs = sent.get("messages", [])
         system = next((m.get("content", "") for m in msgs if m.get("role") == "system"), "")
         said = json.dumps([m for m in msgs if m.get("role") != "system"][-1:])
+        # what he said THIS time: the ask ends with his words after "said:" (the talk before it
+        # rides in the same message, so a match on the whole of it would answer an older line)
+        now = said.split("said:")[-1]
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Connection", "close")
@@ -78,7 +83,7 @@ class Fake(http.server.BaseHTTPRequestHandler):
         try:
             if "You are the one who listens." in system:
                 time.sleep(1.2)
-                if "second moon" in said:
+                if "second moon" in now:
                     send({"content": '{"jobs": [{"worker": "editor", "task": "Add a second moon to the rules."}]}'}, "stop")
                 else:
                     send({"content": '{"jobs": []}'}, "stop")
@@ -89,6 +94,33 @@ class Fake(http.server.BaseHTTPRequestHandler):
                                  '"replace": "- The kingdom has a second moon.", "reason": "a second moon"}]</edits>'}, "stop")
                 return done()
             # the one he talks to
+            if "stop me while you think" in now:
+                # a long think, for Stop to land in the middle of
+                for i in range(80):
+                    send({"reasoning_content": f"Turning it over {i}. "})
+                    time.sleep(0.1)
+                send({"content": "too late"}, "stop")
+                return done()
+            if "cut me off" in now:
+                for piece in ["The wall first. ", "Then who paid."]:
+                    send({"reasoning_content": piece})
+                    time.sleep(0.25)
+                send({"content": "The harbour wall was built by"}, "length")
+                return done()
+            if "cut off partway through" in said:
+                for piece in ["Carrying on ", "from the cut."]:
+                    send({"reasoning_content": piece})
+                    time.sleep(0.25)
+                send({"content": " the guild of tides."}, "stop")
+                return done()
+            if "answer twice" in now:
+                ANSWERS.append(1)
+                n = len(ANSWERS)
+                for piece in [f"Version {n} ", "weighing it."]:
+                    send({"reasoning_content": piece})
+                    time.sleep(0.25)
+                send({"content": f"Answer {n}."}, "stop")
+                return done()
             fronts.append(time.time())
             k = len(fronts)
             if k == 1:
@@ -223,6 +255,89 @@ def main():
             ok("and only its own thinking", kept.get("thinking") == "With the moon in, the nights change. Say so warmly.", kept.get("thinking"))
             ok("its clock is its own: from its first thought to its first word", 500 <= (kept.get("thinkingMs") or 0) < 2500, kept.get("thinkingMs"))
             ok("the change landed", "- The kingdom has a second moon." in world["docs"][0]["text"])
+
+            def seen(js, name, timeout=20000):
+                # a wait that never comes true is a failed law, said by name, never a crash
+                try:
+                    page.wait_for_function(js, timeout=timeout)
+                    ok(name, True)
+                    return True
+                except Exception:
+                    ok(name, False, "never came on screen")
+                    return False
+
+            def last_turn():
+                w2 = call("/api/project/p_flow")
+                return next(c for c in w2["chats"] if c["id"] == w2["openChat"])["turns"][-1]
+
+            def finished():
+                # the turn has begun (the Stop button is up) and then ended
+                page.wait_for_selector("#sendBtn.stop", timeout=10000)
+                page.wait_for_function("() => !document.querySelector('#sendBtn.stop')", timeout=60000)
+                page.wait_for_timeout(600)
+
+            def stopped_turn_done():
+                page.wait_for_function("() => !document.querySelector('#sendBtn.stop')", timeout=60000)
+                page.wait_for_timeout(600)
+
+            # 3. Stop while it thinks: what it thought so far stays, said for what it is
+            page.fill("#say", "stop me while you think")
+            page.click("#sendBtn")
+            seen("() => [...document.querySelectorAll('.turn.maker .thinking-text')].some((t) => t.checkVisibility() && t.textContent.includes('Turning it over 5.'))",
+                 "a long think is on screen as it comes, with no tap")
+            page.click("#sendBtn")
+            stopped_turn_done()
+            t = last_turn()
+            ok("Stop while it thinks: the turn says it stopped", t.get("text") == "(stopped)" and t.get("failed") is True, t.get("text"))
+            ok("and keeps what it thought so far, from its first word", (t.get("thinking") or "").startswith("Turning it over 0. ") and "Turning it over 5." in t.get("thinking", "")
+               and "Turning it over 79." not in t.get("thinking", ""), (t.get("thinking") or "")[-60:])
+            ok("with how long it thought", (t.get("thinkingMs") or 0) >= 500, t.get("thinkingMs"))
+            last = page.locator(".turn.maker").last
+            ok("on screen: a shut box that says how long, and Try again", re.match(r"^\u25b8 Thought for \d+s$", last.locator(".thinking-head").inner_text()) is not None
+               and last.locator(".btn", has_text="Try again").count() == 1, last.locator(".thinking-head").inner_text())
+
+            # 4. Go on: the rest of a cut reply thinks in its own open box, and both thinkings are kept
+            page.fill("#say", "cut me off")
+            page.click("#sendBtn")
+            finished()
+            t = last_turn()
+            ok("a reply cut at the limit is kept as cut, with its thinking", t.get("cut") is True and t.get("thinking") == "The wall first. Then who paid.", (t.get("cut"), t.get("thinking")))
+            first_ms = t.get("thinkingMs") or 0
+            if os.environ.get("SHOW"):
+                print("CUT TURN:", json.dumps({k: t.get(k) for k in ("text", "cut", "cutBy", "failed", "thinking", "thinkingMs")}))
+                print("ON SCREEN:", page.locator(".turn.maker").last.inner_text()[:300])
+                print("SO FAR:", passed, failed)
+            go_on = page.locator(".turn.maker").last.locator(".btn", has_text="Go on")
+            ok("a cut reply offers Go on", go_on.count() == 1)
+            if go_on.count():
+                go_on.click()
+            seen("() => [...document.querySelectorAll('.turn.maker .thinking-text')].some((x) => x.checkVisibility() && x.textContent.startsWith('Carrying on'))",
+                 "Go on: the rest thinks in an open box, from its own first word")
+            stopped_turn_done()
+            t = last_turn()
+            ok("and the reply is joined whole", t.get("text") == "The harbour wall was built by the guild of tides." and not t.get("cut"), t.get("text"))
+            ok("with both thinkings kept, in order", t.get("thinking") == "The wall first. Then who paid.\n\nCarrying on from the cut.", t.get("thinking"))
+            ok("and the time it thought added up", (t.get("thinkingMs") or 0) > first_ms, (first_ms, t.get("thinkingMs")))
+
+            # 5. Another answer: each answer keeps its own thinking, walked with ◂ ▸
+            page.fill("#say", "answer twice")
+            page.click("#sendBtn")
+            finished()
+            page.locator(".turn.maker").last.locator(".btn", has_text="Another answer").click()
+            seen("() => [...document.querySelectorAll('.turn.maker .thinking-text')].some((x) => x.checkVisibility() && x.textContent.startsWith('Version 2'))",
+                 "Another answer: the new one thinks in an open box, from its own first word")
+            stopped_turn_done()
+            t = last_turn()
+            ok("the new answer is shown with its own thinking", t.get("text") == "Answer 2." and t.get("thinking") == "Version 2 weighing it.", (t.get("text"), t.get("thinking")))
+            ok("and the first is kept as a version, with its own", len(t.get("versions") or []) == 2 and t["versions"][0].get("thinking") == "Version 1 weighing it."
+               and t["versions"][0].get("thinkingMs"), [(v.get("text"), v.get("thinking")) for v in t.get("versions") or []])
+            last = page.locator(".turn.maker").last
+            last.locator(".swipes .iconbtn").first.click()
+            page.wait_for_timeout(500)
+            last = page.locator(".turn.maker").last
+            last.locator(".thinking-head").click()
+            ok("walking back shows the first answer's own thinking", last.locator(".bubble").inner_text() == "Answer 1." and last.locator(".thinking-text").inner_text() == "Version 1 weighing it.",
+               (last.locator(".bubble").inner_text(), last.locator(".thinking-text").inner_text()))
             ok("nothing threw", not errors, errors[:2])
             browser.close()
     finally:

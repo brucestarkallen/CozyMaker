@@ -1176,9 +1176,12 @@ frames are still better.
   first word, the frame budget, the even arrival, that turning the setting off reaches the live path, and that
   everything is kept. On 1.5.1 it fails six of its laws.
 - `tests/stream_flows.py` walks talk that becomes a job (the early thinking on screen, then gone, "the editor is on
-  it", the reply after the work thinking from its own first word, only its own thinking kept) and the quiet before
-  a reply (the ember, alone, until the first thought). On 1.5.1 it fails six of fourteen; one of them is a stretch of
-  the turn with nothing on screen moving at all.
+  it", the reply after the work thinking from its own first word, only its own thinking kept), the quiet before a
+  reply (the ember, alone, until the first thought), and with a model that thinks: Stop in the middle of a think
+  ("(stopped)", the thinking so far kept from its first word, how long, Try again), Go on (the rest thinks in its own
+  open box; the reply joined whole, both thinkings kept in order, the time added) and Another answer (each answer its
+  own thinking; walking back shows the first one's). On 1.5.1 it fails twelve of twenty-nine — one a stretch of the
+  turn with nothing on screen moving at all, and Stop could never land mid-think: the thinking was never in sight.
 - Units: the early reply's thinking reaches the room before the listener answers, with its true moment; its words
   still wait; let go once on a job, never when nothing was shown; Stop keeps it; a late piece after a let-go never
   lands; a passing failure lets the failed try's thinking go. Six of them fail on 1.5.1's run.js. The pace: a clump
@@ -1211,13 +1214,14 @@ bash tests/all.sh           every suite, exit code intact
     SMOOTH=off python3 tests/perf_stream.py
                                   12 checks — the same with Smooth streaming off: the switch reaches the
                                               live path (a clump lands the frame it arrives)
-    python3 tests/stream_flows.py 14 checks — talk that becomes a job (the early thinking let go, the reply
-                                              after the work thinking from its own first word) and the
-                                              ember in the quiet before a reply
+    python3 tests/stream_flows.py 29 checks — talk that becomes a job (the early thinking let go, the reply
+                                              after the work thinking from its own first word), the
+                                              ember in the quiet before a reply, and Stop, Go on and
+                                              Another answer with a model that thinks
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-1,376 checks. Every suite must be green before a push. `tests/fixtures/` holds answers recorded from the
+1,391 checks. Every suite must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.
