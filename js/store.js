@@ -379,7 +379,7 @@ export async function exportEverything() {
   const h = house || {};
   return {
     format: BACKUP_FORMAT, v: 1, at: Date.now(), worlds,
-    house: { settings: h.settings || {}, personaFrame: h.personaFrame || '', instructionsCraft: h.instructionsCraft || '', crafts: h.crafts || {} },
+    house: { settings: h.settings || {}, personaFrame: h.personaFrame || '', postNote: h.postNote || '', instructionsCraft: h.instructionsCraft || '', crafts: h.crafts || {} },
   };
 }
 
@@ -396,6 +396,7 @@ export function fillHouse(current, saved) {
   const s = (saved && typeof saved === 'object') ? saved : {};
   const blank = (v) => v === undefined || v === null || (typeof v === 'string' && !v.trim());
   if (blank(h.personaFrame) && !blank(s.personaFrame)) { h.personaFrame = s.personaFrame; filled.push('their instructions'); }
+  if (blank(h.postNote) && !blank(s.postNote)) { h.postNote = s.postNote; filled.push('the note at the end'); }
   for (const [k, v] of Object.entries(s.settings || {})) {
     if (blank(h.settings[k]) && !blank(v)) { h.settings[k] = v; if (k === 'makerName' || k === 'yourName') { if (!filled.includes('the names')) filled.push('the names'); } }
   }

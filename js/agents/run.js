@@ -22,7 +22,7 @@
 
 import { loadEngine, sliceFor } from '../engine/slices.js';
 import { craftFor } from '../engine/crafts.js';
-import { openingFor, personaOf, addressWriter } from './persona.js';
+import { openingFor, personaOf, addressWriter, noteAtTheEnd } from './persona.js';
 import { pickConnection, FRONT } from './roster.js';
 import { callModel, streamModel, enqueue } from './call.js';
 import { parseDoc, brief, readNeed, stripNeed, resolveNeed, LEAD_SHORT, nameWorld, hasPlotEssential, DEFAULT_WORLD_TITLE } from '../doc/index.js';
@@ -677,7 +677,9 @@ export async function runTurn({
        * carries no speaker at all. */
       forceWorker === FRONT_ONLY ? `\n${message}` : `\n${p.you ? `${p.you} said:` : 'What was just said to you:'}\n${message}`,
     ].filter(Boolean).join('\n\n');
-    return oneVoice(earlier.concat([{ role: 'user', content: ask }]));
+    /* his note at the end rides last, after his message (persona.js noteAtTheEnd) */
+    const last = noteAtTheEnd(house, p);
+    return oneVoice(earlier.concat([{ role: 'user', content: ask }], last ? [last] : []));
   };
   let early = null;
   let earlyKept = false;

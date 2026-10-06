@@ -204,6 +204,7 @@ export function learnedFacts(conn, now = Date.now()) {
     efforts: Array.isArray(L.efforts) && L.efforts.length ? L.efforts : null,
     drop: Array.isArray(L.drop) ? L.drop : [],
     offThinks: L.offThinks === true,
+    noLateSystem: L.noLateSystem === true,
     down: Number.isFinite(L.downAt) && now - L.downAt <= REFUSAL_MEMORY_MS,
   };
 }
@@ -382,6 +383,29 @@ export function reportedIdentity(m) {
   return { hf: hf ? hf.trim() : '', efforts: efforts && efforts.length ? efforts : null };
 }
 
+/* A SYSTEM MESSAGE AFTER HIS (Cozy Tavern M380, M385): the note at the end rides as
+ * SillyTavern's post-history instructions do. A model that refused one is
+ * remembered (learnedFacts().noLateSystem) and is sent those words with his
+ * message instead, at its end. */
+export function hasLateSystem(messages) {
+  return (messages || []).some((m) => m && m.role === 'system');
+}
+export function lateSystemFitted(conn, messages) {
+  const list = (messages || []).map((m) => ({ ...m }));
+  const facts = learnedFacts(conn);
+  if (!facts || !facts.noLateSystem || !hasLateSystem(list)) return list;
+  const out = [];
+  for (const m of list) {
+    const last = out[out.length - 1];
+    if (m.role === 'system') {
+      if (last && last.role === 'user') last.content = `${last.content}\n\n${m.content}`;
+      else out.push({ role: 'user', content: m.content });
+    } else if (last && last.role === m.role) last.content = `${last.content}\n\n${m.content}`;
+    else out.push(m);
+  }
+  return out;
+}
+
 /* Build the request one house understands. */
 export function buildRequest(conn, { system, messages, maxTokens, room = 512, stream = false }) {
   const house = houseOf(conn.url);
@@ -392,12 +416,12 @@ export function buildRequest(conn, { system, messages, maxTokens, room = 512, st
     body.model = conn.model;
     body.max_tokens = limit || 4096;
     if (system) body.system = system;
-    body.messages = messages.map((m) => ({ role: m.role, content: m.content }));
+    body.messages = lateSystemFitted(conn, messages).map((m) => ({ role: m.role, content: m.content }));
   } else {
     body.model = conn.model;
     const list = [];
     if (system) list.push({ role: 'system', content: system });
-    for (const m of messages) list.push({ role: m.role, content: m.content });
+    for (const m of lateSystemFitted(conn, messages)) list.push({ role: m.role, content: m.content });
     body.messages = list;
     if (limit) body.max_tokens = limit;
   }

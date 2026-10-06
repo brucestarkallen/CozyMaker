@@ -1274,17 +1274,31 @@ turn, the asking kept out of every reply, the key mended once and only for Herme
 (the key found in Hermes' own files, from any ending of the address, never for an address off the phone, none when
 Hermes is down), and the browser (the section, its names, both settings kept, the plain note).
 
+### The note at the end (v1.8.0)
+
+He asked for Cozy Tavern's note at the end — post-history instructions he can put anything in — beside the persona's
+instructions (the frame). `persona.js noteAtTheEnd`: his words, never wrapped or added to, `{{user}}`/`{{char}}`
+read as the names, sent after his message on every request to the one he talks to (the early reply's too) and to
+nobody else. A system message unless he chooses a user message (then it closes his own); "Send the note at the
+end" off keeps the words and sends nothing; an empty note is never sent. A model that refuses a system message after
+his (400/422 naming "system") is remembered per model (`learnedFacts().noLateSystem`, Cozy Tavern M385) and the same
+turn goes again with the note at the end of his message; the next turn goes that way at once. The backup carries it
+and brings it back where the house has none. Laws: units (place, role, macros, the switch, empty, nobody else, the
+refusal learned and the next turn straight), the browser (the box, both settings kept). One old check changed, and
+why: `browser.py` found the frame's box as the only plain box in The house; there are two now, so it is found by its
+name.
+
 ## Testing
 
 ```
 bash tests/all.sh           every suite, exit code intact
 ```
 
-    node tests/units.mjs         979 checks — the real modules on a real document, and what the persona hears
+    node tests/units.mjs         989 checks — the real modules on a real document, and what the persona hears
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       57 checks — the real serve.py, real files on disk, streams timed
-    python3 tests/browser.py      85 checks — real Chromium at 390x844, end to end
+    python3 tests/browser.py      89 checks — real Chromium at 390x844, end to end
     python3 tests/walk_worlds.py 227 checks — the drawer, conversations, swipes and versions, edit and
                                               send again, delete, branch, go on, re-quoting, crafts,
                                               the thinking box live, backup and restore, a model too
@@ -1303,7 +1317,7 @@ bash tests/all.sh           every suite, exit code intact
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-1,455 checks. Every suite must be green before a push. `tests/fixtures/` holds answers recorded from the
+1,469 checks. Every suite must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

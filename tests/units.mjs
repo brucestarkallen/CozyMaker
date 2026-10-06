@@ -3386,6 +3386,67 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
   } catch (e) { ok('the key turns ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; stop(); }
 }
 
+/* ============================ THE NOTE AT THE END (v1.8.0) */
+{
+  const { runTurn } = await import('../js/agents/run.js');
+  const { fillHouse } = await import('../js/store.js');
+  const { LISTENER_MARK: LM } = await import('../js/agents/listener.js');
+  const realFetch = globalThis.fetch;
+  const PE = '# PLOT ESSENTIAL \u2014 Tide \u2014 V1.0\n\n## WORLD\n### Rules\n- The tide decides who rules.\n';
+  const world = () => ({ id: 'pn', docs: [{ id: 'd1', name: 'Plot Essential.md', kind: 'pe', text: PE }], chats: [], recentSections: [] });
+  const conn = { id: 'c1', url: 'https://relay.example/v1', model: 'note-model', key: 'k' };
+  const house = (extra = {}, settings = {}) => ({ connections: [{ ...conn }], agentConnections: {}, settings: { yourName: 'Bruce', makerName: 'Eni', ...settings }, personaFrame: 'You are {{char}}.', ...extra });
+  let fronts = [], others = [], refuseLate = false;
+  globalThis.fetch = async (url, init) => {
+    const req = JSON.parse(init.body);
+    const msgs = req.body.messages || [];
+    if (forFront(req)) {
+      fronts.push(msgs);
+      const late = msgs.some((m, i) => i > 0 && m.role === 'system');
+      if (refuseLate && late) return wholeAnswer({ error: 'provider', status: 400, detail: 'Invalid request: the system message must be at the beginning of the conversation' });
+      return wholeAnswer({ choices: [{ message: { content: 'Here.' }, finish_reason: 'stop' }] });
+    }
+    others.push(JSON.stringify(msgs));
+    const sys = (msgs.find((m) => m.role === 'system') || {}).content || '';
+    return wholeAnswer({ choices: [{ message: { content: sys.includes(LM) ? '{"jobs": []}' : 'Noted.' }, finish_reason: 'stop' }] });
+  };
+  const NOTE = 'Stay in character as {{char}}, and call {{user}} by name.';
+  try {
+    fronts = []; others = [];
+    await runTurn({ house: house({ postNote: NOTE }), project: world(), message: 'thanks' });
+    let m = fronts[fronts.length - 1] || [];
+    const lastM = m[m.length - 1] || {};
+    eq('the note rides last, after his message, as a system message', [lastM.role, lastM.content], ['system', 'Stay in character as Eni, and call Bruce by name.']);
+    ok('his message stands just before it', (m[m.length - 2] || {}).role === 'user' && /thanks/.test((m[m.length - 2] || {}).content), JSON.stringify(m.slice(-2)).slice(0, 200));
+    fronts = []; others = [];
+    await runTurn({ house: house({ postNote: NOTE }), project: world(), message: 'the tide should feel like a character' });
+    ok('every request to the one he talks to carries it, the early reply\'s too', fronts.length >= 1 && fronts.every((x) => (x[x.length - 1] || {}).content === 'Stay in character as Eni, and call Bruce by name.'), fronts.length);
+    ok('and nobody else\'s request does', others.length > 0 && !others.some((x) => x.includes('Stay in character')), others.length);
+    fronts = [];
+    await runTurn({ house: house({ postNote: NOTE }, { noteRole: 'user' }), project: world(), message: 'thanks' });
+    m = fronts[fronts.length - 1] || [];
+    ok('as a user message: at the end of his', (m[m.length - 1] || {}).role === 'user' && /thanks[\s\S]*Stay in character as Eni, and call Bruce by name\.$/.test((m[m.length - 1] || {}).content), JSON.stringify(m.slice(-1)).slice(0, 200));
+    fronts = [];
+    await runTurn({ house: house({ postNote: NOTE }, { sendNote: 'off' }), project: world(), message: 'thanks' });
+    ok('switched off: kept, not sent', !JSON.stringify(fronts).includes('Stay in character'));
+    fronts = [];
+    await runTurn({ house: house({ postNote: '   ' }), project: world(), message: 'thanks' });
+    ok('an empty note is never sent', !(fronts[0] || []).slice(1).some((x) => x.role === 'system'), JSON.stringify(fronts[0] || []).slice(0, 200));
+    /* a model that takes no system message after his: remembered, and the same turn goes again with it in his */
+    fronts = []; refuseLate = true;
+    const h = house({ postNote: NOTE });
+    const r = await runTurn({ house: h, project: world(), message: 'thanks' });
+    m = fronts[fronts.length - 1] || [];
+    eq('refused as a system message, it goes again at the end of his, and the reply comes', [r.reply, (m[m.length - 1] || {}).role, /Stay in character as Eni/.test((m[m.length - 1] || {}).content || ''), Boolean(h.connections[0].learned && h.connections[0].learned.noLateSystem)], ['Here.', 'user', true, true]);
+    fronts = [];
+    await runTurn({ house: h, project: world(), message: 'thanks' });
+    eq('and next time it goes that way at once, with no refusal first', fronts.length, 1);
+    refuseLate = false;
+  } catch (e) { ok('the note turns ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
+  const filled = fillHouse({ settings: {}, postNote: '' }, { postNote: 'Be warm.' });
+  eq('a backup brings the note back where the house has none, never over his', [filled.house.postNote, fillHouse({ settings: {}, postNote: 'mine' }, { postNote: 'Be warm.' }).house.postNote], ['Be warm.', 'mine']);
+}
+
 /* ============================ SMOOTH STREAMING: the pace (js/ui/pace.js, v1.6.0) */
 {
   const { revealCount, takeChars, PACE_MS } = await import('../js/ui/pace.js');

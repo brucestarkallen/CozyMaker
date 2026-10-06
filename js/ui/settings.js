@@ -114,6 +114,35 @@ function whoSection(house) {
   g.append(macroNote);
   showMacros();
 
+  /* THE NOTE AT THE END — SillyTavern's post-history instructions, Cozy Tavern's
+   * note at the end: anything he likes, sent after his message on every turn, read
+   * last. Its switch keeps the words and stops sending them; its role is his. */
+  const note = document.createElement('textarea');
+  note.className = 'plain';
+  note.style.minHeight = '110px';
+  note.value = house.postNote || '';
+  note.placeholder = 'Anything you like \u2014 a reminder, a rule, a mood. Sent after your message, every turn.';
+  keepAsTyped(note, async () => {
+    const h = store.getHouse();
+    if ((h.postNote || '') === note.value) return;
+    h.postNote = note.value;
+    await store.saveHouse(h);
+  });
+  g.append(field('The note at the end', note));
+  g.append(el('p', 'hint', 'Your post-history instructions: read last, right after your message, on every turn \u2014 {{user}} and {{char}} read as the two names, as in their instructions.'));
+  const sendNote = select([
+    ['on', 'On \u2014 sent on every turn'],
+    ['off', 'Off \u2014 kept here, not sent'],
+  ], house.settings.sendNote === 'off' ? 'off' : 'on');
+  sendNote.addEventListener('change', () => save('sendNote', sendNote.value));
+  g.append(field('Send the note at the end', sendNote));
+  const noteRole = select([
+    ['system', 'A system message \u2014 like SillyTavern\u2019s post-history instructions'],
+    ['user', 'A user message \u2014 added to the end of yours'],
+  ], house.settings.noteRole === 'user' ? 'user' : 'system');
+  noteRole.addEventListener('change', () => save('noteRole', noteRole.value));
+  g.append(field('Sent after your message as', noteRole));
+
   const maker = input(house.settings.makerName, 'Eni, Iron Man, Lothar — anyone');
   keepAsTyped(maker, () => (store.getHouse().settings.makerName === maker.value.trim() ? null : save('makerName', maker.value.trim()).then(showMacros)));
   g.append(field('What they are called', maker));

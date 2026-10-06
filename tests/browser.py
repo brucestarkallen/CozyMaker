@@ -378,7 +378,7 @@ def main():
             # -- what he types in the house is kept as he types it: no tap elsewhere, no Back
             def house_now():
                 return json.loads(urllib.request.urlopen(f"http://127.0.0.1:{PORT}/api/house").read())
-            frame_box = page.locator("#houseBody textarea.plain")
+            frame_box = page.locator("#houseBody label.field", has_text="Their instructions, in your own words").locator("textarea")
             was_frame = frame_box.input_value()
             pasted = "I am Eni. I keep Bruce's worlds straight, and I talk like myself."
             frame_box.fill(pasted)                      # input events only: the box never loses focus
@@ -406,6 +406,27 @@ def main():
             smooth.select_option("on")
             page.wait_for_timeout(600)
             ok("and on again the same way", house_now()["settings"].get("smoothStreaming") == "on", house_now()["settings"].get("smoothStreaming"))
+
+            # -- the note at the end (v1.8.0): post-history instructions -------------
+            note = page.locator("label.field", has_text="The note at the end").locator("textarea")
+            ok("The note at the end is in The house, by that name, under their instructions", note.count() == 1)
+            note.fill("Stay warm, {{user}}.")
+            page.locator("label.field", has_text="Send the note at the end").locator("select").focus()
+            page.wait_for_timeout(700)
+            ok("what he writes in it is kept on the device", house_now().get("postNote") == "Stay warm, {{user}}.", house_now().get("postNote"))
+            send_note = page.locator("label.field", has_text="Send the note at the end").locator("select")
+            role = page.locator("label.field", has_text="Sent after your message as").locator("select")
+            ok("it is sent unless he says not, as a system message unless he says otherwise", send_note.input_value() == "on" and role.input_value() == "system",
+               (send_note.input_value(), role.input_value()))
+            send_note.select_option("off")
+            role.select_option("user")
+            page.wait_for_timeout(700)
+            ok("both kept as he set them", house_now()["settings"].get("sendNote") == "off" and house_now()["settings"].get("noteRole") == "user")
+            send_note.select_option("on")
+            role.select_option("system")
+            note.fill("")
+            page.locator("label.field", has_text="Send the note at the end").locator("select").focus()
+            page.wait_for_timeout(700)
 
             # -- searching the internet (v1.7.0), his switch ------------------------
             search = page.locator("label.field", has_text="Search the internet").locator("select")

@@ -13,7 +13,7 @@
  * so work for a world the writer has left never lands in the one he opened.
  */
 
-import { hermesLike, buildRequest, readAnswer, readChunk, WORKER_ROOM, withoutThinking, THINKING_FIELDS, REASONING_REFUSAL, modelsUrl, modelsHeaders, reportedIdentity, spokenAs,
+import { hasLateSystem, hermesLike, buildRequest, readAnswer, readChunk, WORKER_ROOM, withoutThinking, THINKING_FIELDS, REASONING_REFUSAL, modelsUrl, modelsHeaders, reportedIdentity, spokenAs,
   lessonFrom, learnedFacts, learnKey, familyStyle, cannotStopThinking } from '../providers.js';
 
 /* WHAT A MODEL TEACHES IS KEPT (Cozy Tavern M350). A refusal of a thinking
@@ -59,6 +59,7 @@ export function learn(conn, fact) {
     efforts: fact.efforts || (was && was.efforts) || null,
     drop: [...new Set([...((was && was.drop) || []), ...(fact.drop || [])])],
     offThinks: fact.offThinks === true || Boolean(was && was.offThinks),
+    noLateSystem: fact.noLateSystem === true || Boolean(was && was.noLateSystem),
     downAt: fact.downAt || (was && was.downAt) || null,
   };
   conn.learned = next;
@@ -251,9 +252,13 @@ export async function listModels(conn) {
 export async function streamModel(conn, opts = {}) {
   let out;
   let keyMended = false;
+  let lateTaught = false;
   for (let lessons = 0; ; lessons++) {
     try { out = await streamOnce(conn, opts, false); break; }
     catch (e) {
+      /* THE NOTE AT THE END, REFUSED AS A SYSTEM MESSAGE: remembered for this model, and
+       * the same turn goes again with those words at the end of his message */
+      if (e && e.lateSystem && !lateTaught && !(opts.signal && opts.signal.aborted)) { lateTaught = true; learn(conn, { noLateSystem: true }); lessons--; continue; }
       /* a Hermes Agent that refused a stale key: the key Hermes accepts, and once more */
       if (e && !keyMended && !(opts.signal && opts.signal.aborted) && await repairHermesKey(conn, Number(e.status) || 0)) { keyMended = true; lessons--; continue; }
       if (!(e && e.refusedThinking) || (opts.signal && opts.signal.aborted) || lessons >= MAX_LESSONS) throw e;
@@ -292,6 +297,9 @@ async function streamOnce(conn, opts, dropThinking) {
     err.status = Number(out.status) || 0;
     err.refusedThinking = !dropThinking && !out.midStream && out.status >= 400 && out.status < 500 &&
       REASONING_REFUSAL.test(err.message) && THINKING_FIELDS.some((f) => f in req.body);
+    /* a model that takes no system message after his (Cozy Tavern M385) */
+    err.lateSystem = !out.midStream && (out.status === 400 || out.status === 422) && /system/i.test(err.message) &&
+      hasLateSystem(opts.messages);
     err.body = req.body;
     throw err;
   }

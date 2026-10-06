@@ -131,6 +131,17 @@ turn that failed and changed nothing offers **Try again**. If the server on the
 phone stops answering, a note says so and your work keeps trying to save until
 it lands — keep the page open.
 
+## The note at the end
+
+Under their instructions, in The house, **The note at the end** takes anything you
+like — a reminder, a rule, a mood — and sends it after your message on every turn,
+so it is the last thing the one you talk to reads before answering: SillyTavern's
+post-history instructions, Cozy Tavern's note at the end. `{{user}}` and `{{char}}`
+read as the two names. **Send the note at the end** keeps the words and stops
+sending them; **Sent after your message as** chooses a system message (the
+default) or a user message at the end of yours. A model that takes no system
+message after yours is remembered, and sent it at the end of yours instead.
+
 ## Searching the internet
 
 Under the cog, **Search the internet** is off until you turn it on. Off, nothing is

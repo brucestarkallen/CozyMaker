@@ -122,6 +122,20 @@ export function openingFor(p, body) {
   return bits.join('\n\n');
 }
 
+/* THE NOTE AT THE END (v1.8.0; Cozy Tavern's, and SillyTavern's post-history
+ * instructions). His own words, anything at all, sent after his message on every
+ * turn to the one he talks to — read last, nearest the answer. Never wrapped,
+ * never added to: his {{user}} and {{char}} read as the names, as in the frame.
+ * Sent as a system message unless he chooses a user message; held back while
+ * "Send the note at the end" is off, and never sent empty. */
+export function noteAtTheEnd(house, p) {
+  const h = house || {};
+  const s = h.settings || {};
+  const text = String(h.postNote || '').trim();
+  if (!text || s.sendNote === 'off') return null;
+  return { role: s.noteRole === 'user' ? 'user' : 'system', content: voiceMacros(text, p) };
+}
+
 /* How the app refers to the writer in its own sentences. */
 export function addressWriter(p) {
   return p.you || 'the author';
