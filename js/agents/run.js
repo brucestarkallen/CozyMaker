@@ -774,7 +774,9 @@ export async function runTurn({
     const fresh = (res.edits || []).map((e) => { const own = { ...e }; delete own.house; return own; }).filter((e) => !landed.has(editKey(e)));
     const applied = commit(working, fresh, label, worker);
     working = applied.project;
-    fresh.forEach((e, i) => { if (applied.cards[i] && applied.cards[i].status === 'applied') landed.add(editKey(e)); });
+    /* each change by its own outcome: applied, or nothing to do because the
+     * document already reads exactly that — either way it is done */
+    fresh.forEach((e, i) => { const c = applied.perEdit ? applied.perEdit[i] : applied.cards[i]; if (c === null || (c && c.status === 'applied')) landed.add(editKey(e)); });
     if (fresh.length) turnEdits.push({ label, edits: fresh, maker: worker });
     if (applied.batch) batches.push(applied.batch);
     /* a re-quote's own words add nothing: it is the same work, placed again */
@@ -1177,7 +1179,7 @@ export function commit(project, edits, label, maker = null) {
   }
   const touched = run.cards.filter((c) => c.status === 'applied').map((c) => c.name);
   next.recentSections = recentFrom(next, touched, project.recentSections || []);
-  return { project: next, cards: run.cards, batch, guard };
+  return { project: next, cards: run.cards, batch, guard, perEdit: run.perEdit };
 }
 
 function recentFrom(project, touchedNames, prior) {

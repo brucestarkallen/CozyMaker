@@ -206,7 +206,16 @@ export function lint(text, { kind = 'pe', deliverable = true, keep = null } = {}
      * come out whoever put them there; everything else below is kept if it was his */
     const tags = src.match(ALERT_TAG);
     if (tags && tags.length) {
-      src = src.replace(ALERT_TAG, '').replace(/[ \t]{2,}/g, ' ').replace(/[ \t]+$/gm, '');
+      /* ONLY THE LINES THAT HELD ONE ARE TIDIED. The spacing of the whole document
+       * used to be collapsed whenever one marker came out, and the craft's own
+       * indented lines ("  - e007: …" under a finding) lost their nesting; a line
+       * keeps its own indent, and only the gap the marker left closes up. */
+      src = src.split('\n').map((line) => {
+        if (!line.match(ALERT_TAG)) return line;
+        const lead = /^[ \t]*/.exec(line)[0];
+        const body = line.slice(lead.length).replace(ALERT_TAG, '').replace(/[ \t]{2,}/g, ' ').replace(/[ \t]+$/, '');
+        return body ? lead + body : '';
+      }).join('\n');
       found.push(finding('working notes in the document',
         `took out ${tags.length} of the maker's own markers that had ended up inside the text`,
         { repaired: true, count: tags.length }));
@@ -551,7 +560,11 @@ export function readEvents(src) {
     if (seen.has(id)) { if (!duplicates.includes(id)) duplicates.push(id); } else seen.set(id, true);
     const stamp = FULL_STAMP.exec(line);
     if (!stamp) undated.push(id);
-    if (!TAG_BRACKET.test(line.slice(0, (line.indexOf(']:') + 2) || line.length))) untagged.push(id);
+    /* its tags sit before the colon that opens its words; with no colon, the
+     * whole line is looked at (the old reading looked at its first letter alone,
+     * and sent the chronicler to tag events that were tagged) */
+    const opens = line.indexOf(']:');
+    if (!TAG_BRACKET.test(opens === -1 ? line : line.slice(0, opens + 2))) untagged.push(id);
     /* its words: the line and the ones under it, to a blank line, a heading or
      * the next event; the lines it quotes and its bond moves are not counted */
     let words = line.replace(/^\s*e\d+[^:]*:/, '').trim().split(/\s+/).filter(Boolean).length;

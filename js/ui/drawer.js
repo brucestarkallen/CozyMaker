@@ -176,7 +176,7 @@ function openWorldParts(world) {
   const bring = el('button', 'btn quiet small', 'Import');
   bring.addEventListener('click', () => { closeDrawer(); bringIn(); });
   acts.append(bring);
-  const pe = world.docs.find((d) => d.kind === 'pe' && (d.text || '').trim());
+  const pe = world.docs.find((d) => (d.kind || 'pe') === 'pe' && (d.text || '').trim());
   if (pe) {
     const tidy = el('button', 'btn quiet small', 'Tidy it up');
     tidy.addEventListener('click', () => { closeDrawer(); ask(`Tidy up ${pe.name}.`, 'showrunner'); });
@@ -188,7 +188,8 @@ function openWorldParts(world) {
 }
 
 function kindWord(kind) {
-  return { pe: 'plot essential', continuity: 'continuation file', worldbook: 'worldbook', notes: 'notes' }[kind || 'pe'] || 'document';
+  /* the same names The documents give them: a transplant and an instruction set were called just "document" here */
+  return { pe: 'plot essential', continuity: 'continuation file', worldbook: 'worldbook', transplant: 'Summaryception transplant', instructions: 'AI instructions', notes: 'notes' }[kind || 'pe'] || 'document';
 }
 
 /* A small "⋯" that opens the row's own actions in place — named, never hidden

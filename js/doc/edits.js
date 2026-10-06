@@ -629,8 +629,12 @@ export function applyRun(docs, edits, { label = 'a change', putEntries = null } 
   const created = [];
   const cleared = [];
   const deleted = [];
+  /* where each change's card begins: a change that leaves a document exactly as
+   * it was writes no card, so the cards alone cannot say which change was which */
+  const marks = [];
 
   for (const e of edits) {
+    marks.push(cards.length);
     /* WORLDBOOK ENTRIES, AS PLAIN DATA (doc/entries.js): put in by name into
      * the worldbook the change names. With no worldbook in the world at all,
      * they start one by that name — the only thing an entry for a worldbook
@@ -770,7 +774,13 @@ export function applyRun(docs, edits, { label = 'a change', putEntries = null } 
     ? { id: 'u' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), at: Date.now(), label, items, undone: false }
     : null;
 
-  return { texts, cards, batch, created, cleared, deleted };
+  /* ONE OUTCOME PER CHANGE, in the order they came: its card, or null when it
+   * left the document exactly as it already was. The turn read the cards by
+   * position, so one change that wrote no card shifted every card after it onto
+   * the wrong change — a change that landed was then taken for one that had not,
+   * and repeated in a re-quote, came back as a false "not done". */
+  const perEdit = marks.map((from, i) => ((i + 1 < marks.length ? marks[i + 1] : cards.length) > from ? cards[from] : null));
+  return { texts, cards, batch, created, cleared, deleted, perEdit };
 }
 
 /* Put it back — unless something newer is there, in which case say so and do

@@ -1212,13 +1212,31 @@ what each held, what is left. Found and fixed so far, each held by a law that fa
   writing over the first; and every save rewrote and flushed every document's copy to the phone's storage. Each gets
   its own file now, and only a changed one is written.
 
+### The line-by-line audit, part 2 (v1.6.2)
+
+Each held by a law that fails on v1.6.1 (five of them):
+
+- **A change that landed came back as "not done"** (`run.js`, the crew loop). The turn matched the crew's cards to its
+  changes by position; a change that leaves a document exactly as it was (a whole file sent back unchanged) writes no
+  card, so every card after it was read as the next change's. A change that had landed looked like one that had
+  not, and repeated in a re-quote it was refused as "not in the document" and shown to him. `applyRun` now gives
+  one outcome per change, in order (`perEdit`).
+- **One marker taken out flattened the whole document** (`lint.js`). Its tidy-up collapsed every run of spaces in
+  the document, so the craft's own indented lines ("  - e007: …") lost their nesting. Only the line that held the
+  marker is tidied, and it keeps its own indent.
+- **A tagged event was sent to be tagged, every turn** (`lint.js readEvents`). With no colon after its tags, the
+  check read the event's first letter alone (the fallback never ran: `-1 + 2` is never false).
+- **Reasoning that is not text** (`providers.js readChunk`) went into the thinking as "[object Object]".
+- **The shelf** (`drawer.js`) called a transplant and an instruction set "document", and a plot essential saved
+  before kinds existed got no Tidy it up.
+
 ## Testing
 
 ```
 bash tests/all.sh           every suite, exit code intact
 ```
 
-    node tests/units.mjs         945 checks — the real modules on a real document, and what the persona hears
+    node tests/units.mjs         954 checks — the real modules on a real document, and what the persona hears
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       53 checks — the real serve.py, real files on disk, streams timed
@@ -1241,7 +1259,7 @@ bash tests/all.sh           every suite, exit code intact
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-1,409 checks. Every suite must be green before a push. `tests/fixtures/` holds answers recorded from the
+1,418 checks. Every suite must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

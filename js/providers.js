@@ -453,7 +453,9 @@ export function readChunk(house, obj) {
   const choice = (obj.choices && obj.choices[0]) || {};
   const d = choice.delta || {};
   const text = typeof d.content === 'string' ? d.content : '';
-  const thinking = d.reasoning_content || d.reasoning || '';
+  /* words only, as readAnswer takes them: a house that sends its reasoning as an
+   * object would have put "[object Object]" into the thinking */
+  const thinking = [d.reasoning_content, d.reasoning].find((v) => typeof v === 'string' && v) || '';
   const cut = choice.finish_reason === 'length';
   if (!text && !thinking && !cut) return null;
   return cut ? { text, thinking, cut } : { text, thinking };

@@ -3197,6 +3197,61 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
   } catch (e) { ok('the audit turns ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
 }
 
+/* ============================ the line-by-line audit, part 2 (v1.6.2) */
+{
+  const { applyRun } = await import('../js/doc/edits.js');
+  const { lint, readEvents } = await import('../js/doc/lint.js');
+  const { readChunk } = await import('../js/providers.js');
+  /* one outcome per change, in order: a change that leaves the document as it was writes no card */
+  const docs = [{ name: 'A.md', kind: 'pe', text: '# T\n\n## X\nold line\n' }];
+  const run1 = applyRun(docs, [{ file: 'A.md', whole: true, replace: '# T\n\n## X\nold line\n' }, { file: 'A.md', find: 'old line', replace: 'new line' }, { file: 'A.md', find: 'missing', replace: 'x' }]);
+  eq('each change has its own outcome, in order', [run1.perEdit.length, run1.perEdit[0], run1.perEdit[1] && run1.perEdit[1].status, run1.perEdit[2] && run1.perEdit[2].status], [3, null, 'applied', 'refused']);
+  /* a marker taken out tidies only its own line; the craft's own indented lines keep their nesting */
+  const tagged = '## GENERALIST NOTES\n- Checked the ages [STALE_WORLD_STATE]  now fine\n  - e007: still valid\n    - kept as it was\n';
+  const out = lint(tagged, { kind: 'pe' }).text;
+  ok('a marker taken out leaves every other line\'s spacing as it was', out.includes('\n  - e007: still valid\n    - kept as it was') && out.includes('- Checked the ages now fine'), JSON.stringify(out));
+  /* an event tagged but written with no colon after its tags is tagged */
+  eq('an event with tags and no colon is not sent to be tagged', readEvents('## TIMELINE\ne001 [Mon 14 Apr 247, 09:00] [setup] The showcase opened.\n').untagged, []);
+  eq('one with no tags still is', readEvents('## TIMELINE\ne001 [Mon 14 Apr 247, 09:00] The showcase opened.\n').untagged, ['e001']);
+  eq('and the usual shape reads as before', readEvents('## TIMELINE\ne001 [Mon 14 Apr 247, 09:00] [setup]: The showcase opened.\n').untagged, []);
+  /* a streamed thought that is not words is not taken for words */
+  eq('a reasoning field that is not text is not read as thinking', readChunk('openai', { choices: [{ delta: { reasoning: { text: 'x' } } }] }), null);
+  eq('a reasoning field that is text still is', readChunk('openai', { choices: [{ delta: { reasoning: 'weighing it' } }] }), { text: '', thinking: 'weighing it' });
+
+  /* through the real turn: a change that landed and is repeated in a re-quote is not
+   * sent again, so it never comes back as a false \u201cnot done\u201d */
+  const { runTurn } = await import('../js/agents/run.js');
+  const realFetch = globalThis.fetch;
+  const house = { connections: [{ id: 'c1', url: 'https://relay.example/v1', model: 'm', key: 'k' }], agentConnections: {}, settings: { yourName: 'Bruce' }, personaFrame: '' };
+  const PE = '# PLOT ESSENTIAL \u2014 Tide \u2014 V1.0\n\n## WORLD\n### Rules\n- The tide decides who rules.\n- Salt is money.\n';
+  let asked = 0;
+  globalThis.fetch = async (url, init) => {
+    const req = JSON.parse(init.body);
+    if (forFront(req)) return wholeAnswer({ choices: [{ message: { content: 'Done.' }, finish_reason: 'stop' }] });
+    const user = (req.body.messages.find((m) => m.role === 'user') || {}).content || '';
+    asked++;
+    const block = (list) => `Changed it.\n<edits>${JSON.stringify(list)}</edits>`;
+    if (/could not be placed, or changed nothing/.test(user)) {
+      return wholeAnswer({ choices: [{ message: { content: block([
+        { file: 'Plot Essential.md', find: '- Salt is money.', replace: '- Salt is money, and water is law.' },
+        { file: 'Plot Essential.md', find: '- The tide decides who rules.', replace: '- The moon decides who rules.' },
+      ]) }, finish_reason: 'stop' }] });
+    }
+    /* the whole document sent back exactly as it stands (it writes no card), then two changes */
+    return wholeAnswer({ choices: [{ message: { content: `Changed it.\n<file name="Plot Essential.md">\n${PE}\n</file>\n<edits>${JSON.stringify([
+      { file: 'Plot Essential.md', find: '- Salt is money.', replace: '- Salt is money, and water is law.' },
+      { file: 'Plot Essential.md', find: '- The tied decides who rules.', replace: '- The moon decides who rules.' },
+    ])}</edits>` }, finish_reason: 'stop' }] });
+  };
+  try {
+    const r = await runTurn({ house, project: { id: 'pl', docs: [{ id: 'd1', name: 'Plot Essential.md', kind: 'pe', text: PE }], chats: [], recentSections: [] }, message: '*edit the rules', forceWorker: 'editor' });
+    const text = r.project.docs[0].text;
+    ok('both changes are in the document', text.includes('- Salt is money, and water is law.') && text.includes('- The moon decides who rules.'), text);
+    const notDone = (r.cards || []).filter((c) => c.status === 'refused');
+    eq('and nothing that landed comes back as not done', notDone.map((c) => c.why), []);
+  } catch (e) { ok('the re-quote turn ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
+}
+
 /* ============================ SMOOTH STREAMING: the pace (js/ui/pace.js, v1.6.0) */
 {
   const { revealCount, takeChars, PACE_MS } = await import('../js/ui/pace.js');
