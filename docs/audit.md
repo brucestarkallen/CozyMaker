@@ -36,4 +36,6 @@ was read; a finding is **fixed** only with a law in the suites that fails on the
 | js/doc/branch.js | 48 | done | clean |
 | js/engine/crafts.js | 46 | done | clean |
 | index.html, sw.js, manifest, cozymaker.sh, install.sh | | done | clean |
-| css/cozy.css | 455 | **reading** | |
+| css/cozy.css | 455 | done | **fixed** (v1.6.3) — in the tavern-at-night coat the reply carries a shadow so it reads over the drawn scene (measured 17.0:1); the thinking did not, and since v1.6.0 it streams open at the bottom of the screen over the scene's brightest part — it carries the same shadow now (its own contrast is not separately measured) |
+
+**Every file is read whole.** Fixed across the audit: 4 in v1.6.1, 6 in v1.6.2, 4 in v1.6.3 — each held by a law that fails on the version before it, but the tavern coat's thinking shadow, which has no measurement of its own.
