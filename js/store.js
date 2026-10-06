@@ -379,8 +379,32 @@ export async function exportEverything() {
   const h = house || {};
   return {
     format: BACKUP_FORMAT, v: 1, at: Date.now(), worlds,
-    house: { settings: h.settings || {}, personaFrame: h.personaFrame || '', instructionsCraft: h.instructionsCraft || '' },
+    house: { settings: h.settings || {}, personaFrame: h.personaFrame || '', instructionsCraft: h.instructionsCraft || '', crafts: h.crafts || {} },
   };
+}
+
+/* HOW HE SET THE HOUSE UP COMES BACK TOO — where this house has nothing of its
+ * own. The file has always carried his instructions for the one he talks to,
+ * their names and his settings, and bringing it back never read them: on a new
+ * phone the worlds returned and the persona did not. His own versions of the
+ * keepers' crafts were not in the file at all. Bringing back still only ever
+ * adds — a value this house already has is never replaced. Pure: the house in,
+ * the house out, and what was filled. */
+export function fillHouse(current, saved) {
+  const h = { ...(current || {}), settings: { ...((current && current.settings) || {}) }, crafts: { ...((current && current.crafts) || {}) } };
+  const filled = [];
+  const s = (saved && typeof saved === 'object') ? saved : {};
+  const blank = (v) => v === undefined || v === null || (typeof v === 'string' && !v.trim());
+  if (blank(h.personaFrame) && !blank(s.personaFrame)) { h.personaFrame = s.personaFrame; filled.push('their instructions'); }
+  for (const [k, v] of Object.entries(s.settings || {})) {
+    if (blank(h.settings[k]) && !blank(v)) { h.settings[k] = v; if (k === 'makerName' || k === 'yourName') { if (!filled.includes('the names')) filled.push('the names'); } }
+  }
+  for (const [w, text] of Object.entries(s.crafts || {})) {
+    if (blank(h.crafts[w]) && !blank(text)) { h.crafts[w] = text; if (!filled.includes('your own crafts')) filled.push('your own crafts'); }
+  }
+  if (blank(h.instructionsCraft) && !blank(s.instructionsCraft) && blank(h.crafts.instructions)) { h.instructionsCraft = s.instructionsCraft; if (!filled.includes('your own crafts')) filled.push('your own crafts'); }
+  if (!Object.keys(h.crafts).length) delete h.crafts;
+  return { house: h, filled };
 }
 
 export function readBackup(text) {
@@ -407,7 +431,12 @@ export async function restoreEverything(backup) {
     await api('/api/project/' + id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...w, id, title }) });
     added++;
   }
-  return { added };
+  let filled = [];
+  if (house && backup.house) {
+    const r = fillHouse(house, backup.house);
+    if (r.filled.length) { filled = r.filled; Object.assign(house, r.house); if (!r.house.crafts) delete house.crafts; await saveHouse(house); }
+  }
+  return { added, filled };
 }
 
 export function newChatWith(title, turns) {

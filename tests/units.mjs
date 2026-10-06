@@ -3252,6 +3252,39 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
   } catch (e) { ok('the re-quote turn ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
 }
 
+/* ============================ the audit, part 3: a backup brings the house setup back (v1.6.3) */
+{
+  const store = await import('../js/store.js');
+  const { fillHouse } = store;
+  const saved = { personaFrame: 'You are Eni.', settings: { makerName: 'Eni', yourName: 'Bruce', theme: 'tavern', smoothStreaming: 'off' }, crafts: { worldbook: 'my own keeper' } };
+  let r = fillHouse({ settings: { theme: 'hearth', makerName: '', yourName: '' }, personaFrame: '' }, saved);
+  eq('on an empty house: the instructions, the names and his own crafts come back', [r.house.personaFrame, r.house.settings.makerName, r.house.settings.yourName, r.house.crafts.worldbook, r.house.settings.smoothStreaming], ['You are Eni.', 'Eni', 'Bruce', 'my own keeper', 'off']);
+  eq('a setting this house already has is never replaced', r.house.settings.theme, 'hearth');
+  r = fillHouse({ settings: { makerName: 'Iron Man', yourName: '' }, personaFrame: 'You are Iron Man.', crafts: { worldbook: 'mine here' } }, saved);
+  eq('nothing he has here is replaced, only what is empty is filled', [r.house.personaFrame, r.house.settings.makerName, r.house.settings.yourName, r.house.crafts.worldbook, r.filled], ['You are Iron Man.', 'Iron Man', 'Bruce', 'mine here', ['the names']]);
+  /* through the real store: the file carries the crafts, and bringing it back fills the house on the device */
+  const realFetch = globalThis.fetch;
+  let houseOnDevice = { settings: { theme: 'hearth', makerName: '', yourName: '' }, connections: [], agentConnections: {}, personaFrame: '', crafts: { auditor: 'my auditor' } };
+  const puts = [];
+  globalThis.fetch = async (url, init = {}) => {
+    const u = String(url);
+    const json = (v) => new Response(JSON.stringify(v), { status: 200 });
+    if (u === '/api/house' && (init.method || 'GET') === 'GET') return json(houseOnDevice);
+    if (u === '/api/house' && init.method === 'PUT') { houseOnDevice = JSON.parse(init.body); puts.push('house'); return json({ ok: true }); }
+    if (u === '/api/projects') return json({ projects: [] });
+    if (u.startsWith('/api/project/') && init.method === 'PUT') { puts.push('world'); return json({ ok: true }); }
+    return json({});
+  };
+  try {
+    await store.loadHouse();
+    const file = await store.exportEverything();
+    eq('the file carries his own crafts', file.house.crafts, { auditor: 'my auditor' });
+    const back = await store.restoreEverything({ worlds: [{ title: 'Tide', docs: [], chats: [] }], house: saved });
+    eq('bringing it back fills the house on the device, and says what it filled', [houseOnDevice.personaFrame, houseOnDevice.settings.yourName, houseOnDevice.crafts.worldbook, houseOnDevice.crafts.auditor, back.filled.length > 0, puts.includes('house')],
+      ['You are Eni.', 'Bruce', 'my own keeper', 'my auditor', true, true]);
+  } catch (e) { ok('the backup turns ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
+}
+
 /* ============================ SMOOTH STREAMING: the pace (js/ui/pace.js, v1.6.0) */
 {
   const { revealCount, takeChars, PACE_MS } = await import('../js/ui/pace.js');

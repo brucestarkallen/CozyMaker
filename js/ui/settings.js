@@ -473,7 +473,7 @@ function underTheFloorSection() {
   g.append(details);
 
   /* everything in one file, and back again by adding only */
-  const keep = group('Everything, in one file', 'Every world with its documents and conversations. Not your connections or keys \u2014 those stay on this device. Bringing a file back only ever adds: nothing here is replaced.');
+  const keep = group('Everything, in one file', 'Every world with its documents and conversations, and how you set the house up \u2014 their instructions, the names, your settings and your own crafts. Not your connections or keys \u2014 those stay on this device. Bringing a file back only ever adds: worlds come back beside yours, and a setting comes back only where this house has none.');
   const krow = el('div', 'btnrow');
   const out = el('button', 'btn quiet', 'Save everything to a file');
   out.addEventListener('click', async () => {
@@ -495,8 +495,10 @@ function underTheFloorSection() {
     const r = store.readBackup(await f.text());
     if (!r.ok) return toast(r.why);
     try {
-      const { added } = await store.restoreEverything(r.backup);
-      toast(`${added} world${added === 1 ? '' : 's'} brought back, beside the ones already here.`);
+      const { added, filled } = await store.restoreEverything(r.backup);
+      toast(`${added} world${added === 1 ? '' : 's'} brought back, beside the ones already here` +
+        (filled && filled.length ? ` \u2014 and ${filled.join(', ')}, which this house did not have yet.` : '.'));
+      draw();
       redraw();
     } catch (e) { toast('That could not be brought back: ' + ((e && e.message) || e)); }
   });

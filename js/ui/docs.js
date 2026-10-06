@@ -241,7 +241,7 @@ async function newDoc() {
 
 function suggestName(p) {
   const docs = p.docs || [];
-  if (!docs.some((d) => d.kind === 'pe')) return 'Plot Essential.md';
+  if (!docs.some((d) => (d.kind || 'pe') === 'pe')) return 'Plot Essential.md';
   const n = docs.filter((d) => d.kind === 'continuity').length + 1;
   return `Continuity File ${n}.md`;
 }
@@ -524,15 +524,17 @@ function openOne(id) {
   };
   refreshMeta();
 
-  let redrawTimer = null;
   area.addEventListener('input', () => {
     typed = true;
     refreshMeta();
     /* Straight into the store, every keystroke. The store holds the only
-     * debounce, so the save on the way out always has the latest words. */
+     * debounce, so the save on the way out always has the latest words.
+     * THE ROOM IS NOT REBUILT WHILE HE TYPES. Every pause rebuilt the whole
+     * conversation behind this sheet — which covers it completely — and with a
+     * long conversation that froze the typing (measured: 438 ms at a phone's
+     * speed). Leaving the document redraws the room, as it always has
+     * (tidyOnLeaving), and the line at the top follows every keystroke on its own. */
     store.writeDoc(id, area.value);
-    clearTimeout(redrawTimer);
-    redrawTimer = setTimeout(redraw, 400);
   });
 
   wrap.append(area, meta);

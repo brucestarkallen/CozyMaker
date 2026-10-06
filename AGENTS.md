@@ -1230,18 +1230,31 @@ Each held by a law that fails on v1.6.1 (five of them):
 - **The shelf** (`drawer.js`) called a transplant and an instruction set "document", and a plot essential saved
   before kinds existed got no Tidy it up.
 
+### The line-by-line audit, part 3 (v1.6.3)
+
+- **A backup brought the worlds back and not the persona** (`store.js`). The file always carried the house setup —
+  his instructions for the one he talks to, the names, his settings — and bringing it back never read it; his own
+  versions of the keepers' crafts were not in the file at all. On a new phone, the worlds returned and the persona
+  did not. `fillHouse` brings the setup back where this house has none (never replacing what is set here), and the
+  file carries the crafts. Units hold both sides, and the real store round trip.
+- **Typing in a document rebuilt the whole conversation behind it** (`docs.js`). Every pause redrew the room under a
+  sheet that covers it completely. Measured at a phone's speed with eighty turns behind the sheet, fifty characters
+  typed: 5 long tasks, 729 ms, the worst 438 ms → 1, 145 ms. Leaving the document redraws the room, as it always did;
+  the walk holds both.
+- The name offered for a new document missed a plot essential saved before kinds existed.
+
 ## Testing
 
 ```
 bash tests/all.sh           every suite, exit code intact
 ```
 
-    node tests/units.mjs         954 checks — the real modules on a real document, and what the persona hears
+    node tests/units.mjs         959 checks — the real modules on a real document, and what the persona hears
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       53 checks — the real serve.py, real files on disk, streams timed
     python3 tests/browser.py      79 checks — real Chromium at 390x844, end to end
-    python3 tests/walk_worlds.py 225 checks — the drawer, conversations, swipes and versions, edit and
+    python3 tests/walk_worlds.py 227 checks — the drawer, conversations, swipes and versions, edit and
                                               send again, delete, branch, go on, re-quoting, crafts,
                                               the thinking box live, backup and restore, a model too
                                               small for the world, a real server killed mid-edit,
@@ -1259,7 +1272,7 @@ bash tests/all.sh           every suite, exit code intact
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-1,418 checks. Every suite must be green before a push. `tests/fixtures/` holds answers recorded from the
+1,425 checks. Every suite must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

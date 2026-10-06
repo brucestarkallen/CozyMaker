@@ -20,19 +20,20 @@ was read; a finding is **fixed** only with a law in the suites that fails on the
 | js/ui/app.js | 480–760 | done | clean — edit, send again from here, delete, branch, go on |
 | js/doc/lint.js | 617 | done | **fixed** — taking out one of the craft's markers collapsed the spacing of the WHOLE document, flattening the craft's own indented lines ("  - e007: …"); **fixed** — an event written with its tags but no colon after them was read by its first letter alone and sent to the chronicler to be tagged, every turn |
 | js/ui/docs.js | 1–130, 330–480 | done | clean — leaving a document, the hand-edit put-back, Import, a story card |
-| js/ui/docs.js | 130–330, 480–676 | **not yet** | |
+| js/ui/docs.js | 130–330, 480–676 | done | **fixed** (v1.6.3) — every pause in his typing rebuilt the whole conversation behind the documents sheet, which covers it completely (measured at a phone's speed with 80 turns behind it: 5 long tasks, 729 ms, the worst 438 ms → 1, 145 ms); **fixed** — the name offered for a new document missed a plot essential saved before kinds existed |
 | js/providers.js | 460 | done | **fixed** — a streamed reasoning field that is not text was added to the thinking as "[object Object]" (the whole answer already took words only) |
-| js/ui/settings.js | 508 | **not yet** (the look read) | |
+| js/ui/settings.js | 508 | done | **fixed** (v1.6.3) — bringing a backup back never read the house setup the file carries (his instructions for the one he talks to, the names, his settings), and his own crafts were not in the file at all: on a new phone the worlds came back and the persona did not. Now they come back where this house has none; nothing set here is replaced |
 | js/agents/router.js | 368 | done | clean |
 | js/doc/index.js | 339 | done | clean |
 | js/ui/drawer.js | 245 | done | **fixed** — a transplant and an instruction set were called just "document" on the shelf, where The documents name them; a plot essential saved before kinds existed got no Tidy it up |
-| js/doc/transplant.js | 165 | **not yet** | |
-| js/engine/slices.js | 148 | **not yet** | |
-| js/doc/worldbook.js | 130 | **not yet** | |
-| js/agents/persona.js | 128 | **not yet** | |
-| js/agents/shortcuts.js | 112 | **not yet** | |
-| js/doc/entries.js | 100 | **not yet** | |
-| js/doc/kind.js | 51 | **not yet** | |
-| js/doc/branch.js | 48 | **not yet** | |
-| js/engine/crafts.js | 46 | **not yet** | |
-| index.html, css/cozy.css, sw.js, manifest, cozymaker.sh, install.sh | | **not yet** | |
+| js/doc/transplant.js | 165 | done | clean — the extension's own reader, held to its fixtures |
+| js/engine/slices.js | 148 | done | clean |
+| js/doc/worldbook.js | 130 | done | clean — the extension's mapping, carried over |
+| js/agents/persona.js | 128 | done | clean |
+| js/agents/shortcuts.js | 112 | done | clean |
+| js/doc/entries.js | 100 | done | clean |
+| js/doc/kind.js | 51 | done | clean |
+| js/doc/branch.js | 48 | done | clean |
+| js/engine/crafts.js | 46 | done | clean |
+| index.html, sw.js, manifest, cozymaker.sh, install.sh | | done | clean |
+| css/cozy.css | 455 | **reading** | |
