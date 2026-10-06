@@ -32,6 +32,7 @@ import { parseEdits, stripEdits, stripThinking, ownWords, applyRun, hash, openFi
 import { lint, lostSomething } from '../doc/lint.js';
 import { kindFor } from '../doc/kind.js';
 import { putEntries } from '../doc/entries.js';
+import { searchOn, searcherFor, readSearch, stripSearch, lookUp, findingsText, SEARCH_CONTRACT } from './search.js';
 
 export const MAX_NEED_ROUNDS = 2;
 /* one repair job per worker the checks name (chronicler, editor, compressor, the
@@ -131,7 +132,8 @@ export function naturalize(text) {
   return String(text || '')
     /* the engine's command words, said as plain words */
     .replace(/(^|[\s(])[*#](source_new|hybrid_new|new|card|import|q|p|summari[sz]e|continuity|edit|retcon|delete|cleanup|optimi[sz]e|skip|ooc|show_full_file|show_spoilers|hide_spoilers|regress|next|audit|fix|brief)\b/gi, '$1$2')
-    .replace(/<\/?(?:edits|docedits|need|ask)>?/gi, '')
+    .replace(/<search>[\s\S]*?<\/search>/gi, '')
+    .replace(/<\/?(?:edits|docedits|need|ask|search)>?/gi, '')
     .replace(/<file\b[^>]*>|<\/file\s*>/gi, '')
     .replace(/\bM-[A-Z]{3,}\b/g, '')
     .replace(/\[[A-Z][A-Z0-9_]{4,}\]/g, '')
@@ -377,10 +379,14 @@ export function joinSeam(a, b) {
   return head + tail;
 }
 
-async function runWorker({ worker, sections, conn, project, message, talk, fromHouse = false, onStatus, onProgress, signal, stale, craft = null, note = '' }) {
+async function runWorker({ worker, sections, conn, project, message, talk, fromHouse = false, onStatus, onProgress, signal, stale, craft = null, note = '', searcher = null }) {
   /* a worker with a craft of its own reads that; the rest read their slice */
   const own = craft || sliceFor(sections, worker).text;
-  const system = [CRAFT_FRAME, own, RETURN_CONTRACT, worker === 'worldbook' ? WORLDBOOK_FORM : ''].filter(Boolean).join('\n\n---\n\n');
+  /* searching the internet is his switch: off, the worker reads exactly what it always did */
+  const system = [CRAFT_FRAME, own, RETURN_CONTRACT, searcher ? SEARCH_CONTRACT : '', worker === 'worldbook' ? WORLDBOOK_FORM : ''].filter(Boolean).join('\n\n---\n\n');
+  /* what it had looked up on the internet, kept for every later round */
+  const found = [];
+  let searched = false;
   let asked = [];
   let answer = null;
   let nudged = false;
@@ -402,6 +408,7 @@ async function runWorker({ worker, sections, conn, project, message, talk, fromH
       context,
       /* what the house knows about where this job's work goes (the keeper's worldbook, by name) */
       note ? `\n${note}` : '',
+      found.length ? `\n${findingsText(found)}` : '',
       /* Whose job this is, said plainly: the author's own words, or the house
        * asking for a read-back or a repair. A house job presented as his
        * request is a note put in his mouth. */
@@ -446,6 +453,19 @@ async function runWorker({ worker, sections, conn, project, message, talk, fromH
       if (grew.length) { asked = asked.concat(grew); onStatus && onStatus(`reading ${need.slice(0, 3).join(', ')}`); continue; }
     }
 
+    /* IT ASKED FOR SOMETHING TO BE LOOKED UP ON THE INTERNET (only while searching is
+     * on): the searcher looks, and the same worker is asked again with what came
+     * back in front of it. Once per job, and it never costs a round of reading. */
+    const wants = searcher && !searched ? readSearch(out.text) : [];
+    if (wants.length) {
+      searched = true;
+      found.push(...await lookUp(searcher, wants, { signal, stale, onStatus }));
+      if ((stale && stale()) || (signal && signal.aborted)) return { ok: false, error: 'stopped' };
+      onStatus && onStatus(`the ${worker} is on it, with what was found`);
+      round--;
+      continue;
+    }
+
     /* A BLOCK THAT LANDED IN THE THINKING IS STILL A BLOCK (Cozy Chat
      * v5.13.1). A model that reasons on its own channel sometimes writes its
      * changes there; ignoring them would report "nothing changed" when the
@@ -460,7 +480,7 @@ async function runWorker({ worker, sections, conn, project, message, talk, fromH
      * everything after it went, his question in <ask> with it, and the job
      * waited on an answer he was never asked for. */
     const fromAsk = readAsk(stripThinking(stripEdits(out.text)));
-    let notes = stripThinking(stripNeed(fromAsk.rest));
+    let notes = stripSearch(stripThinking(stripNeed(fromAsk.rest)));
     let ask = fromAsk.ask;
     if (!ask && !parsed.edits.length && CRAFT_ASKS.test(notes)) { ask = notes; notes = ''; }
 
@@ -560,6 +580,10 @@ export async function runTurn({
     ? pickConnection({ map: house.agentConnections || {}, general: null, connections }, worker) || frontConn
     : pickConnection({ map: house.agentConnections || {}, general, connections }, worker) || frontConn);
   const p = personaOf(house);
+  /* SEARCHING THE INTERNET, when his switch is on and a connection can search */
+  const searcher = searchOn(house) ? searcherFor(house) : null;
+  /* what was looked up for this turn, and how it is put to the one he talks to */
+  let foundText = '';
   /* WHAT THE CREW IS DOING, SAID ONCE, WITH HOW FAR ALONG IT IS BESIDE IT. The
    * label says who is on what; the detail ("1,240 words so far") changes as a
    * streamed answer arrives, and never restarts the clock the label carries. */
@@ -645,6 +669,7 @@ export async function runTurn({
       docBriefs(world, { message, recent: world.recentSections || [], forFront: true }),
       standing ? `\n${standing}` : '',
       said ? `\nWhat got done while you were talking:\n${said}` : '',
+      foundText ? `\n${foundText}` : '',
       waiting.length ? `\n${waitingBrief(waiting, p)}` : '',
       note ? `\n${note}` : '',
       /* his words under his name; with no name set, never "you said:", which
@@ -690,7 +715,7 @@ export async function runTurn({
     }
     const heard = await enqueue(project.id, LISTENER, ({ signal: s, stale }) => listen({
       conn: connFor(LISTENER), frame: CRAFT_FRAME, sections, docs, open, message, p,
-      talk: conversationFor(past, p, LISTEN_TALK), signal: either(signal, s), stale,
+      talk: conversationFor(past, p, LISTEN_TALK), signal: either(signal, s), stale, search: Boolean(searcher),
     }));
     if (stopped()) { if (early) early.drop(); return { project, reply: '', cards: [], batches: [], crew: [], edits: [], asks: [], error: 'stopped', stopped: true }; }
     /* A DIFFERENT STORY, IN A WORLD THAT HAS ONE: nothing is done here. The room starts
@@ -707,10 +732,18 @@ export async function runTurn({
         ...(heard.delete || []).map((f) => ({ house: true, delete_file: f, reason: 'you asked for it to be deleted' })),
       ];
     }
+    /* SOMETHING REAL TO LOOK UP FIRST: what was started was started without it, so it
+     * is let go like a reply the crew was sent for, and everyone who works or
+     * answers this turn has what was found in front of them */
+    const toLook = searcher && heard && heard.ok ? (heard.lookUp || []) : [];
     /* nobody to send and nothing to clear: what was started is what he gets */
     if (early) {
-      earlyKept = !intents.length && !acts.length;
+      earlyKept = !intents.length && !acts.length && !toLook.length;
       if (!earlyKept) letEarlyGo();
+    }
+    if (toLook.length && !stopped()) {
+      foundText = findingsText(await lookUp(searcher, toLook, { signal, onStatus: status }));
+      if (stopped()) return { project, reply: '', cards: [], batches: [], crew: [], edits: [], asks: [], error: 'stopped', stopped: true };
     }
   }
   /* *regress: the house keeps the entry itself, in the registry (router.js houseCommand) */
@@ -766,7 +799,7 @@ export async function runTurn({
          * without the paste's start (reproduced through the real turn) */
         talk: WHOLE_TALK.has(worker) ? buildTalk : talk,
         note: worker === 'worldbook' ? worldbookNote(working, p) : registryNote(working, worker),
-        fromHouse, onStatus: status, onProgress: progress, signal: either(signal, s), stale, craft }));
+        fromHouse, onStatus: status, onProgress: progress, signal: either(signal, s), stale, craft, searcher }));
     if (!res || !res.ok) return failed((res && res.error) || 'did not finish');
     if (res.ask) asks.push({ worker, ask: res.ask, at: Date.now() });
     /* a change already made this turn is not made again: a re-quote that
@@ -859,7 +892,8 @@ export async function runTurn({
   for (const intent of intents) {
     if (stopped()) break;
     status(`the ${intent.worker} is on it`);
-    await send(intent.worker, intent.about || message, `${intent.worker} — ${short(intent.about || message)}`);
+    /* what was looked up for this turn goes with the job (never into its label) */
+    await send(intent.worker, (intent.about || message) + (foundText ? `\n\n${foundText}` : ''), `${intent.worker} — ${short(intent.about || message)}`);
   }
 
   /* THE CHECKS FOLLOW A CHANGE, NEVER A CONVERSATION. They ran on every turn, so

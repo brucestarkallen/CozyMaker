@@ -71,7 +71,7 @@ export function crewLines() {
   }).join('\n');
 }
 
-export function listenerPrompt({ frame, reading, docs, talk, open = [], message, p = {} }) {
+export function listenerPrompt({ frame, reading, docs, talk, open = [], message, p = {}, search = false }) {
   const him = p.you || 'the author';
   const front = p.maker ? `${p.maker}, who answers him` : 'one voice that answers him';
   const system = [
@@ -83,7 +83,10 @@ export function listenerPrompt({ frame, reading, docs, talk, open = [], message,
     `The crew, and what each of them does:\n${crewLines()}`,
     [
       'Answer with one JSON object and nothing else:',
-      '{"jobs": [{"worker": "editor", "task": "\u2026", "resumes": false}], "clear": [], "delete": [], "new_story": false}',
+      /* searching the internet is his switch: off, not one word of it is here */
+      search
+        ? '{"jobs": [{"worker": "editor", "task": "\u2026", "resumes": false}], "clear": [], "delete": [], "new_story": false, "look_up": []}'
+        : '{"jobs": [{"worker": "editor", "task": "\u2026", "resumes": false}], "clear": [], "delete": [], "new_story": false}',
       '',
       'HE DECIDES WHEN WRITING STARTS. This outranks the craft\'s own reading above. Brainstorming, ideas, what-ifs, a world or characters he is still talking through, a question, an opinion he wants: that is conversation, and it is answered by the one he talks to \u2014 send nobody. Nothing is written into a document until he asks for it to be written: make it, build it, start the plot essential, write it up, put that in, add it, change it, fold it in, update it. A suggestion to put something into a document that already exists IS an ask, however softly he puts it \u2014 \u201cmaybe we should add that\u2026\u201d, \u201cwe should add\u2026\u201d, \u201clet\u2019s add\u2026\u201d, \u201cthat should be in the file\u201d \u2014 and a question he asks with it (how, who, why) is part of the job, for the worker to reason out and write in. Talking through a world that has no plot essential yet stays conversation. When you cannot tell, it is conversation.',
       '',
@@ -95,6 +98,7 @@ export function listenerPrompt({ frame, reading, docs, talk, open = [], message,
       '- A check, an audit or a fix of the documents goes to the one who does it only when he asks for the documents to be checked, audited or fixed. A question about the story is answered in conversation.',
       '- "clear" lists the documents he wants emptied, and "delete" the ones he wants gone \u2014 by their names above, and only when he says so (clear it, empty it, wipe it, delete it, get rid of it). The house does those itself; never send a worker for them.',
       '- "new_story" is true only when he is starting a different story \u2014 another world from the one whose plot essential is here, to talk through or to build. The house starts it in a world of its own and reads what he said again there, so send nobody for it. A change, a rebuild or a new part of THIS world is not a new story.',
+      ...(search ? ['- "look_up" lists what must be looked up on the internet before anyone answers or writes \u2014 only when what he said turns on something real that the documents do not already hold and that would be wrong to guess: a canon detail of an existing story, a real person, place, date or fact. Each item is one plain search of a few words; at most three. Empty when nothing needs looking up \u2014 what his own world invents is never looked up.'] : []),
     ].join('\n'),
   ].filter(Boolean).join('\n\n---\n\n');
 
@@ -141,11 +145,13 @@ export function readJobs(text) {
   }
   if (obj.jobs.length && !jobs.length) return { ok: false, why: 'it named nobody on the crew' };
   const names = (v) => (Array.isArray(v) ? v : typeof v === 'string' && v ? [v] : []).map((x) => String(x || '').trim()).filter(Boolean);
-  return { ok: true, jobs: jobs.slice(0, MAX_JOBS), clear: names(obj.clear), delete: names(obj.delete), ...(obj.new_story === true ? { newStory: true } : {}) };
+  /* what is to be looked up on the internet (only ever asked for while searching is on) */
+  const lookUp = [...new Set(names(obj.look_up).map((q) => q.replace(/\s+/g, ' ').slice(0, 200)))].slice(0, 3);
+  return { ok: true, jobs: jobs.slice(0, MAX_JOBS), clear: names(obj.clear), delete: names(obj.delete), ...(obj.new_story === true ? { newStory: true } : {}), ...(lookUp.length ? { lookUp } : {}) };
 }
 
-export async function listen({ conn, frame, sections, docs, talk, open, message, p, signal, stale }) {
-  const { system, user } = listenerPrompt({ frame, reading: listenerReading(sections), docs, talk, open, message, p });
+export async function listen({ conn, frame, sections, docs, talk, open, message, p, signal, stale, search = false }) {
+  const { system, user } = listenerPrompt({ frame, reading: listenerReading(sections), docs, talk, open, message, p, search });
   /* ROOM FOR THE WHOLE ANSWER. It is told to spell each job out in full — the
    * names, the numbers, his own words — and at 600 tokens a long one was cut
    * mid-object, unreadable, so the turn fell back to the keyword reading. The

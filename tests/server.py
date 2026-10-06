@@ -124,6 +124,21 @@ class FakeProvider(http.server.BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 
+class FakeHermes(http.server.BaseHTTPRequestHandler):
+    """A Hermes Agent's gateway on the phone: it lists its models only for its own key."""
+    def log_message(self, *a):
+        pass
+
+    def do_GET(self):
+        good = self.headers.get("Authorization") == "Bearer hermes-good-key-123456"
+        body = json.dumps({"data": [{"id": "hermes-agent"}]} if good else {"error": "invalid key"}).encode()
+        self.send_response(200 if good and self.path == "/v1/models" else 401)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
 class Threaded(socketserver.ThreadingMixIn, http.server.HTTPServer):
     daemon_threads = True
     allow_reuse_address = True
@@ -141,7 +156,11 @@ def wait_for(port, seconds=15):
 
 def main():
     home = Path(tempfile.mkdtemp(prefix="cozymaker-test-"))
-    env = dict(os.environ, COZYMAKER_HOME=str(home), COZYMAKER_PORT=str(PORT))
+    # a Hermes Agent's home on the phone: its gateway key in its own .env (v1.7.0)
+    hermes_home = home / "hermes-home"
+    hermes_home.mkdir()
+    (hermes_home / ".env").write_text("OPENROUTER_API_KEY=sk-not-this-one\nAPI_SERVER_KEY='hermes-good-key-123456'\n")
+    env = dict(os.environ, COZYMAKER_HOME=str(home), COZYMAKER_PORT=str(PORT), COZY_HERMES_HOME=str(hermes_home))
     server = subprocess.Popen([sys.executable, str(ROOT / "serve.py")], env=env,
                               stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
     provider = Threaded(("127.0.0.1", FAKE_PROVIDER_PORT), FakeProvider)
@@ -152,6 +171,19 @@ def main():
             print("the server never came up")
             print(server.stderr.read().decode()[:2000])
             return 1
+
+        # --- Hermes' key follows Hermes (v1.7.0) --------------------------------
+        hermes = Threaded(("127.0.0.1", 8798), FakeHermes)
+        threading.Thread(target=hermes.serve_forever, daemon=True).start()
+        code, got = call("/api/hermes/key", "POST", {"url": "http://127.0.0.1:8798/v1"})
+        ok("a refused Hermes key: the server finds the one Hermes accepts, in Hermes' own files", got.get("key") == "hermes-good-key-123456", got)
+        code, got = call("/api/hermes/key", "POST", {"url": "http://127.0.0.1:8798/v1/chat/completions"})
+        ok("from the address a connection holds, whatever its ending", got.get("key") == "hermes-good-key-123456", got)
+        code, got = call("/api/hermes/key", "POST", {"url": "https://api.example.com:8642/v1"})
+        ok("and never for an address that is not on this phone", got.get("key") is None, got)
+        hermes.shutdown()
+        code, got = call("/api/hermes/key", "POST", {"url": "http://127.0.0.1:8798/v1"})
+        ok("with Hermes not running, there is no key to hand out", got.get("key") is None, got)
 
         # --- it hands out its own files -------------------------------------
         code, body = call("/index.html", raw=True)

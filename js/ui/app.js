@@ -4,7 +4,7 @@
 import * as store from '../store.js';
 import { runTurn, capUndo, landTurn, commit, versionOf, FRONT_ONLY, GO_ON } from '../agents/run.js';
 import { isNewStory, houseCommand } from '../agents/router.js';
-import { stopWork, onLearn } from '../agents/call.js';
+import { stopWork, onLearn, onKey } from '../agents/call.js';
 import { undoBatch } from '../doc/edits.js';
 import { rollBackTo } from '../doc/branch.js';
 import { DEFAULT_WORLD_TITLE, hasPlotEssential, hasWorldbook } from '../doc/index.js';
@@ -77,6 +77,14 @@ function wire() {
     const c = (h.connections || []).find((x) => x.id === id);
     if (!c) return;
     c.learned = learned;
+    store.saveHouse(h);
+  });
+  /* the key Hermes itself accepts, taken when the old copy was refused */
+  onKey((id, key) => {
+    const h = store.getHouse();
+    const c = (h.connections || []).find((x) => x.id === id);
+    if (!c || c.key === key) return;
+    c.key = key;
     store.saveHouse(h);
   });
   wireSwipe();

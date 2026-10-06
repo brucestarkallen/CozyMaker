@@ -30,10 +30,12 @@ import shutil
 import threading
 import urllib.request
 import urllib.error
+import urllib.parse
+import glob
 import subprocess
 from pathlib import Path
 
-VERSION = "1.6.3"
+VERSION = "1.7.0"
 ROOT = Path(__file__).resolve().parent
 HOME = Path(os.environ.get("COZYMAKER_HOME", Path.home() / ".cozymaker"))
 PROJECTS = HOME / "projects"
@@ -278,6 +280,90 @@ MIME = {
 }
 
 
+# ---------------------------------------------------------------- Hermes' key
+# HERMES' KEY FOLLOWS HERMES (Cozy Chat's sync_hermes_key, v5.28.3). His Hermes
+# Agent keeps its gateway key in its own files on the phone; a connection here
+# holds a copy that goes stale when Hermes gets a new one. Asked after Hermes
+# refused a key, this finds the keys Hermes keeps and hands back the one the
+# agent at that address accepts. Only ever for an address on this phone.
+ENV_LINE = re.compile(r'^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$')
+
+
+def _hermes_homes():
+    out = [h for h in (os.environ.get("COZY_HERMES_HOME"), os.environ.get("HERMES_HOME"), "~/.hermes") if h]
+    out = [os.path.abspath(os.path.expanduser(h)) for h in out]
+    rootfs = os.path.join(os.environ.get("PREFIX") or "/data/data/com.termux/files/usr", "var", "lib", "proot-distro", "installed-rootfs")
+    out += sorted(glob.glob(os.path.join(rootfs, "*", "root", ".hermes")))
+    out += sorted(glob.glob(os.path.join(rootfs, "*", "home", "*", ".hermes")))
+    seen = []
+    for h in out:
+        if h not in seen and os.path.isdir(h):
+            seen.append(h)
+    return seen
+
+
+def _env_values(path):
+    vals = {}
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                m = ENV_LINE.match(line)
+                if m:
+                    v = m.group(2)
+                    if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
+                        v = v[1:-1]
+                    vals[m.group(1)] = v
+    except OSError:
+        pass
+    return vals
+
+
+def _hermes_keys():
+    keys = []
+    for h in _hermes_homes():
+        for e in [os.path.join(h, ".env")] + sorted(glob.glob(os.path.join(h, "profiles", "*", ".env"))):
+            v = _env_values(e)
+            if v.get("API_SERVER_KEY"):
+                keys.append(v["API_SERVER_KEY"])
+        try:
+            with open(os.path.join(h, "config.yaml"), encoding="utf-8", errors="replace") as f:
+                keys += re.findall(r'(?m)^\s*key:\s*["\']?([^\s"\'#]{16,})', f.read())
+        except OSError:
+            pass
+    out = []
+    for k in keys:
+        if k not in out:
+            out.append(k)
+    return out
+
+
+def _probe(base, key):
+    req = urllib.request.Request(base.rstrip("/") + "/models", headers={"Authorization": "Bearer " + key})
+    try:
+        with urllib.request.urlopen(req, timeout=4) as r:
+            return r.status
+    except urllib.error.HTTPError as e:
+        return e.code
+    except Exception:
+        return None
+
+
+def hermes_key_for(url):
+    u = urllib.parse.urlsplit(str(url or ""))
+    if u.hostname not in ("127.0.0.1", "localhost", "::1"):
+        return None
+    base = str(url).rstrip("/")
+    for suffix in ("/chat/completions", "/messages"):
+        if base.endswith(suffix):
+            base = base[: -len(suffix)]
+    if not re.search(r"/v\d+$", base):
+        base += "/v1"
+    for k in _hermes_keys():
+        if _probe(base, k) == 200:
+            return k
+    return None
+
+
 class Handler(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     server_version = "CozyMaker/" + VERSION
@@ -418,6 +504,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         path = self.path.split("?", 1)[0]
         if path == "/api/call":
             return self.proxy_call()
+        if path == "/api/hermes/key":
+            return self.hermes_key()
         if path == "/api/quit":
             # How the launcher stops an old server: by asking whatever is on
             # THIS port to leave. Never by process name — Cozy Tavern also runs
@@ -428,6 +516,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return self.send_json({"error": "unknown"}, 404)
 
     # ---------- the one way out to a provider ----------
+
+    def hermes_key(self):
+        spec = self.read_body() or {}
+        return self.send_json({"key": hermes_key_for(spec.get("url") if isinstance(spec, dict) else None)})
 
     def proxy_call(self):
         spec = self.read_body() or {}

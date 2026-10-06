@@ -131,6 +131,22 @@ turn that failed and changed nothing offers **Try again**. If the server on the
 phone stops answering, a note says so and your work keeps trying to save until
 it lands — keep the page open.
 
+## Searching the internet
+
+Under the cog, **Search the internet** is off until you turn it on. Off, nothing is
+ever looked up, and everything works exactly as it always has. On, anything real
+they are not sure of — a canon detail of an existing story, a real person, place
+or date — is looked up on the internet first, instead of guessed: when your
+message turns on such a thing, it is looked up before anyone answers, and a
+worker that needs a fact while it works asks for it and gets it.
+
+The searching is done by **your Hermes Agent** — the same one Cozy Chat uses, whose
+own web tools do the looking. Add it as a connection (address
+`http://127.0.0.1:8642/v1`, model `hermes-agent`, its key from `API_SERVER_KEY`
+in `~/.hermes/.env`); it is picked on its own, or choose it under **Who searches
+the internet**. If Hermes is given a new key, the old copy here is refused once,
+and the house takes the new one from Hermes itself and carries on.
+
 ## The look
 
 Four coats of paint under the cog. **The tavern at night** puts a drawn scene

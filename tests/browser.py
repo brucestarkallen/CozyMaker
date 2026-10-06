@@ -407,6 +407,26 @@ def main():
             page.wait_for_timeout(600)
             ok("and on again the same way", house_now()["settings"].get("smoothStreaming") == "on", house_now()["settings"].get("smoothStreaming"))
 
+            # -- searching the internet (v1.7.0), his switch ------------------------
+            search = page.locator("label.field", has_text="Search the internet").locator("select")
+            ok("Search the internet is in The house, by that name, off until he turns it on", search.count() == 1 and search.input_value() == "off",
+               search.input_value() if search.count() else None)
+            search.select_option("on")
+            page.wait_for_timeout(600)
+            ok("turned on, it is kept on the device", house_now()["settings"].get("searchInternet") == "on")
+            hint = page.locator(".group", has_text="Searching the internet").locator("p.hint", has_text="Nothing can search yet")
+            ok("with nothing that can search, it says what to add, in plain words", hint.count() == 1 and hint.is_visible())
+            who = page.locator("label.field", has_text="Who searches the internet").locator("select")
+            first = who.locator("option").nth(1).get_attribute("value")
+            who.select_option(first)
+            page.wait_for_timeout(600)
+            ok("the one who searches is kept", house_now()["agentConnections"].get("searcher") == first, house_now()["agentConnections"])
+            ok("and the note goes once something can search", not page.locator(".group", has_text="Searching the internet").locator("p.hint", has_text="Nothing can search yet").is_visible())
+            who.select_option("")
+            search.select_option("off")
+            page.wait_for_timeout(600)
+            ok("off again, the same way", house_now()["settings"].get("searchInternet") == "off" and "searcher" not in house_now()["agentConnections"])
+
             # -- the coats of paint --------------------------------------------
             coat = page.locator("label.field", has_text="Coat of paint").locator("select")
             ok("the coats of paint are offered by name", coat.count() == 1)

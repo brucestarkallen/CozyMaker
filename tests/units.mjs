@@ -3285,6 +3285,107 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
   } catch (e) { ok('the backup turns ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
 }
 
+/* ============================ SEARCHING THE INTERNET (v1.7.0) */
+{
+  const S = await import('../js/agents/search.js');
+  const { listenerPrompt, readJobs, LISTENER_MARK: LM } = await import('../js/agents/listener.js');
+  const { callModel, onKey } = await import('../js/agents/call.js');
+  const { runTurn } = await import('../js/agents/run.js');
+  eq('what is asked for: each once, at most three', S.readSearch('<search>Rukia Kuchiki rank</search> and <search>rukia kuchiki rank</search><search>a</search><search>b</search><search>c</search>'), ['Rukia Kuchiki rank', 'a', 'b']);
+  eq('and the asking is never left in the words', S.stripSearch('Checking.\n<search>Rukia</search>\nDone.'), 'Checking.\n\nDone.');
+  const hermes = { id: 'h1', name: 'Hermes', url: 'http://127.0.0.1:8642/v1', model: 'hermes-agent', key: 'old-key' };
+  const front = { id: 'c1', name: 'front', url: 'https://relay.example/v1', model: 'm', key: 'k' };
+  eq('who searches: the one he chose, else his Hermes Agent, else nobody', [
+    S.searcherFor({ connections: [front, hermes], agentConnections: { searcher: 'c1' } }).id,
+    S.searcherFor({ connections: [front, hermes], agentConnections: {} }).id,
+    S.searcherFor({ connections: [front], agentConnections: {} })], ['c1', 'h1', null]);
+  eq('off unless he turned it on', [S.searchOn({ settings: {} }), S.searchOn({ settings: { searchInternet: 'on' } })], [false, true]);
+  const offP = listenerPrompt({ frame: 'F', reading: '', docs: [], talk: '', message: 'hi', p: {} });
+  const onP = listenerPrompt({ frame: 'F', reading: '', docs: [], talk: '', message: 'hi', p: {}, search: true });
+  eq('off, the listener is told nothing about looking things up; on, it may ask', [/look_up|internet/.test(offP.system), /look_up/.test(onP.system)], [false, true]);
+  eq('what the listener wants looked up is read', readJobs('{"jobs": [], "look_up": ["Rukia zanpakuto", "Rukia zanpakuto"]}').lookUp, ['Rukia zanpakuto']);
+
+  const realFetch = globalThis.fetch;
+  const PE = '# PLOT ESSENTIAL \u2014 Soul Society \u2014 V1.0\n\n## WORLD\n### Rules\n- Captains lead the Gotei 13.\n\n## CAST\n### Rukia Kuchiki\nID: unseated officer\n';
+  const world = () => ({ id: 'ps', docs: [{ id: 'd1', name: 'Plot Essential.md', kind: 'pe', text: PE }], chats: [], recentSections: [] });
+  const sys = (req) => { const b = req.body || {}; return typeof b.system === 'string' ? b.system : ((b.messages || []).find((m) => m.role === 'system') || {}).content || ''; };
+  const userOf = (req) => ((req.body.messages || []).filter((m) => m.role === 'user').pop() || {}).content || '';
+  let searched = [], fronts = [], workerUsers = [], workerSystems = [];
+  const reset = () => { searched = []; fronts = []; workerUsers = []; workerSystems = []; };
+  let editorSays = null;
+  globalThis.fetch = async (url, init) => {
+    const req = JSON.parse(init.body);
+    if (sys(req).includes(S.SEARCH_MARK)) { searched.push(userOf(req)); return wholeAnswer({ choices: [{ message: { content: 'Her zanpakuto is Sode no Shirayuki; she is lieutenant of the 13th Division (bleach.fandom.com).' }, finish_reason: 'stop' }] }); }
+    if (sys(req).includes(LM)) return wholeAnswer({ choices: [{ message: { content: '{"jobs": [], "look_up": ["Rukia Kuchiki zanpakuto"]}' }, finish_reason: 'stop' }] });
+    if (forFront(req)) { fronts.push(JSON.stringify(req.body.messages)); return wholeAnswer({ choices: [{ message: { content: 'It is Sode no Shirayuki.' }, finish_reason: 'stop' }] }); }
+    workerUsers.push(userOf(req)); workerSystems.push(sys(req));
+    return wholeAnswer({ choices: [{ message: { content: editorSays(userOf(req)) }, finish_reason: 'stop' }] });
+  };
+  const house = (on) => ({ connections: [front, { ...hermes }], agentConnections: { keeper: 'c1' }, settings: { yourName: 'Bruce', ...(on ? { searchInternet: 'on' } : {}) }, personaFrame: '' });
+  try {
+    /* on: the listener asks for a lookup; the searcher looks; the one he talks to answers with what was found */
+    reset();
+    let r = await runTurn({ house: house(true), project: world(), message: 'what is Rukia\'s zanpakuto called?' });
+    eq('the listener\'s lookup goes to the one who searches', searched, ['Look this up on the internet: Rukia Kuchiki zanpakuto']);
+    const last = fronts[fronts.length - 1] || '';
+    ok('and the one he talks to answers with what was found in front of it', /Looked up on the internet just now/.test(last) && /Sode no Shirayuki/.test(last), last.slice(-300));
+    ok('the reply that had started without it was let go', fronts.length === 2 && !/Looked up on the internet/.test(fronts[0]), fronts.length);
+    eq('his answer is the one written with it', r.reply, 'It is Sode no Shirayuki.');
+    /* on: a worker asks for a lookup; the searcher looks; the worker does the job with it in front of it */
+    reset();
+    editorSays = (user) => (/Looked up on the internet just now/.test(user)
+      ? 'Set her rank from canon.\n<edits>[{"file": "Plot Essential.md", "find": "ID: unseated officer", "replace": "ID: lieutenant, 13th Division", "reason": "canon rank, looked up"}]</edits>'
+      : 'I need her canon rank first.\n<search>Rukia Kuchiki rank 13th Division</search>');
+    r = await runTurn({ house: house(true), project: world(), message: 'set Rukia\'s rank as in canon', forceWorker: 'editor' });
+    eq('a worker\'s own ask is looked up', searched, ['Look this up on the internet: Rukia Kuchiki rank 13th Division']);
+    ok('and the job is done with what came back', r.project.docs[0].text.includes('ID: lieutenant, 13th Division'), r.project.docs[0].text.slice(-80));
+    ok('the worker was told it may ask, only while it is on', workerSystems.length > 0 && workerSystems.every((x) => x.includes('<search>')), workerSystems.length);
+    ok('the asking never reaches the one he talks to', !/<search>|Rukia Kuchiki rank 13th Division<\/search>/.test(fronts.join(' ')), fronts.join(' ').slice(0, 200));
+    /* off: nothing is looked up, the worker is told nothing about it, and every request is what it was */
+    reset();
+    r = await runTurn({ house: house(false), project: world(), message: 'set Rukia\'s rank as in canon', forceWorker: 'editor' });
+    eq('off: nothing is looked up', searched, []);
+    ok('off: the worker reads nothing about looking things up', workerSystems.length > 0 && workerSystems.every((x) => !x.includes('<search>')), workerSystems.length);
+    reset();
+    r = await runTurn({ house: house(false), project: world(), message: 'what is Rukia\'s zanpakuto called?' });
+    eq('off: the listener\'s ask is never acted on', [searched.length, fronts.some((f) => /Looked up on the internet/.test(f))], [0, false]);
+  } catch (e) { ok('the search turns ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
+
+  /* a Hermes Agent narrates its tools in the stream; only its words are the answer */
+  {
+    const { readReply } = await import('../js/agents/call.js');
+    const frames = 'event: hermes.tool.progress\ndata: {"toolCallId":"t1","tool":"web_search","label":"searching","status":"running"}\n\n' +
+      'data: {"choices":[{"delta":{"content":"Sode no Shirayuki."}}]}\n\n' +
+      'event: hermes.tool.progress\ndata: {"toolCallId":"t1","status":"completed","error":"none"}\n\n' +
+      'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n';
+    const res = new Response(new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(frames)); c.close(); } }), { status: 200 });
+    const got = await readReply('openai', res);
+    eq('a Hermes Agent\'s tool narration is neither the answer nor its failure', [got.text, got.finish], ['Sode no Shirayuki.', 'stop']);
+  }
+
+  /* HERMES' KEY FOLLOWS HERMES: a refused key from a Hermes Agent is mended once, from the phone */
+  const asked = [];
+  let keyAsked = 0;
+  const heard = [];
+  const stop = onKey((id, key) => heard.push([id, key]));
+  globalThis.fetch = async (url, init) => {
+    if (url === '/api/hermes/key') { keyAsked++; return wholeAnswer({ key: 'new-key' }); }
+    const req = JSON.parse(init.body);
+    asked.push(req.headers.Authorization);
+    return req.headers.Authorization === 'Bearer new-key'
+      ? wholeAnswer({ choices: [{ message: { content: 'found it' }, finish_reason: 'stop' }] })
+      : wholeAnswer({ error: 'provider', status: 401, detail: 'invalid API key' });
+  };
+  try {
+    const conn = { ...hermes };
+    const out = await callModel(conn, { user: 'look', stream: false });
+    eq('a refused key from Hermes: the key Hermes accepts is taken, and the call goes again', [out.ok, out.text, asked, conn.key, heard], [true, 'found it', ['Bearer old-key', 'Bearer new-key'], 'new-key', [['h1', 'new-key']]]);
+    asked.length = 0; keyAsked = 0;
+    const other = await callModel({ ...front, key: 'bad' }, { user: 'x', stream: false });
+    eq('any other connection\'s refusal is said as it is, with no key looked for', [other.ok, keyAsked, asked.length], [false, 0, 1]);
+  } catch (e) { ok('the key turns ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; stop(); }
+}
+
 /* ============================ SMOOTH STREAMING: the pace (js/ui/pace.js, v1.6.0) */
 {
   const { revealCount, takeChars, PACE_MS } = await import('../js/ui/pace.js');

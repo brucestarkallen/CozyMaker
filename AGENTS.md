@@ -1243,17 +1243,48 @@ Each held by a law that fails on v1.6.1 (five of them):
   the walk holds both.
 - The name offered for a new document missed a plot essential saved before kinds existed.
 
+### Searching the internet, through his Hermes Agent (v1.7.0)
+
+He asked for a switch — on, search the internet; off, back to normal — or his Hermes connection used the way Cozy
+Chat uses it, so that when the AI is unsure it checks the internet. Both, as one feature (`js/agents/search.js`):
+
+- **Search the internet** (The house → Searching the internet), off unless he turns it on. Off, not one word of it
+  reaches any request: the listener's prompt, every worker's system and the persona's brief are exactly what they
+  were (units hold all three).
+- **Who searches the internet**: the connection that does the looking — his Hermes Agent, the same backend Cozy Chat
+  uses (`http://127.0.0.1:8642/v1`, `hermes-agent`), whose own web tools search. Picked on its own when he has one
+  (`hermesLike`); with nothing that can search, the section says in plain words what to add.
+- **When it looks**: the listener, reading his message, may ask for up to three lookups (`look_up`) when what he said
+  turns on something real the documents do not hold — a canon detail, a real person, place or date; never what his
+  own world invents. They are looked up before anyone answers; the reply that had started without them is let go
+  (like one the crew is sent for), every job sent this turn carries what was found, and the one he talks to reads it
+  as "Looked up on the internet just now". A worker that needs a fact while it works writes `<search>what</search>`,
+  is given what was found, and does the job — once per job, never costing a round of reading; the asking never
+  reaches the persona or a document.
+- **Hermes' key follows Hermes** (Cozy Chat v5.28.3). A refused key from a Hermes Agent asks the phone's server, which
+  reads the keys Hermes keeps (`API_SERVER_KEY` in `~/.hermes/.env`, its profiles and proot homes) and hands back the
+  one the agent at that address accepts — only ever for an address on the phone. The connection takes it, the call
+  goes again once, and the house saves it (`onKey`, like a lesson). For workers, the listener, the searcher and the
+  one he talks to alike.
+- Hermes narrates its tools in the stream (`event: hermes.tool.progress`); that is never taken for the answer or for
+  its failure.
+
+Laws: units (the switch both ways, the listener's lookups through a real turn, a worker's own lookup through a real
+turn, the asking kept out of every reply, the key mended once and only for Hermes, the tool narration), the server
+(the key found in Hermes' own files, from any ending of the address, never for an address off the phone, none when
+Hermes is down), and the browser (the section, its names, both settings kept, the plain note).
+
 ## Testing
 
 ```
 bash tests/all.sh           every suite, exit code intact
 ```
 
-    node tests/units.mjs         959 checks — the real modules on a real document, and what the persona hears
+    node tests/units.mjs         979 checks — the real modules on a real document, and what the persona hears
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
-    python3 tests/server.py       53 checks — the real serve.py, real files on disk, streams timed
-    python3 tests/browser.py      79 checks — real Chromium at 390x844, end to end
+    python3 tests/server.py       57 checks — the real serve.py, real files on disk, streams timed
+    python3 tests/browser.py      85 checks — real Chromium at 390x844, end to end
     python3 tests/walk_worlds.py 227 checks — the drawer, conversations, swipes and versions, edit and
                                               send again, delete, branch, go on, re-quoting, crafts,
                                               the thinking box live, backup and restore, a model too
@@ -1272,7 +1303,7 @@ bash tests/all.sh           every suite, exit code intact
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-1,425 checks. Every suite must be green before a push. `tests/fixtures/` holds answers recorded from the
+1,455 checks. Every suite must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

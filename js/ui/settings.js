@@ -7,7 +7,8 @@ import { $, el, openSheet, toast, applyTheme, redraw, field, input, select, grou
 import { WORKERS, FRONT } from '../agents/roster.js';
 import { personaOf, unfilledMacros } from '../agents/persona.js';
 import { testConnection, listModels } from '../agents/call.js';
-import { spokenAs, learnedFacts, alwaysThinks, cannotStopThinking } from '../providers.js';
+import { spokenAs, learnedFacts, alwaysThinks, cannotStopThinking, hermesLike } from '../providers.js';
+import { SEARCHER, searcherFor } from '../agents/search.js';
 import { loadEngine, sliceReport } from '../engine/slices.js';
 import { craftFor } from '../engine/crafts.js';
 import { SHORTCUTS, WHO, engineLines } from '../agents/shortcuts.js';
@@ -43,6 +44,7 @@ function draw() {
   body.append(whoSection(house));
   body.append(connectionsSection(house));
   body.append(crewSection(house));
+  body.append(searchSection(house));
   body.append(shortcutsSection(house));
   body.append(lookSection(house));
   body.append(underTheFloorSection());
@@ -377,6 +379,44 @@ function crewSection(house) {
     detailsInner.append(field(what, s));
   }
   g.append(details);
+  return g;
+}
+
+/* ----------------------------------------------------- searching the internet */
+
+/* SEARCH THE INTERNET (v1.7.0), his switch. Off, nothing is looked up and every
+ * request is exactly what it was. On, anything real the crew or the one he talks
+ * to is not sure of is looked up first, by the connection that searches — his
+ * Hermes Agent, whose own web tools do it (js/agents/search.js). */
+function searchSection(house) {
+  const g = group('Searching the internet',
+    'When it is on, anything real they are not sure of \u2014 a canon detail of an existing story, a real name, place or date \u2014 is looked up on the internet first, instead of guessed. Off, nothing is looked up, exactly as before.');
+  const on = select([
+    ['off', 'Off \u2014 nothing is looked up'],
+    ['on', 'On \u2014 what they are not sure of is looked up first'],
+  ], house.settings.searchInternet === 'on' ? 'on' : 'off');
+  g.append(field('Search the internet', on));
+  const hermes = house.connections.filter((c) => hermesLike(c));
+  const who = select([['', hermes.length ? `your Hermes Agent (${hermes[0].name || hermes[0].model})` : 'nobody yet \u2014 add your Hermes Agent as a connection']]
+    .concat(house.connections.map((c) => [c.id, c.name || c.model])), house.agentConnections[SEARCHER] || '');
+  g.append(field('Who searches the internet', who));
+  const note = el('p', 'hint', '');
+  const say = () => {
+    const h = store.getHouse();
+    const missing = h.settings.searchInternet === 'on' && !searcherFor(h);
+    note.textContent = missing ? 'Nothing can search yet: add your Hermes Agent as a connection above (its address is http://127.0.0.1:8642/v1, its model hermes-agent), and it is used here on its own.' : '';
+    note.hidden = !missing;
+  };
+  on.addEventListener('change', async () => { await save('searchInternet', on.value); say(); });
+  who.addEventListener('change', async () => {
+    const h = store.getHouse();
+    if (who.value) h.agentConnections[SEARCHER] = who.value;
+    else delete h.agentConnections[SEARCHER];
+    await store.saveHouse(h);
+    say();
+  });
+  g.append(note);
+  say();
   return g;
 }
 

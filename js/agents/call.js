@@ -13,7 +13,7 @@
  * so work for a world the writer has left never lands in the one he opened.
  */
 
-import { buildRequest, readAnswer, readChunk, WORKER_ROOM, withoutThinking, THINKING_FIELDS, REASONING_REFUSAL, modelsUrl, modelsHeaders, reportedIdentity, spokenAs,
+import { hermesLike, buildRequest, readAnswer, readChunk, WORKER_ROOM, withoutThinking, THINKING_FIELDS, REASONING_REFUSAL, modelsUrl, modelsHeaders, reportedIdentity, spokenAs,
   lessonFrom, learnedFacts, learnKey, familyStyle, cannotStopThinking } from '../providers.js';
 
 /* WHAT A MODEL TEACHES IS KEPT (Cozy Tavern M350). A refusal of a thinking
@@ -25,6 +25,31 @@ import { buildRequest, readAnswer, readChunk, WORKER_ROOM, withoutThinking, THIN
  * the model ignored is noticed. The house hears each lesson and saves it. */
 const learners = new Set();
 export function onLearn(fn) { learners.add(fn); return () => learners.delete(fn); }
+
+/* HERMES' KEY FOLLOWS HERMES (Cozy Chat v5.28.3). His Hermes Agent keeps its own
+ * key on the phone, and a connection here holds a copy; when Hermes gets a new
+ * key the copy goes stale and every call to it is refused. What the house can
+ * detect it repairs: a refusal of the key from a Hermes Agent asks the phone's
+ * server for the key Hermes itself accepts, the connection takes it, and the
+ * call goes again — once. The house hears it and saves it, like a lesson. */
+const keyKeepers = new Set();
+export function onKey(fn) { keyKeepers.add(fn); return () => keyKeepers.delete(fn); }
+async function hermesKey(conn) {
+  try {
+    const res = await fetch('/api/hermes/key', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: conn.url }) });
+    const data = await res.json();
+    return data && typeof data.key === 'string' && data.key && data.key !== conn.key ? data.key : '';
+  } catch (_) { return ''; }
+}
+async function repairHermesKey(conn, status) {
+  if (status !== 401 && status !== 403) return false;
+  if (!hermesLike(conn)) return false;
+  const key = await hermesKey(conn);
+  if (!key) return false;
+  conn.key = key;
+  for (const fn of keyKeepers) { try { fn(conn.id, key); } catch (_) {} }
+  return true;
+}
 export function learn(conn, fact) {
   if (!conn) return null;
   const was = learnedFacts(conn) ? conn.learned : null;
@@ -122,6 +147,7 @@ export async function callModel(conn, opts = {}) {
 
   let lastError = 'the call did not go through';
   let lessons = 0;
+  let keyMended = false;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     if (opts.stale && opts.stale()) return { ok: false, text: '', thinking: '', error: 'let go' };
     try {
@@ -149,6 +175,13 @@ export async function callModel(conn, opts = {}) {
          * wrong model name, a malformed request comes back identical every
          * time; retrying it four times only turns an instant error into thirty
          * seconds of silence. Only "slow down" and "try later" are retried. */
+        if (!keyMended && await repairHermesKey(conn, status)) {
+          keyMended = true;
+          if (c !== conn) c.key = conn.key;
+          req.headers = buildRequest(c, shape).headers;
+          attempt--;
+          continue;
+        }
         const transient = status === 0 || status === 408 || status === 429 || status >= 500;
         if (!transient) return { ok: false, text: '', thinking: '', error: lastError };
         const retryAfter = Number(out.retryAfter) * 1000;
@@ -217,9 +250,12 @@ export async function listModels(conn) {
 /* The front of the house streams, so the writer sees words arriving. */
 export async function streamModel(conn, opts = {}) {
   let out;
+  let keyMended = false;
   for (let lessons = 0; ; lessons++) {
     try { out = await streamOnce(conn, opts, false); break; }
     catch (e) {
+      /* a Hermes Agent that refused a stale key: the key Hermes accepts, and once more */
+      if (e && !keyMended && !(opts.signal && opts.signal.aborted) && await repairHermesKey(conn, Number(e.status) || 0)) { keyMended = true; lessons--; continue; }
       if (!(e && e.refusedThinking) || (opts.signal && opts.signal.aborted) || lessons >= MAX_LESSONS) throw e;
       /* the same lessons as a worker's; the next try is built with them */
       learnFromRefusal(conn, e.message, e.body || {}, () => buildRequest(conn, { system: opts.system, messages: opts.messages || [], stream: true }).body);
@@ -405,6 +441,8 @@ export async function readReply(house, res, { onText, onThinking, onProgress } =
     let obj;
     try { obj = JSON.parse(payload); } catch (_) { return; }
     if (!obj || typeof obj !== 'object') return;
+    /* a Hermes Agent narrating its tools (event: hermes.tool.progress) is not the answer, and never its failure */
+    if (obj.toolCallId) return;
     if (obj.error) { midError = obj.error; return; }
     if (obj.type === 'message_stop' || (obj.type === 'message_delta' && obj.delta && obj.delta.stop_reason)) ended = true;
     const choice = obj.choices && obj.choices[0];

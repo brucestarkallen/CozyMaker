@@ -128,6 +128,14 @@ export function familyStyle(conn) {
 }
 export const thinkingStyle = familyStyle;
 
+/* A HERMES AGENT ON THE PHONE (Cozy Chat's isHermesConn): named as one, or the
+ * agent's own address on this device (its API server listens on 8642). */
+export function hermesLike(conn) {
+  const c = conn || {};
+  if (c.preset === 'hermes' || String(c.model || '') === 'hermes-agent') return true;
+  return /^https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\]):8642(?:\/|$)/i.test(String(c.url || ''));
+}
+
 export function glmVersion(conn) {
   const m = /glm[-_.]?(\d+)(?:[._](\d+))?/.exec(String((conn && conn.model) || '').toLowerCase());
   return m ? Number(m[1]) + (m[2] ? Number('0.' + m[2]) : 0) : null;
