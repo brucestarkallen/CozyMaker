@@ -212,6 +212,25 @@ def main():
         ok("a removed document leaves the copy",
            not (home / "exports" / "p_test1" / "Worldbook.json.md").exists())
 
+        # two names that read the same once cleaned both reach the copy (the second
+        # used to write over the first), and a document that did not change is not
+        # written again on every save (v1.6.1)
+        world["docs"] = world["docs"][:1] + [{"id": "d3", "name": "Notes?", "kind": "notes", "text": "first"},
+                                              {"id": "d4", "name": "Notes*", "kind": "notes", "text": "second"}]
+        call("/api/project/p_test1", "PUT", world)
+        ex = home / "exports" / "p_test1"
+        ok("two names that clean to one both land in the copy", sorted(f.read_text() for f in ex.glob("Notes_*.md")) == ["first", "second"],
+           str(sorted(f.name for f in ex.glob("Notes_*"))))
+        stamp = mirror.stat().st_mtime_ns
+        time.sleep(0.05)
+        world["docs"][1]["text"] = "first, changed"
+        call("/api/project/p_test1", "PUT", world)
+        ok("a document that did not change is not written again", mirror.stat().st_mtime_ns == stamp)
+        ok("the one that changed is", (ex / "Notes_.md").read_text() == "first, changed")
+        world["docs"] = world["docs"][:1]
+        call("/api/project/p_test1", "PUT", world)
+        ok("and both leave the copy when they go", not list(ex.glob("Notes_*.md")))
+
         try:
             call("/api/project/../../etc/passwd")
             ok("a bad world name is refused", False)

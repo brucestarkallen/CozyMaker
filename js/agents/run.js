@@ -28,7 +28,7 @@ import { callModel, streamModel, enqueue } from './call.js';
 import { parseDoc, brief, readNeed, stripNeed, resolveNeed, LEAD_SHORT, nameWorld, hasPlotEssential, DEFAULT_WORLD_TITLE } from '../doc/index.js';
 import { route, confirmsOffer, offersIn, writtenCommand, justGreeting, houseCommand, REGISTRY, asksNewStory } from './router.js';
 import { listen, LISTENER, LISTEN_TALK } from './listener.js';
-import { parseEdits, stripEdits, stripThinking, applyRun, hash, openFileAtEnd } from '../doc/edits.js';
+import { parseEdits, stripEdits, stripThinking, ownWords, applyRun, hash, openFileAtEnd } from '../doc/edits.js';
 import { lint, lostSomething } from '../doc/lint.js';
 import { kindFor } from '../doc/kind.js';
 import { putEntries } from '../doc/entries.js';
@@ -454,8 +454,13 @@ async function runWorker({ worker, sections, conn, project, message, talk, fromH
     if (!parsed.edits.length && !parsed.warn && out.thinking && /<(?:doc)?edits>|<file\s/i.test(out.thinking)) {
       parsed = parseEdits(out.thinking);
     }
-    const fromAsk = readAsk(stripThinking(out.text));
-    let notes = stripThinking(stripNeed(stripEdits(fromAsk.rest)));
+    /* THE DOCUMENTS COME OUT BEFORE THE THINKING DOES. A document written whole
+     * can hold the word <thinking> — an instruction set or a preset very often
+     * does — and the thought-stripper, run over the whole answer, cut it there:
+     * everything after it went, his question in <ask> with it, and the job
+     * waited on an answer he was never asked for. */
+    const fromAsk = readAsk(stripThinking(stripEdits(out.text)));
+    let notes = stripThinking(stripNeed(fromAsk.rest));
     let ask = fromAsk.ask;
     if (!ask && !parsed.edits.length && CRAFT_ASKS.test(notes)) { ask = notes; notes = ''; }
 
@@ -634,7 +639,7 @@ export async function runTurn({
     /* its own earlier replies go back without any thought left in them: one
      * reply that carried a thought, sent back as what it said, taught it to
      * keep writing its thinking as its reply */
-    const earlier = past.slice(-n).map((t) => (t.role === 'writer' ? { role: 'user', content: t.text || '' } : { role: 'assistant', content: stripThinking(t.text || '') }));
+    const earlier = past.slice(-n).map((t) => (t.role === 'writer' ? { role: 'user', content: t.text || '' } : { role: 'assistant', content: ownWords(t.text || '') }));
     const ask = [
       'Where the book stands right now:',
       docBriefs(world, { message, recent: world.recentSections || [], forFront: true }),

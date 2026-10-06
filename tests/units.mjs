@@ -3149,6 +3149,54 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
   } catch (e) { ok('the new-story turns ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
 }
 
+/* ============================ the line-by-line audit (v1.6.1) */
+{
+  const { locate, applyEdit, ownWords } = await import('../js/doc/edits.js');
+  /* a quote that fits in two overlapping places is two places: refused, never written at the first */
+  eq('a find that fits in two overlapping places is refused', [locate('ab ab ab', 'ab ab').ok, /2 times/.test(locate('ab ab ab', 'ab ab').why || '')], [false, true]);
+  eq('the same with only spacing different', locate('ab  ab  ab', 'ab ab').ok, false);
+  eq('one place is still one place', [locate('x ab ab', 'ab ab').ok, locate('x ab ab', 'ab ab').from], [true, 2]);
+  eq('a change that overlaps itself is refused, the document untouched', applyEdit('- - -', { find: '- -', replace: '* *' }).ok, false);
+  eq('\u201cchange all\u201d still counts what it changes', applyEdit('aa aa aa', { find: 'aa', all: true, replace: 'b' }).how, 'changed all 3');
+  /* what the persona re-reads of its own reply */
+  eq('a tag named inside a sentence is its words', ownWords('Put <thinking> tags at the top, then write the scene.'), 'Put <thinking> tags at the top, then write the scene.');
+  eq('a thought that opens the reply is not', ownWords('<think>plan it</think>\n\nAnswer.'), 'Answer.');
+  eq('nor one the template opened, ended on its own line', ownWords('So my reply, warm.\n</think>\n\nAnswer.'), 'Answer.');
+  eq('an unfinished thought that opens it leaves nothing', ownWords('<think>still planning'), '');
+  eq('a closer named mid-sentence is words too', ownWords('End the plan with </thinking> and then write.'), 'End the plan with </thinking> and then write.');
+
+  const { runTurn } = await import('../js/agents/run.js');
+  const { LISTENER_MARK } = await import('../js/agents/listener.js');
+  const realFetch = globalThis.fetch;
+  const house = { connections: [{ id: 'c1', url: 'https://relay.example/v1', model: 'm', key: 'k' }], agentConnections: {}, settings: { yourName: 'Bruce' }, personaFrame: '' };
+  const PE = '# PLOT ESSENTIAL \u2014 Tide \u2014 V1.0\n\n## WORLD\n### Rules\n- The tide decides who rules.\n';
+  const fronts = [];
+  const PRESET = 'Open every reply with <thinking> and plan the beat there.\nThen write the scene.';
+  globalThis.fetch = async (url, init) => {
+    const req = JSON.parse(init.body);
+    const sys = (req.body.messages.find((m) => m.role === 'system') || {}).content || '';
+    if (forFront(req)) { fronts.push(req.body); return wholeAnswer({ choices: [{ message: { content: 'All set.' }, finish_reason: 'stop' }] }); }
+    if (sys.includes(LISTENER_MARK)) return wholeAnswer({ choices: [{ message: { content: '{"jobs":[]}' }, finish_reason: 'stop' }] });
+    return wholeAnswer({ choices: [{ message: { content: `I wrote the preset whole.\n<file name="Preset.md">\n${PRESET}\n</file>\n<ask>Which model is this preset for?</ask>` }, finish_reason: 'stop' }] });
+  };
+  try {
+    /* a document that holds the word <thinking>: written whole, and the question after it still asked */
+    const world = { id: 'pa', docs: [{ id: 'd1', name: 'Plot Essential.md', kind: 'pe', text: PE }], chats: [], recentSections: [] };
+    const r = await runTurn({ house, project: world, message: 'write the preset', forceWorker: 'editor' });
+    const doc = r.project.docs.find((d) => d.name === 'Preset.md');
+    eq('a document holding <thinking> is written whole', doc && doc.text, PRESET);
+    ok('and the question written after it still reaches him', (r.asks || []).some((a) => /Which model is this preset for/.test(a.ask || '')), JSON.stringify(r.asks));
+    /* the persona re-reads its own earlier reply whole */
+    fronts.length = 0;
+    const history = [{ role: 'writer', text: 'how should the preset open?', at: 1 }, { role: 'maker', text: 'Put <thinking> tags at the top, then write the scene.', at: 2 },
+      { role: 'writer', text: 'and the old way?', at: 3 }, { role: 'maker', text: '<think>he means before</think>\n\nJust the scene.', at: 4 }];
+    await runTurn({ house, project: world, message: 'thanks', history });
+    const said = JSON.stringify((fronts[0] || {}).messages || []);
+    ok('the persona re-reads its own reply whole, the tag it named included', said.includes('Put <thinking> tags at the top, then write the scene.'), said.slice(0, 300));
+    ok('and never a thought it had', said.includes('Just the scene.') && !said.includes('he means before'), said.slice(0, 300));
+  } catch (e) { ok('the audit turns ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
+}
+
 /* ============================ SMOOTH STREAMING: the pace (js/ui/pace.js, v1.6.0) */
 {
   const { revealCount, takeChars, PACE_MS } = await import('../js/ui/pace.js');

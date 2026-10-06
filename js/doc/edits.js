@@ -397,6 +397,33 @@ export function stripThinking(text) {
   return rest.trim();
 }
 
+/* WHAT THE PERSONA RE-READS OF ITS OWN EARLIER REPLY. A thought is written as a
+ * block: one that opens the reply (closed, or running to the end), or one the
+ * model's template opened, ended by a closer that finishes its line — the same
+ * reading the stream gives a reply as it arrives (call.js splitThink). A tag
+ * named inside a sentence is its words: "put <thinking> tags at the top, then
+ * write the scene" went back to it as "put", and it was told it had said less
+ * than it did. stripThinking's wider net stays for the crew's notes, where a
+ * stray thought must never reach the persona. */
+const THOUGHT_TAG = '(think|thinking|reasoning)';
+export function ownWords(text) {
+  let rest = String(text || '');
+  const lead = new RegExp(`^\\s*<${THOUGHT_TAG}>`, 'i');
+  for (let m = lead.exec(rest); m; m = lead.exec(rest)) {
+    const close = new RegExp(`</${m[1]}>`, 'i').exec(rest.slice(m[0].length));
+    if (!close) return '';
+    rest = rest.slice(m[0].length + close.index + close[0].length);
+  }
+  const ender = new RegExp(`</${THOUGHT_TAG}>[ \\t]*(?=\\n|$)`, 'gi');
+  const opener = new RegExp(`<${THOUGHT_TAG}>`, 'i');
+  const enders = [...rest.matchAll(ender)];
+  if (enders.length) {
+    const last = enders[enders.length - 1];
+    if (!opener.test(rest.slice(0, last.index))) rest = rest.slice(last.index + last[0].length);
+  }
+  return rest.trim();
+}
+
 export function stripEdits(text) {
   let out = String(text || '').replace(/<(\/?)docedits>/gi, '<$1edits>');
   const files = readFiles(out);
@@ -453,6 +480,21 @@ function countOccurrences(hay, needle) {
   while (i !== -1) { n++; i = hay.indexOf(needle, i + needle.length); }
   return n;
 }
+/* HOW MANY PLACES A QUOTE COULD MEAN — overlapping ones too. Counted the way
+ * "change all" counts (one after another, never overlapping), "ab ab" is in
+ * "ab ab ab" once, and the change was written at the first of the two places it
+ * fits without a word: the one law of finding (one place, or refused) broken in
+ * silence. Stops at two: two is already a refusal. */
+function placesOf(hay, needle) {
+  if (!needle) return 0;
+  const first = hay.indexOf(needle);
+  if (first === -1) return 0;
+  return hay.indexOf(needle, first + 1) === -1 ? 1 : 2;
+}
+function howMany(hay, needle) {
+  const places = placesOf(hay, needle);
+  return places < 2 ? places : Math.max(2, countOccurrences(hay, needle));
+}
 
 /* FIND WHERE A CHANGE GOES. Exactly as quoted, once; else the same words with
  * only spacing, quote marks or dashes different, once. Anything else is
@@ -463,14 +505,14 @@ export function locate(text, find) {
   const needle = String(find || '');
   if (!needle) return { ok: false, why: 'the change did not say what to replace' };
 
-  const exact = countOccurrences(src, needle);
+  const exact = howMany(src, needle);
   if (exact === 1) { const i = src.indexOf(needle); return { ok: true, from: i, to: i + needle.length, how: 'exact' }; }
   if (exact > 1) return { ok: false, why: `those words appear ${exact} times, so it is not clear which one was meant` };
 
   const F = foldWithMap(src);
   const n = normalize(needle);
   if (!n) return { ok: false, why: 'the change did not say what to replace' };
-  const count = countOccurrences(F.text, n);
+  const count = howMany(F.text, n);
   if (count === 1) {
     const k = F.text.indexOf(n);
     return { ok: true, from: F.at[k], to: F.at[k + n.length - 1] + 1, how: 'spacing' };

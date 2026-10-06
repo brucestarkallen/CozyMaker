@@ -1192,16 +1192,36 @@ frames are still better.
   same. `browser.py` read the reply the instant its word "fifteen" appeared; with Smooth streaming its last words come
   a few frames later, so it reads it when the turn is done (the words are the same).
 
+### The line-by-line audit begins (v1.6.1)
+
+He asked for every file to be audited line by line. `docs/audit.md` is the ledger: which files are read whole,
+what each held, what is left. Found and fixed so far, each held by a law that fails on v1.6.0:
+
+- **A quote that fits in two overlapping places was written at the first** (`edits.js locate`). The count of places
+  skipped ahead by the quote's length, so "ab ab" in "ab ab ab" counted once. A find must land in exactly one
+  place, or be refused — overlapping places count now. "Change all" still counts what it changes.
+- **A document holding the word <thinking> lost its question** (`run.js runWorker`). The thought-stripper ran over the
+  whole answer, documents included: an instruction set or preset that says "open with <thinking>" was read as an
+  unfinished thought, everything after it cut — his question in <ask> with it, so the job waited on an answer he
+  was never asked for. The documents and blocks come out first now.
+- **The persona re-read its own reply cut short** (`run.js frontMessages`). The same stripper read "put <thinking>
+  tags at the top, then write the scene" as a thought and sent back "put". It reads its replies the way the stream
+  does now (`ownWords`): a thought that opens the reply, or one the template opened ending on its own line — a tag
+  named in a sentence is words. The crew's notes keep the wider net.
+- **The shell copy** (`serve.py mirror_exports`): two document names that clean to one file name shared it, the second
+  writing over the first; and every save rewrote and flushed every document's copy to the phone's storage. Each gets
+  its own file now, and only a changed one is written.
+
 ## Testing
 
 ```
 bash tests/all.sh           every suite, exit code intact
 ```
 
-    node tests/units.mjs         931 checks — the real modules on a real document, and what the persona hears
+    node tests/units.mjs         945 checks — the real modules on a real document, and what the persona hears
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
-    python3 tests/server.py       49 checks — the real serve.py, real files on disk, streams timed
+    python3 tests/server.py       53 checks — the real serve.py, real files on disk, streams timed
     python3 tests/browser.py      79 checks — real Chromium at 390x844, end to end
     python3 tests/walk_worlds.py 225 checks — the drawer, conversations, swipes and versions, edit and
                                               send again, delete, branch, go on, re-quoting, crafts,
@@ -1221,7 +1241,7 @@ bash tests/all.sh           every suite, exit code intact
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-1,391 checks. Every suite must be green before a push. `tests/fixtures/` holds answers recorded from the
+1,409 checks. Every suite must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

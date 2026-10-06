@@ -33,7 +33,7 @@ import urllib.error
 import subprocess
 from pathlib import Path
 
-VERSION = "1.6.0"
+VERSION = "1.6.1"
 ROOT = Path(__file__).resolve().parent
 HOME = Path(os.environ.get("COZYMAKER_HOME", Path.home() / ".cozymaker"))
 PROJECTS = HOME / "projects"
@@ -241,8 +241,22 @@ def mirror_exports(proj):
             name = re.sub(r"[^A-Za-z0-9 ._-]", "_", doc.get("name", "untitled"))
             if not name.lower().endswith(".md"):
                 name += ".md"
+            # two names that read the same once cleaned ("Notes?" and "Notes*")
+            # used to share one file, and the second wrote over the first
+            base, n = name[:-3], 2
+            while name in keep:
+                name = f"{base} ({n}).md"
+                n += 1
             keep.add(name)
-            atomic_write(d / name, doc.get("text", ""))
+            text = doc.get("text", "")
+            # a document that did not change is not written again: every save
+            # rewrote and flushed every document to the phone's storage
+            try:
+                if (d / name).read_text(encoding="utf-8") == text:
+                    continue
+            except (FileNotFoundError, UnicodeDecodeError):
+                pass
+            atomic_write(d / name, text)
         for f in d.glob("*.md"):
             if f.name not in keep:
                 f.unlink(missing_ok=True)
@@ -488,6 +502,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.wfile.flush()
         except (BrokenPipeError, ConnectionResetError):
             pass  # the page went away — Stop, or it was closed
+
 
 
 class Server(socketserver.ThreadingMixIn, http.server.HTTPServer):
