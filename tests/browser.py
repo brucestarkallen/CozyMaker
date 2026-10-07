@@ -508,6 +508,72 @@ def main():
             ok("no native <details> is left anywhere in the house", page.locator("#houseBody details").count() == 0)
             page.click("#houseSheet [data-close]")
 
+            # -- what was sent (v2.1) -------------------------------------------
+            house_api = lambda: json.loads(urllib.request.urlopen(f"http://127.0.0.1:{PORT}/api/house").read())
+            page.locator(".turn.maker .bubble").first.click()
+            page.wait_for_timeout(300)
+            ws = page.locator(".turn.maker").first.locator(".turn-actions .btn", has_text="What was sent")
+            ok("a reply offers What was sent", ws.count() == 1)
+            if ws.count():
+                ws.click()
+                page.wait_for_function("() => document.querySelector('#sentSheet.open') && !/Fetching/.test(document.getElementById('sentBody').textContent)", timeout=10000)
+                sbody = page.locator("#sentBody").inner_text()
+                ok("it says how many requests went out and how many tokens went in, and that it is an estimate",
+                   re.search(r"1 request \u00b7 about [\d,]+ tokens in \u2014 an estimate", sbody) is not None, sbody[:240])
+                ok("in parts: his instructions, his whole engine and the room, each with its tokens",
+                   "Your instructions for them" in sbody and "Your engine \u2014 engine/generalist.md" in sbody and "How this room works" in sbody
+                   and len(re.findall(r"~[\d,]+ tokens", sbody)) >= 4, sbody[:400])
+                page.locator("#sentBody .sent-name", has_text="Your engine").click()
+                page.wait_for_timeout(200)
+                ok("a part opens to its words", "You are also Generalist" in page.locator("#sentBody .sent-text").first.inner_text())
+                page.locator("#sentBody .sent-tab", has_text="Raw").click()
+                page.wait_for_timeout(200)
+                raw = page.locator("#sentBody").inner_text()
+                ok("raw: the settings and every message, exactly as they went", "settings" in raw and '"model": "test-model"' in raw and "Bruce said:" in raw and "max_tokens" in raw, raw[:300])
+                page.click("#sentSheet [data-close]")
+                page.wait_for_timeout(300)
+            kept = list((home / "sent").rglob("*.json"))
+            ok("it is kept on the device", len(kept) == 1, [str(k) for k in kept])
+            kept_text = kept[0].read_text() if kept else ""
+            ok("never with his key", "Bearer" not in kept_text and '"key"' not in kept_text and "Authorization" not in kept_text)
+
+            # -- neon, Return to default, Copy and Paste (v2.1) ------------------
+            page.click("#settingsBtn")
+            page.wait_for_timeout(400)
+            page.evaluate("""() => { const s = [...document.querySelectorAll('#houseBody select')].find((x) => [...x.options].some((o) => o.value === 'neon'));
+              s.value = 'neon'; s.dispatchEvent(new Event('change')); }""")
+            page.wait_for_timeout(700)
+            neon = page.evaluate("""() => { const cs = getComputedStyle(document.documentElement);
+              const rgb = (h) => { h = h.trim().replace('#', ''); return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)); };
+              const lum = ([r, g, b]) => { const f = (c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+              const a = lum(rgb(cs.getPropertyValue('--ink'))), b = lum(rgb(cs.getPropertyValue('--panel')));
+              return { theme: document.documentElement.dataset.theme, ratio: (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05), glow: cs.getPropertyValue('--glow').trim() }; }""")
+            ok("the neon look is there by its name, purple light, and its words read clearly (7:1 or better)",
+               neon["theme"] == "neon" and neon["glow"] == "#c86bff" and neon["ratio"] >= 7 and house_api()["settings"]["theme"] == "neon", neon)
+            page.once("dialog", lambda d: d.accept())
+            page.locator("#houseBody .btn", has_text="Return to default").first.click()
+            page.wait_for_timeout(900)
+            hh = house_api()
+            ok("Return to default puts the example back, asking first, and keeps it on the device",
+               hh["personaFrame"].startswith("You are {{char}}, a vampire.") and "countess" in hh["personaFrame"]
+               and page.locator("#houseBody textarea").first.input_value() == hh["personaFrame"], hh["personaFrame"][:80])
+            page.locator("#houseBody .btn", has_text="Return to default").nth(1).click()
+            page.wait_for_timeout(900)
+            ok("and under the note at the end, the example note", house_api()["postNote"].startswith("Stay {{char}}: elegant, dry and exact."), house_api()["postNote"][:60])
+            page.locator("#houseBody .row .btn", has_text=re.compile("^Copy$")).first.click()
+            page.wait_for_timeout(300)
+            page.locator("#houseBody .btn", has_text=re.compile("^Paste$")).click()
+            page.wait_for_timeout(900)
+            conns = house_api()["connections"]
+            ok("Paste makes another connection like the one copied, under its own name, its key and settings carried",
+               len(conns) == 2 and conns[1]["name"] == (conns[0].get("name") or conns[0]["model"]) + " (copy)" and conns[1]["url"] == conns[0]["url"]
+               and conns[1]["key"] == conns[0]["key"] and conns[1]["model"] == conns[0]["model"] and conns[1]["id"] != conns[0]["id"], conns)
+            ok("and opens it, so only the model needs changing", page.evaluate("[...document.querySelectorAll('#houseBody input')].some((i) => i.value === 'test-model')"))
+            page.evaluate("""() => { const s = [...document.querySelectorAll('#houseBody select')].find((x) => [...x.options].some((o) => o.value === 'neon'));
+              if (s) { s.value = 'hearth'; s.dispatchEvent(new Event('change')); } }""")
+            page.wait_for_timeout(300)
+            page.click("#houseSheet [data-close]")
+
             # -- nothing threw the whole way through ----------------------------
             ok("nothing threw during the walk", not errors, "; ".join(errors[:4]))
 

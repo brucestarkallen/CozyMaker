@@ -152,6 +152,7 @@ export async function callModel(conn, opts = {}) {
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     if (opts.stale && opts.stale()) return { ok: false, text: '', thinking: '', error: 'let go' };
     try {
+      const rec = opts.onSent ? opts.onSent({ url: req.url, model: req.body && req.body.model, body: JSON.parse(JSON.stringify(req.body)), at: Date.now() }) : null;
       const res = await fetch('/api/call', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -159,6 +160,7 @@ export async function callModel(conn, opts = {}) {
         signal: opts.signal,
       });
       const out = await readReply(req.house, res, { onProgress: opts.onProgress });
+      if (rec) Object.assign(rec, { ms: Date.now() - rec.at, usage: out.usage || null, finish: out.finish, error: out.finish === 'error' ? out.error : undefined });
       if (out.finish === 'error') {
         lastError = out.error || 'the provider was not happy with that';
         const status = Number(out.status) || 0;
@@ -282,6 +284,9 @@ async function streamOnce(conn, opts, dropThinking) {
     stream: true,
   });
   if (dropThinking) req.body = withoutThinking(req.body);
+  /* WHAT WAS SENT, kept for him to read: where it went and the body, word for word —
+   * never the headers, which carry his key */
+  const rec = opts.onSent ? opts.onSent({ url: req.url, model: req.body && req.body.model, body: req.body, at: Date.now() }) : null;
   const res = await fetch('/api/call', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -290,6 +295,7 @@ async function streamOnce(conn, opts, dropThinking) {
   });
   if (!res.ok || !res.body) throw new Error('the connection did not open');
   const out = await readReply(req.house, res, { onText: opts.onText, onThinking: opts.onThinking });
+  if (rec) Object.assign(rec, { ms: Date.now() - rec.at, usage: out.usage || null, finish: out.finish, error: out.finish === 'error' ? out.error : undefined });
   /* A REPLY BROKEN OFF PARTWAY IS A CUT REPLY. A provider that says it went
    * wrong in the middle of an answer (or a line that dropped) left what had
    * arrived looking finished — no failure, no Go on, a truncated answer passing
@@ -427,6 +433,7 @@ export async function readReply(house, res, { onText, onThinking, onProgress } =
       return { finish: 'error', error: typeof d === 'string' ? d : JSON.stringify(d), status: Number(data.status) || 0, retryAfter: data.retryAfter, text: '', thinking: '' };
     }
     const a = readAnswer(house, data);
+    a.usage = countOf(data.usage);
     const cut = splitThink(a.text);
     if (cut.thinking) { a.text = cut.text; a.thinking = [a.thinking, cut.thinking].filter(Boolean).join('\n\n'); }
     if (a.text && onText) onText(a.text);
@@ -439,7 +446,7 @@ export async function readReply(house, res, { onText, onThinking, onProgress } =
     return whole(data);
   }
   const decoder = new TextDecoder();
-  let buffer = '', raw = '', sse = false, text = '', thinking = '', cut = false, ended = false, midError = null, told = 0;
+  let buffer = '', raw = '', sse = false, text = '', thinking = '', cut = false, ended = false, midError = null, told = 0, usage = null;
   const split = makeThinkSplitter((kind, s) => {
     if (kind === 'thinking') { thinking += s; if (onThinking) onThinking(s); } else { text += s; if (onText) onText(s); }
   });
@@ -455,6 +462,10 @@ export async function readReply(house, res, { onText, onThinking, onProgress } =
     /* a Hermes Agent narrating its tools (event: hermes.tool.progress) is not the answer, and never its failure */
     if (obj.toolCallId) return;
     if (obj.error) { midError = obj.error; return; }
+    /* WHAT THE SERVICE COUNTED, when it says: OpenAI-shaped services in a last
+     * chunk, Anthropic's at the start (in) and the end (out) */
+    if (obj.usage && typeof obj.usage === 'object') usage = { ...(usage || {}), ...obj.usage };
+    if (obj.type === 'message_start' && obj.message && obj.message.usage) usage = { ...(usage || {}), ...obj.message.usage };
     if (obj.type === 'message_stop' || (obj.type === 'message_delta' && obj.delta && obj.delta.stop_reason)) ended = true;
     const choice = obj.choices && obj.choices[0];
     if (choice && choice.finish_reason) ended = true;
@@ -489,7 +500,20 @@ export async function readReply(house, res, { onText, onThinking, onProgress } =
   if (onProgress) onProgress({ text, thinking });
   if (midError) { const e = errorOf(midError); return { finish: 'error', error: e.message, status: e.status, midStream: true, text, thinking }; }
   if (!text && !thinking && !ended) return { finish: 'error', error: 'the answer stopped before anything came', status: 0, text: '', thinking: '' };
-  return { text, thinking, finish: cut ? 'length' : 'stop', thinkTokens: 0, hiddenThought: false };
+  return { text, thinking, finish: cut ? 'length' : 'stop', thinkTokens: 0, hiddenThought: false, usage: countOf(usage) };
+}
+
+/* A service's own count of a request, in one shape: tokens in (with what was read
+ * from its cache), tokens out. Null when it said nothing. */
+export function countOf(u) {
+  if (!u || typeof u !== 'object') return null;
+  const n = (v) => (v === undefined || v === null || !Number.isFinite(Number(v)) ? null : Number(v));
+  const cached = n(u.cache_read_input_tokens) ?? n(u.prompt_cache_hit_tokens) ?? n(u.prompt_tokens_details && u.prompt_tokens_details.cached_tokens) ?? 0;
+  let inTok = n(u.prompt_tokens);
+  if (inTok === null && n(u.input_tokens) !== null) inTok = n(u.input_tokens) + (n(u.cache_read_input_tokens) || 0) + (n(u.cache_creation_input_tokens) || 0);
+  const outTok = n(u.completion_tokens) ?? n(u.output_tokens);
+  if (inTok === null && outTok === null) return null;
+  return { in: inTok, out: outTok, cached };
 }
 
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }

@@ -205,12 +205,42 @@ The last three work from the Plot Essential and Instructions Maker's own crafts
 instructions; each can be changed from its document, with the original one tap
 away. The cog, under the floor, shows exactly who reads what.
 
+## What was sent, and what it cost
+
+Tap a reply and choose **What was sent**: every request that reply cost — each
+step of the one you talk to, each helper, each search — exactly as it went. **In
+parts** shows each piece with how many tokens it is (your instructions and the
+greeting, your engine, how this room works, then each message); **Raw** shows the
+settings and every message word for word, with Copy. The line at the top adds it
+up: the service's own count when it sends one (with what it read from cache),
+otherwise an estimate, and it says which. The newest 40 replies of each world are
+kept on the device, in `~/.cozymaker/sent`, never with your key.
+
+On a typical turn the one you talk to reads about 31,000 tokens of engine, about
+3,000 of the room and your instructions, your documents whole (a plot essential is
+usually 6,000–10,000), and the conversation.
+
+## Starting your own persona
+
+Their instructions and the note at the end each have **Return to default**, which
+puts back an example to make your own from: {{char}}, a five-hundred-year-old
+vampire who keeps worlds the way she kept a countess's ledgers, and a short note
+that keeps her voice. A brand-new house begins with it; a house you have set up is
+never touched. The note at the end goes as a system message, or as a user message
+added to the end of yours — your choice, beside it.
+
+## Connections, copied
+
+Every connection has **Copy** beside Try it, and **Paste** beside Add another
+makes a new one from it — same provider, key and settings — and opens it, so only
+the model needs changing.
+
 ## For anyone working on the code
 
 Read `AGENTS.md` first.
 
 ```
-bash tests/all.sh    eleven runs, 1,186 checks
+bash tests/all.sh    eleven runs, 1,220 checks
 ```
 
 `docs/lineage.md` lists every version of Cozy Tavern and Cozy Chat and what

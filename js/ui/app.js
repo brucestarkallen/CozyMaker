@@ -3,6 +3,8 @@
 
 import * as store from '../store.js';
 import { runTurn, capUndo, landTurn, landContinuation, commit, versionOf, FRONT_ONLY, GO_ON } from '../agents/run.js';
+import { openSent, saveSent } from './sent.js';
+import { EXAMPLE_FRAME, EXAMPLE_NOTE, shouldGiveExamples } from '../agents/examples.js';
 import { isNewStory, houseCommand } from '../agents/router.js';
 import { stopWork, onLearn, onKey } from '../agents/call.js';
 import { undoBatch } from '../doc/edits.js';
@@ -32,6 +34,12 @@ const STOP_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="current
 
 async function boot() {
   const house = await store.loadHouse();
+  if (shouldGiveExamples(house)) {
+    house.personaFrame = EXAMPLE_FRAME;
+    house.postNote = EXAMPLE_NOTE;
+    house.settings.examplesGiven = true;
+    await store.saveHouse(house);
+  }
   applyTheme(house.settings.theme);
   const worlds = await store.listProjects();
   const want = store.lastOpenId();
@@ -60,7 +68,17 @@ function wire() {
       closeSheet(id);
     });
   }
-  stream.addEventListener('scroll', () => { pinned = nearBottom(); }, { passive: true });
+  /* HE OWNS THE SCROLL (v2.1). While a reply streamed, every frame scrolled the
+   * page to its end whenever he was within 120px of it, so a finger that began
+   * near the bottom was pulled back to it each frame: the page would not move, or
+   * moved in jerks. A finger on the page, or a wheel turned up, is his at once;
+   * following the reply comes back only when he lets go at the very end. */
+  stream.addEventListener('touchstart', () => { holding = true; pinned = false; }, { passive: true });
+  const letGo = () => { holding = false; if (atBottom()) pinned = true; };
+  stream.addEventListener('touchend', letGo, { passive: true });
+  stream.addEventListener('touchcancel', letGo, { passive: true });
+  stream.addEventListener('wheel', (e) => { if (e.deltaY < 0) pinned = false; }, { passive: true });
+  stream.addEventListener('scroll', () => { if (!holding) pinned = pinned ? nearBottom() : atBottom(); }, { passive: true });
   /* The turn says what the crew is doing, in words ("the builder is on it"). The
    * channel's own announcement carries only a worker's id, and used to land a
    * moment later and write "builder" or "listener" over those words. */
@@ -101,7 +119,9 @@ function grow() {
  * down only while he is already at the bottom; the moment he scrolls up to
  * read, it stops pulling him back. */
 let pinned = true;
+let holding = false;
 function nearBottom() { return stream.scrollHeight - stream.scrollTop - stream.clientHeight < 120; }
+function atBottom() { return stream.scrollHeight - stream.scrollTop - stream.clientHeight < 8; }
 function follow() { if (pinned) stream.scrollTop = stream.scrollHeight; }
 /* HE OWNS THE SCROLL, measured before the page changes (the Plot Essential
  * Maker's rule). The flag the scroll event keeps is a frame late: a piece of
@@ -475,6 +495,10 @@ function actionsRow(t, index) {
     row.append(b);
   };
   add('Copy', () => copyText(t.text || ''));
+  if (t.role === 'maker' && (t.sent || []).length) {
+    const w = store.getProject();
+    add('What was sent', () => openSent(w && w.id, t.sent, t.at ? new Date(t.at).toLocaleString() : ''));
+  }
   add('Edit', () => startEdit(index));
   add('Branch here', () => branchHere(index));
   add('Delete', () => deleteTurn(index));
@@ -907,6 +931,9 @@ async function send(text, forceWorker, opts = {}) {
   }
   const stoppedByHim = result.stopped || abort.signal.aborted;
   const words = result.reply || '';
+  /* what this reply cost, every request of it, kept on the device for him to read */
+  const sentKey = (result.sent || []).length ? `${chatId}-${Date.now().toString(36)}` : null;
+  if (sentKey) saveSent(worldId, sentKey, { at: Date.now(), chat: chatId, requests: result.sent });
   const makerTurn = {
     role: 'maker',
     text: words || (stoppedByHim ? '(stopped)' : result.error ? `That did not go through \u2014 ${result.error}`
@@ -919,6 +946,7 @@ async function send(text, forceWorker, opts = {}) {
     batches: result.batches || [],
     edits: result.edits || [],
     asks: result.asks || [],
+    sent: sentKey ? [sentKey] : [],
     cut: Boolean(result.cut && words),
     cutBy: result.cut && words ? (result.cutBy || 'length') : '',
     at: Date.now(),

@@ -35,10 +35,13 @@ import glob
 import subprocess
 from pathlib import Path
 
-VERSION = "2.0.0"
+VERSION = "2.1.0"
 ROOT = Path(__file__).resolve().parent
 HOME = Path(os.environ.get("COZYMAKER_HOME", Path.home() / ".cozymaker"))
 PROJECTS = HOME / "projects"
+# what was sent to a model, per world: his to read, never in a backup, the newest kept
+SENT = HOME / "sent"
+SENT_KEEP = 40
 BACKUPS = HOME / "backups"
 EXPORTS = HOME / "exports"
 HOUSE = HOME / "_house.json"
@@ -63,7 +66,7 @@ def _commit():
 
 COMMIT = _commit()
 
-for d in (HOME, PROJECTS, BACKUPS, EXPORTS):
+for d in (HOME, PROJECTS, BACKUPS, EXPORTS, SENT):
     d.mkdir(parents=True, exist_ok=True)
 
 _write_lock = threading.Lock()
@@ -194,6 +197,19 @@ def default_house():
         "personaFrame": "",
         "projects": [],
     }
+
+
+SENT_KEY = re.compile(r"^[A-Za-z0-9_-]{1,120}$")
+
+
+def sent_path(pid, key):
+    return SENT / pid / f"{key}.json"
+
+
+def keep_newest_sent(pid):
+    files = sorted((SENT / pid).glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    for old in files[SENT_KEEP:]:
+        old.unlink(missing_ok=True)
 
 
 def project_path(pid):
@@ -425,6 +441,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self.send_json(house)
         if path == "/api/projects":
             return self.send_json({"projects": project_list()})
+        if path.startswith("/api/sent/"):
+            bits = path[len("/api/sent/"):].split("/")
+            if len(bits) != 2 or not safe_id(bits[0]) or not SENT_KEY.match(bits[1]):
+                return self.send_json({"error": "bad id"}, 400)
+            p = sent_path(bits[0], bits[1])
+            if not p.exists():
+                return self.send_json({"error": "not kept"}, 404)
+            try:
+                return self.send_json(json.loads(p.read_text(encoding="utf-8")))
+            except Exception:
+                return self.send_json({"error": "it could not be read"}, 500)
         if path.startswith("/api/project/"):
             pid = path[len("/api/project/"):]
             if not safe_id(pid):
@@ -470,6 +497,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 roll_backup(HOUSE)
                 atomic_write(HOUSE, json.dumps(body, indent=1))
             return self.send_json({"ok": True})
+        if path.startswith("/api/sent/"):
+            bits = path[len("/api/sent/"):].split("/")
+            if len(bits) != 2 or not safe_id(bits[0]) or not SENT_KEY.match(bits[1]):
+                return self.send_json({"error": "bad id"}, 400)
+            if not (isinstance(body, dict) and isinstance(body.get("requests"), list)):
+                return self.send_json(incomplete, 400)
+            with _write_lock:
+                (SENT / bits[0]).mkdir(parents=True, exist_ok=True)
+                atomic_write(sent_path(bits[0], bits[1]), json.dumps(body))
+                keep_newest_sent(bits[0])
+            return self.send_json({"ok": True})
         if path.startswith("/api/project/"):
             pid = path[len("/api/project/"):]
             if not safe_id(pid):
@@ -497,6 +535,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 roll_backup(p)
                 p.unlink(missing_ok=True)
                 shutil.rmtree(EXPORTS / pid, ignore_errors=True)
+                shutil.rmtree(SENT / pid, ignore_errors=True)
             return self.send_json({"ok": True})
         return self.send_json({"error": "unknown"}, 404)
 

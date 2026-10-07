@@ -211,6 +211,8 @@ class Model(http.server.BaseHTTPRequestHandler):
 
         if sent.get("stream") and who == "front" and "tell me something long" in json.dumps(rest[-1:] if rest else []):
             # a fast model: two hundred small pieces, 5ms apart -- the way tokens really arrive
+            # (and when asked "again", slower, so a finger can be put on the page while it streams)
+            slow_long = "and again" in json.dumps(rest[-1:] if rest else [])
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.end_headers()
@@ -218,7 +220,7 @@ class Model(http.server.BaseHTTPRequestHandler):
                 for i in range(200):
                     self.wfile.write(("data: " + json.dumps({"choices": [{"delta": {"content": f"word {i} and done. "}}]}) + "\n\n").encode())
                     self.wfile.flush()
-                    time.sleep(0.005)
+                    time.sleep(0.03 if slow_long else 0.005)
                 self.wfile.write(b"data: [DONE]\n\n")
                 self.wfile.flush()
             except (BrokenPipeError, ConnectionResetError):
@@ -648,6 +650,27 @@ def main():
             page.wait_for_timeout(1200)
             top = page.evaluate("document.getElementById('stream').scrollTop")
             ok("scrolling up while a reply streams is not undone", top < 40, top)
+            page.wait_for_function("() => !document.querySelector('#sendBtn.stop')", timeout=30000)
+            page.wait_for_timeout(600)
+            # a finger that starts near the end: the page is his at once (v2.1). On 2.0.0 every frame
+            # pulled it back to the end while it was within 120px, so it would not move, or moved in jerks.
+            page.fill("#say", "and again, tell me something long")
+            page.click("#sendBtn")
+            page.wait_for_function("() => { const b = [...document.querySelectorAll('.turn.maker .bubble')].pop(); return b && /word 5 /.test(b.textContent); }", timeout=10000)
+            held = page.evaluate("""() => new Promise((done) => {
+              const s = document.getElementById('stream');
+              const t = (y) => new Touch({ identifier: 7, target: s, clientX: 200, clientY: y });
+              s.dispatchEvent(new TouchEvent('touchstart', { touches: [t(500)], changedTouches: [t(500)], bubbles: true }));
+              s.scrollTop = s.scrollHeight - s.clientHeight - 60;
+              const at = s.scrollTop, seen = [];
+              let n = 0;
+              const look = () => { seen.push(s.scrollHeight - s.scrollTop - s.clientHeight); if (++n < 30) requestAnimationFrame(look);
+                else { s.dispatchEvent(new TouchEvent('touchend', { touches: [], changedTouches: [t(560)], bubbles: true })); done({ moved: s.scrollTop - at, least: Math.min(...seen) }); } };
+              requestAnimationFrame(look);
+            })""")
+            ok("a finger on the page while a reply streams keeps it where he put it \u2014 never pulled back to the end", held["moved"] == 0 and held["least"] >= 50, held)
+            page.wait_for_function("() => !document.querySelector('#sendBtn.stop')", timeout=30000)
+            page.wait_for_timeout(600)
 
             # ---------------------------------------- bring one in
             page.click("#menuBtn")

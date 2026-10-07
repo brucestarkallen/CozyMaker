@@ -57,12 +57,13 @@ export const SEARCH_SYSTEM = `${SEARCH_MARK} for the people writing a story with
 
 /* Look each thing up, one after another (the agent is one agent). Returns what
  * came back for each, or why it could not be looked up. */
-export async function lookUp(conn, queries, { signal, stale, onStatus } = {}) {
+export async function lookUp(conn, queries, { signal, stale, onStatus, onSent } = {}) {
   const results = [];
   for (const query of queries || []) {
     if ((signal && signal.aborted) || (stale && stale())) break;
     onStatus && onStatus(`searching the internet for ${query.length > 60 ? query.slice(0, 57) + '\u2026' : query}`);
     const out = await callModel(conn, {
+      onSent,
       system: SEARCH_SYSTEM,
       messages: [{ role: 'user', content: `Look this up on the internet: ${query}` }],
       maxTokens: WORKER_ROOM, signal, stale,

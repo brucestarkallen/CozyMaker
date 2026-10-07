@@ -51,7 +51,14 @@ export function streamText(box) {
     append(text) {
       const words = String(text || '');
       if (!words || !box) return;
-      const follow = box.scrollHeight - box.scrollTop - box.clientHeight < 24;
+      if (!box.dataset.watched) {
+        box.dataset.watched = '1';
+        box.addEventListener('touchstart', () => { box.dataset.held = '1'; }, { passive: true });
+        const free = () => { if (box.scrollHeight - box.scrollTop - box.clientHeight < 8) delete box.dataset.held; };
+        box.addEventListener('touchend', free, { passive: true });
+        box.addEventListener('touchcancel', free, { passive: true });
+      }
+      const follow = !box.dataset.held && box.scrollHeight - box.scrollTop - box.clientHeight < 24;
       words.split('\n').forEach((part, i) => {
         if (i > 0 || !line) newLine();
         addToLine(part);

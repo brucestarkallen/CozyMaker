@@ -222,6 +222,24 @@ def main():
            and back["docs"][0]["text"] == world["docs"][0]["text"])
         ok("the save is stamped", isinstance(back.get("updated"), int) and back["updated"] > 0)
 
+        # what was sent (v2.1): kept per world on the device, the newest 40, gone with the world
+        rec = {"at": 1, "requests": [{"who": "the one you talk to \u2014 step 1", "url": "https://x/v1/chat/completions", "body": {"model": "m", "messages": [{"role": "user", "content": "hi"}]}}]}
+        code, r = call("/api/sent/p_test1/c1-abc", "PUT", rec)
+        code2, got = call("/api/sent/p_test1/c1-abc")
+        ok("what was sent is kept and reads back exactly", code == 200 and code2 == 200 and got == rec, got)
+        def code_of(path, method="GET", body=None):
+            try:
+                return call(path, method, body)[0]
+            except urllib.error.HTTPError as e:
+                return e.code
+        ok("a name that could climb out of its folder is refused", code_of("/api/sent/p_test1/..%2Fhouse", "PUT", rec) == 400 and code_of("/api/sent/../x") in (400, 404))
+        ok("a record with no requests is refused, and nothing is written", code_of("/api/sent/p_test1/c1-empty", "PUT", {"at": 1}) == 400 and code_of("/api/sent/p_test1/c1-empty") == 404)
+        for i in range(45):
+            call(f"/api/sent/p_test1/k{i:02d}", "PUT", rec)
+            time.sleep(0.002)
+        left = sorted(x.stem for x in (home / "sent" / "p_test1").glob("*.json"))
+        ok("only the newest 40 are kept", len(left) == 40 and "k44" in left and "c1-abc" not in left and "k00" not in left, (len(left), left[:3]))
+
         code, listing = call("/api/projects")
         ok("the world shows in the list", any(p["id"] == "p_test1" for p in listing["projects"]))
         row = [p for p in listing["projects"] if p["id"] == "p_test1"][0]
@@ -270,6 +288,7 @@ def main():
             ok("a bad world name is refused", e.code == 400)
 
         code, r = call("/api/project/p_test1", "DELETE")
+        ok("what was sent goes with its world", not (home / "sent" / "p_test1").exists())
         ok("a world deletes", code == 200)
         try:
             call("/api/project/p_test1")

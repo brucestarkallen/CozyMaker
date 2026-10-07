@@ -1321,6 +1321,30 @@ the sub-agents do — "like a harness on code". What was found, and what changed
   `*card` still caught by the room before anyone is asked), `*regress`, search, the note at the
   end, every document job button (they now send their words to the one he talks to).
 
+### What was sent, the scroll, neon, the example persona, copied connections (v2.1)
+
+- **What was sent**, as Cozy Chat and Cozy Tavern have it: `call.js` hands every request it sends to
+  `onSent` (url, model, body — never the headers, which carry his key) and fills in the time, the finish
+  and the service's own count (`countOf`: OpenAI's, Anthropic's and DeepSeek's shapes, cache included;
+  null when nothing was said, never invented). `runTurn` records each step of the one he talks to (with
+  where its three parts lie in the system prompt), each helper and each search, and returns `sent`;
+  `app.js` keeps it on the device (`PUT /api/sent/<world>/<key>`, the newest 40 per world, gone with the
+  world) and the turn keeps its key (`sent`, carried by versions and by Go on). `js/ui/sent.js` draws it:
+  in parts with tokens, and raw.
+- **He owns the scroll while a reply streams.** Every frame scrolled to the end whenever he was within
+  120px of it, so a finger that began near the bottom was pulled back each frame — the page would not
+  move, or moved in jerks. A touch or an upward wheel is his at once; following comes back only when he
+  lets go at the very end (8px). The live thinking box keeps the same rule (`streamtext.js`).
+- **Neon** — purple light on a night city — beside the other coats of paint; its words read at better
+  than 7:1 on its panels (measured in the browser suite).
+- **Return to default** under their instructions and under the note at the end puts back the example
+  (`js/agents/examples.js`: a vampire who keeps worlds, and a note that keeps her voice), asking first
+  when anything of his is there. A brand-new house begins with it (`shouldGiveExamples`); one he has set
+  up is never touched.
+- **Copy and Paste a connection**: Paste makes a new one from what was copied, under "(copy)", and opens
+  it so only the model changes. What a model taught the house about itself (`learned`, `tested`,
+  `modelHf`, `modelEfforts`) is the model's, so it is not copied.
+
 ## Testing
 
 ```
@@ -1328,16 +1352,16 @@ bash tests/all.sh           every suite, exit code intact
 ```
 
     node tests/units.mjs         594 checks — the real modules on a real document
-    node tests/harness.mjs       120 checks — the whole turn (v2.0): what the one he talks to reads, the
+    node tests/harness.mjs       136 checks — the whole turn (v2.0): what the one he talks to reads, the
                                               changes it makes, the steps, its helpers, the checks on
                                               what a turn brought in, put it back after a repair, Go on,
                                               Stop, a new world, search, the note at the end, too long
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
-    python3 tests/server.py       57 checks — the real serve.py, real files on disk, streams timed
-    python3 tests/browser.py      82 checks — real Chromium at 390x844, end to end: what it was sent, read off
+    python3 tests/server.py       62 checks — the real serve.py, real files on disk, streams timed
+    python3 tests/browser.py      94 checks — real Chromium at 390x844, end to end: what it was sent, read off
                                               the wire, and the change on the device
-    python3 tests/walk_worlds.py 226 checks — the drawer, conversations, swipes and versions, edit and
+    python3 tests/walk_worlds.py 227 checks — the drawer, conversations, swipes and versions, edit and
                                               send again, delete, branch, go on, re-quoting, crafts,
                                               the thinking box live, backup and restore, a model too
                                               small for the world, a real server killed mid-edit,
@@ -1354,7 +1378,7 @@ bash tests/all.sh           every suite, exit code intact
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-1,186 checks. Every suite must be green before a push. `tests/fixtures/` holds answers recorded from the
+1,220 checks. Every suite must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

@@ -478,7 +478,7 @@ export function joinSeam(a, b) {
   return head + tail;
 }
 
-async function runWorker({ worker, sections, conn, project, message, talk, fromHouse = false, asker = '', onStatus, onProgress, signal, stale, craft = null, note = '', searcher = null }) {
+async function runWorker({ worker, sections, conn, project, message, talk, fromHouse = false, asker = '', onStatus, onProgress, signal, stale, craft = null, note = '', searcher = null, onSent = null }) {
   /* a worker with a craft of its own reads that; the rest read their slice */
   const own = craft || sliceFor(sections, worker).text;
   /* searching the internet is his switch: off, the worker reads exactly what it always did */
@@ -519,14 +519,14 @@ async function runWorker({ worker, sections, conn, project, message, talk, fromH
 
     /* how far along it is, counted over every piece of the answer so far */
     const told = (before) => (onProgress ? (p) => onProgress({ text: before + (p.text || ''), thinking: p.thinking || '' }) : undefined);
-    let out = await callModel(conn, { system, messages: [{ role: 'user', content: user }], maxTokens: 8000, signal, stale, onProgress: told('') });
+    let out = await callModel(conn, { system, messages: [{ role: 'user', content: user }], maxTokens: 8000, signal, stale, onProgress: told(''), onSent });
     for (let more = 0; out.ok && more < MAX_CARRY_ON; more++) {
       const cutAtLimit = CUT_FINISH.test(out.finish || '') && (out.text || '').trim();
       const leftOpen = openFileAtEnd(out.text);
       if (!cutAtLimit && !leftOpen) break;
       if ((stale && stale()) || (signal && signal.aborted)) break;
       onStatus && onStatus(`the ${worker}'s answer ran long \u2014 asking for the rest`);
-      const rest = await callModel(conn, { system, messages: [
+      const rest = await callModel(conn, { onSent, system, messages: [
         { role: 'user', content: user }, { role: 'assistant', content: out.text }, { role: 'user', content: cutAtLimit ? CARRY_ON : fileLeftOpen(leftOpen) },
       ], maxTokens: 8000, signal, stale, onProgress: told(out.text) });
       /* nothing more came: asking again would only bring nothing again */
@@ -559,7 +559,7 @@ async function runWorker({ worker, sections, conn, project, message, talk, fromH
     const wants = searcher && !searched ? readSearch(out.text) : [];
     if (wants.length) {
       searched = true;
-      found.push(...await lookUp(searcher, wants, { signal, stale, onStatus }));
+      found.push(...await lookUp(searcher, wants, { signal, stale, onStatus, onSent }));
       if ((stale && stale()) || (signal && signal.aborted)) return { ok: false, error: 'stopped' };
       onStatus && onStatus(`the ${worker} is on it, with what was found`);
       round--;
@@ -800,6 +800,18 @@ export async function runTurn({
   /* what the one he talks to reads: his instructions, then his whole engine, then
    * how this room works — nothing of it ever changes between steps */
   const makerSystem = openingFor(p, [engine, frontBody(p, { search: Boolean(searcher) })].filter(Boolean).join('\n\n---\n\n'));
+  /* WHAT WAS SENT, every request of the turn, kept for him (app.js keeps it on the
+   * device): each with who it was for, and for the one he talks to, where its
+   * reading's three parts lie in what was sent */
+  const sent = [];
+  const recorder = (who, parts = null) => (rec) => { const r = { who, ...rec }; if (parts) r.parts = parts; sent.push(r); return r; };
+  const engineAt = engine ? makerSystem.indexOf(engine) : -1;
+  const roomAt = makerSystem.lastIndexOf(ROOM_MARK);
+  const makerParts = [
+    { name: 'Your instructions for them, and the greeting', where: 'system', start: 0, end: engineAt > 0 ? engineAt : Math.max(0, roomAt) },
+    { name: 'Your engine \u2014 engine/generalist.md, word for word', where: 'system', start: engineAt, end: engineAt + (engine || '').length },
+    { name: 'How this room works', where: 'system', start: roomAt, end: makerSystem.length },
+  ].filter((x) => x.start >= 0 && x.end > x.start);
   /* WHAT WAS ALREADY CHANGED, AND STILL STANDS — the house's own record, so
    * "did you add it?" is answered from what is so, never from memory */
   const standing = (() => {
@@ -876,7 +888,7 @@ export async function runTurn({
   let streamed = '';
   let quiet = false;
   let held = '';
-  const step = async (extra) => {
+  const step = async (extra, n) => {
     streamed = '';
     held = '';
     /* WHAT STREAMS IS WHAT HE WILL READ: the space a block leaves behind is held
@@ -910,12 +922,14 @@ export async function runTurn({
     const messages = makerMessages(opening, extra);
     let thought = '';
     const think = (t) => { thought += t; onThinking(t); };
-    let out = await streamModel(frontConn, { system: makerSystem, messages, onText: (t) => vis.feed(t), onThinking: think, signal, floor: MAKER_FLOOR });
+    let out = await streamModel(frontConn, { system: makerSystem, messages, onText: (t) => vis.feed(t), onThinking: think, signal, floor: MAKER_FLOOR,
+      onSent: recorder(`the one you talk to \u2014 step ${n + 1}`, makerParts) });
     let raw = out.text || '';
     for (let more = 0; out.cut && out.cutBy !== 'provider' && more < MAX_CARRY_ON && openBlockAtEnd(raw); more++) {
       if (stopped()) break;
       const open = openBlockAtEnd(raw);
       const rest = await streamModel(frontConn, { system: makerSystem, signal, floor: MAKER_FLOOR, onText: (t) => vis.feed(t), onThinking: think,
+        onSent: recorder(`the one you talk to \u2014 step ${n + 1}, carried on`, makerParts),
         messages: messages.concat([{ role: 'assistant', content: raw }, { role: 'user', content: open.file ? fileLeftOpen(open.file) : CARRY_ON }]) });
       if (!String(rest.text || '').trim()) break;
       raw = joinSeam(raw, rest.text);
@@ -938,7 +952,7 @@ export async function runTurn({
         talk: WHOLE_TALK.has(worker) ? buildTalk : talk,
         note: worker === 'worldbook' ? worldbookNote(working, p) : registryNote(working, worker),
         asker: p.maker || 'the one making this with the author',
-        onStatus: status, onProgress: progress, signal: either(signal, s), stale, craft, searcher }));
+        onStatus: status, onProgress: progress, signal: either(signal, s), stale, craft, searcher, onSent: recorder(HELPER_NAMES[worker]) }));
     if (!res || !res.ok) { const why = (res && res.error) || 'did not finish'; crew.push({ worker, failed: why }); return { failed: /^(?:stopped|let go)$/.test(why) ? 'it was stopped' : plainFailure(why) }; }
     if (res.ask) asks.push({ worker, ask: res.ask, at: Date.now() });
     const fresh = (res.edits || []).map((e) => { const own = { ...e }; delete own.house; return own; }).filter((e) => !landed.has(editKey(e)));
@@ -977,14 +991,14 @@ export async function runTurn({
     const said = partial ? (reply ? `${reply}\n\n${partial}` : partial) : reply;
     /* a failure after words were already said is still said: on a card, exactly */
     const told = !isStop && said ? [{ status: 'refused', name: '', reason: '', failure: true, why: `${plainFailure(error)} (${String(error).slice(0, 160)})` }] : [];
-    return { project: working, reply: said, thinking, cards: allCards.concat(pending, told), batches, crew, edits: turnEdits, asks, error: said && !isStop ? null : error, stopped: Boolean(isStop) };
+    return { project: working, reply: said, thinking, cards: allCards.concat(pending, told), batches, crew, edits: turnEdits, asks, error: said && !isStop ? null : error, stopped: Boolean(isStop), sent };
   };
 
   for (let n = 0; n < MAX_STEPS; n++) {
     if (stopped()) return fail('stopped', true);
     status('');
     let got;
-    try { got = await step(extra); }
+    try { got = await step(extra, n); }
     catch (e) {
       if ((e && e.name === 'AbortError') || stopped()) return fail('stopped', true);
       const why = (e && e.message) || String(e);
@@ -1084,7 +1098,7 @@ export async function runTurn({
     const wants = searcher && lookups < MAX_SEARCHES ? readSearch(outside) : [];
     if (wants.length) {
       lookups += wants.length;
-      foundText = findingsText(await lookUp(searcher, wants.slice(0, MAX_SEARCHES), { signal, onStatus: status }));
+      foundText = findingsText(await lookUp(searcher, wants.slice(0, MAX_SEARCHES), { signal, onStatus: status, onSent: recorder('the searcher') }));
       if (stopped()) return fail('stopped', true);
       follow = true;
     }
@@ -1130,7 +1144,7 @@ export async function runTurn({
   status('');
   if (stopped()) return fail('stopped', true);
   allCards.push(...pending);
-  const out = { project: working, reply, thinking, cards: allCards, batches, crew, edits: turnEdits, asks, error: null };
+  const out = { project: working, reply, thinking, cards: allCards, batches, crew, edits: turnEdits, asks, error: null, sent };
   if (cut) { out.cut = true; out.cutBy = cut.cutBy; }
   return out;
 }
@@ -1165,7 +1179,7 @@ function sortCards(cards) {
  * cards and the changes it made, never its undo payload, because a version
  * that is not shown has had its changes put back. */
 export function versionOf(t) {
-  return { text: t.text, thinking: t.thinking || '', thinkingMs: t.thinkingMs, cards: t.cards || [], edits: t.edits || [], asks: t.asks || [], cut: Boolean(t.cut), cutBy: t.cutBy || '', failed: Boolean(t.failed), at: t.at, batches: [] };
+  return { text: t.text, thinking: t.thinking || '', thinkingMs: t.thinkingMs, cards: t.cards || [], edits: t.edits || [], asks: t.asks || [], cut: Boolean(t.cut), cutBy: t.cutBy || '', failed: Boolean(t.failed), at: t.at, batches: [], sent: t.sent || [] };
 }
 
 export function landTurn(world, { chatId, snapshot, result, makerTurn, replaceAt = null }) {
@@ -1260,6 +1274,7 @@ export function landContinuation(world, { chatId, snapshot, result, at, words, m
     thinking: [t.thinking, makerTurn.thinking].filter(Boolean).join('\n\n'),
     thinkingMs: ((t.thinkingMs || 0) + (makerTurn.thinkingMs || 0)) || undefined,
     cards: (t.cards || []).concat(cards), batches: (t.batches || []).concat(batches), edits: (t.edits || []).concat(makerTurn.edits || []),
+    sent: (t.sent || []).concat(makerTurn.sent || []),
   };
   if (t.versions) turn.versions = t.versions.map((v, j) => (j === t.shown ? { ...v, text: joined, cut: makerTurn.cut, cutBy: makerTurn.cutBy } : v));
   chat.turns = chat.turns.map((x, i) => (i === at ? turn : x));

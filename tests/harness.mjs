@@ -18,6 +18,9 @@ import { setCraftForTests } from '../js/engine/crafts.js';
 import { runTurn, makeVisibleStream, visibleText, readHelpers, frontBody, landContinuation, landTurn, ROOM_MARK, CRAFT_FRAME, GO_ON, FRONT_ONLY, MAKER_FLOOR, MAX_STEPS } from '../js/agents/run.js';
 import { undoBatch } from '../js/doc/edits.js';
 import { SEARCH_MARK } from '../js/agents/search.js';
+import { countOf } from '../js/agents/call.js';
+import { EXAMPLE_FRAME, EXAMPLE_NOTE, shouldGiveExamples } from '../js/agents/examples.js';
+import { personaOf, openingFor, noteAtTheEnd } from '../js/agents/persona.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
@@ -28,6 +31,7 @@ setCraftForTests('auditor', readFileSync(join(ROOT, 'engine/sc-auditor.md'), 'ut
 
 let pass = 0, fail = 0;
 const failures = [];
+function eq2(name, got, want) { ok(name, JSON.stringify(got) === JSON.stringify(want), got); }
 function ok(name, cond, detail) { if (cond) { pass++; return; } fail++; failures.push(name + (detail !== undefined ? ` \u2014 ${typeof detail === 'string' ? detail : JSON.stringify(detail)}` : '')); }
 
 const PE = `# PLOT ESSENTIAL \u2014 The Ashwood Pact \u2014 V1.0
@@ -68,11 +72,12 @@ const WORLD = (docs = [{ id: 'd1', name: 'Plot Essential.md', kind: 'pe', text: 
  * he talks to carries the room's own heading; a helper the craft frame; the
  * searcher its own. Every answer streams, in small pieces that cut tags in two. */
 let calls = [];
-function sse(text, { finish = 'stop', thinking = '', signal = null, slow = 0 } = {}) {
+function sse(text, { finish = 'stop', thinking = '', signal = null, slow = 0, usage = null } = {}) {
   const pieces = [];
   for (let i = 0; i < thinking.length; i += 9) pieces.push({ choices: [{ delta: { reasoning_content: thinking.slice(i, i + 9) } }] });
   for (let i = 0; i < text.length; i += 7) pieces.push({ choices: [{ delta: { content: text.slice(i, i + 7) } }] });
   pieces.push({ choices: [{ delta: {}, finish_reason: finish }] });
+  if (usage) pieces.push({ choices: [], usage });
   const enc = new TextEncoder();
   return new Response(new ReadableStream({
     async start(c) {
@@ -529,6 +534,46 @@ const edits = (list) => `<edits>\n${JSON.stringify(list)}\n</edits>`;
   stand({ maker: (c) => (c.n === 0 ? '<helper name="the eye">look</helper>' : 'Done.'), helper: 'Fine.' });
   await turn({ house: HOUSE({ connections: [{ id: 'c2', name: 'cheap', url: 'http://cheap.in/v1', model: 'cheap-model' }], agentConnections: { eye: 'c2' } }), message: 'check it' });
   ok('a helper given its own connection rides it; the one he talks to keeps his', calls.find((c) => c.who === 'helper').body.model === 'cheap-model' && calls.filter((c) => c.who === 'maker').every((c) => c.body.model === 'm1'));
+}
+
+/* ------------------------------------------- 23. what was sent, every request of it (v2.1) */
+{
+  stand({
+    maker: (c) => (c.n === 0 ? 'Asking the eye.\n<helper name="the eye">look</helper>' : { text: 'Done.', usage: { prompt_tokens: 41234, completion_tokens: 56, prompt_tokens_details: { cached_tokens: 40000 } } }),
+    helper: 'Fine.',
+  });
+  const house = HOUSE(); house.connections[0].key = 'sk-very-secret';
+  const { r } = await turn({ house, message: 'check it' });
+  const sent = r.sent || [];
+  ok('every request of the turn is kept, in order, with who it was for', sent.map((x) => x.who).join(' | ') === 'the one you talk to \u2014 step 1 | the eye | the one you talk to \u2014 step 2', sent.map((x) => x.who));
+  ok('each with where it went, its model and its body exactly as sent', sent.every((x) => x.url === 'http://stand.in/v1/chat/completions' && x.model === 'm1' && Array.isArray(x.body.messages)) && JSON.stringify(sent[0].body) === JSON.stringify(calls[0].body), sent.map((x) => x.url));
+  ok('never his key', !JSON.stringify(sent).includes('sk-very-secret'));
+  const sys = sent[0].body.messages[0].content;
+  const part = (name) => (sent[0].parts || []).find((x) => x.name.startsWith(name));
+  ok('the one he talks to\u2019s reading is cut into its three parts, exactly', part('Your engine') && sys.slice(part('Your engine').start, part('Your engine').end) === ENGINE
+    && sys.slice(part('How this room works').start, part('How this room works').end).startsWith('How this room works')
+    && sys.slice(0, part('Your instructions').end).startsWith('You are Eni'), (sent[0].parts || []).map((x) => [x.name, x.start, x.end]));
+  ok('the service\u2019s own count is kept when it sends one', sent[2].usage && sent[2].usage.in === 41234 && sent[2].usage.out === 56 && sent[2].usage.cached === 40000, sent[2].usage);
+  ok('and is left empty when it does not, never made up', sent[0].usage === null, sent[0].usage);
+  ok('how long each took', sent.every((x) => Number.isFinite(x.ms)));
+}
+{
+  eq2('a count in OpenAI\u2019s shape', countOf({ prompt_tokens: 100, completion_tokens: 7, prompt_tokens_details: { cached_tokens: 64 } }), { in: 100, out: 7, cached: 64 });
+  eq2('in Anthropic\u2019s, what was read from cache counted in', countOf({ input_tokens: 10, cache_read_input_tokens: 90, output_tokens: 5 }), { in: 100, out: 5, cached: 90 });
+  eq2('in DeepSeek\u2019s', countOf({ prompt_tokens: 50, completion_tokens: 2, prompt_cache_hit_tokens: 30 }), { in: 50, out: 2, cached: 30 });
+  eq2('nothing said is nothing', countOf({}), null);
+}
+
+/* ------------------------------------------- 24. the example he starts from (v2.1) */
+{
+  const p = personaOf({ settings: { makerName: 'Lilith', yourName: 'Bruce' }, personaFrame: EXAMPLE_FRAME });
+  const opening = openingFor(p, 'BODY');
+  ok('the example reads as his names, in the voice it is written in', opening.startsWith('You are Lilith, a vampire.') && opening.includes('Now you keep worlds with Bruce.') && !opening.includes('{{'), opening.slice(0, 80));
+  const note = noteAtTheEnd({ settings: { makerName: 'Lilith', yourName: 'Bruce' }, postNote: EXAMPLE_NOTE }, p);
+  ok('the example note at the end reads as the names, sent as a system message unless he says user', note && note.role === 'system' && note.content.startsWith('Stay Lilith:') && note.content.includes('Answer Bruce first'));
+  ok('and as a user message when he says so', noteAtTheEnd({ settings: { noteRole: 'user' }, postNote: EXAMPLE_NOTE }, p).role === 'user');
+  ok('a brand-new house begins with the example', shouldGiveExamples({ settings: {}, personaFrame: '', postNote: '', connections: [] }));
+  ok('a house he has set up is never touched', !shouldGiveExamples({ settings: {}, personaFrame: 'You are Eni.', postNote: '', connections: [] }) && !shouldGiveExamples({ settings: {}, personaFrame: '', postNote: '', connections: [{ id: 'c' }] }) && !shouldGiveExamples({ settings: { examplesGiven: true }, connections: [] }));
 }
 
 console.log(`${pass} passed, ${fail} failed`);

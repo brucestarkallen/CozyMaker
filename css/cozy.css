@@ -36,6 +36,13 @@
   --edge: #313550; --glow: #8ea3e8; --glow-soft: #6f86cf;
   --mine: #272a3c; --theirs: #1b1d29;
 }
+:root[data-theme="neon"] {
+  --ink: #f4ebff; --ink-soft: #cdb6f2; --ink-faint: #9579c4;
+  --bg: #0a0613; --bg-warm: #10091d; --panel: #160c27; --panel-high: #211137;
+  --edge: #3f1f6e; --glow: #c86bff; --glow-soft: #9b4dff;
+  --mine: #1e0f35; --theirs: #120a21;
+  --good: #5ef2c2; --careful: #ff5fa2;
+}
 :root[data-theme="paper"] {
   color-scheme: light;
   --ink: #33291f; --ink-soft: #6b5a48; --ink-faint: #9b8a77;
@@ -456,3 +463,36 @@ textarea.plain { resize: vertical; min-height: 90px; font-family: var(--mono); f
 .shortcut .does { margin-top: 3px; font-size: 14px; line-height: 1.45; color: var(--ink); }
 .shortcut .meta { margin-top: 3px; font-size: 13px; color: var(--ink-soft); overflow-wrap: anywhere; }
 .shortcut .engine { margin-top: 4px; font-size: 12.5px; color: var(--ink-faint); overflow-wrap: anywhere; }
+
+/* ------------------------------------------------------------ what was sent */
+.sent-sum { color: var(--ink-soft); font-size: 14px; margin: 0 0 10px; }
+.sent-tabs { display: flex; gap: 8px; margin-bottom: 10px; }
+.sent-tab.on { color: var(--glow); border-color: var(--glow); }
+.sent-req { border: 1px solid var(--edge); border-radius: var(--radius-sm); padding: 10px 12px; margin-bottom: 12px; background: var(--panel); }
+.sent-req-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-bottom: 6px; }
+.sent-req-head small { color: var(--ink-faint); flex: 1 1 100%; }
+.sent-part { border-top: 1px solid var(--edge); padding: 6px 0; }
+.sent-row { display: flex; align-items: center; gap: 8px; }
+.sent-name { flex: 1 1 auto; text-align: left; color: var(--ink); padding: 4px 0; min-height: 36px; }
+.sent-name[aria-expanded="true"] { color: var(--glow); }
+.sent-tok, .sent-role { color: var(--ink-faint); font-size: 13px; white-space: nowrap; }
+.sent-role { flex: 1 1 auto; text-transform: lowercase; letter-spacing: .02em; }
+.sent-where { color: var(--ink-faint); font-size: 12.5px; }
+.sent-text { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--mono); font-size: 12.5px; line-height: 1.45;
+  max-height: 50vh; overflow-y: auto; background: var(--bg-warm); border-radius: 8px; padding: 8px 10px; margin: 6px 0 2px; }
+
+/* ------------------------------------------------- neon: purple light, a night city */
+:root[data-theme="neon"] body {
+  background:
+    radial-gradient(ellipse 120% 60% at 50% -12%, rgba(200,107,255,.22), transparent 60%),
+    radial-gradient(ellipse 80% 40% at 100% 110%, rgba(94,242,194,.08), transparent 60%),
+    linear-gradient(180deg, #0a0613 0%, #07040e 100%);
+}
+:root[data-theme="neon"] .topbar { border-bottom: 1px solid rgba(200,107,255,.45); box-shadow: 0 1px 14px rgba(200,107,255,.28); }
+:root[data-theme="neon"] .composer { border-top: 1px solid rgba(200,107,255,.4); box-shadow: 0 -1px 14px rgba(200,107,255,.18); }
+:root[data-theme="neon"] .turn.maker .bubble { border-color: rgba(200,107,255,.55); box-shadow: 0 0 16px rgba(200,107,255,.16), inset 0 0 14px rgba(200,107,255,.05); }
+:root[data-theme="neon"] .turn.writer .bubble { border: 1px solid rgba(94,242,194,.4); }
+:root[data-theme="neon"] .card, :root[data-theme="neon"] .row, :root[data-theme="neon"] .sent-req { border-color: rgba(200,107,255,.35); }
+:root[data-theme="neon"] .btn:not(.quiet) { box-shadow: 0 0 12px rgba(200,107,255,.5); }
+:root[data-theme="neon"] #worldName, :root[data-theme="neon"] .sheet h2 { text-shadow: 0 0 10px rgba(200,107,255,.75); }
+:root[data-theme="neon"] .sheet { background: rgba(10,6,19,.97); }

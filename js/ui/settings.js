@@ -3,7 +3,7 @@
  * place looks. */
 
 import * as store from '../store.js';
-import { $, el, openSheet, toast, applyTheme, redraw, field, input, select, group, fold, downloadText } from './kit.js';
+import { $, el, openSheet, toast, applyTheme, redraw, field, input, select, group, fold, downloadText, copyText } from './kit.js';
 import { WORKERS, FRONT } from '../agents/roster.js';
 import { personaOf, unfilledMacros } from '../agents/persona.js';
 import { testConnection, listModels } from '../agents/call.js';
@@ -12,11 +12,13 @@ import { SEARCHER, searcherFor } from '../agents/search.js';
 import { loadEngine, loadEngineText, sliceReport } from '../engine/slices.js';
 import { craftFor } from '../engine/crafts.js';
 import { SHORTCUTS, WHO, engineLines } from '../agents/shortcuts.js';
+import { EXAMPLE_FRAME, EXAMPLE_NOTE } from '../agents/examples.js';
 
 const THEMES = [
   ['hearth', 'Hearth — warm and low'],
   ['tavern', 'The tavern at night — purple sky, a bard, somebody buying a round'],
   ['dusk', 'Dusk — cool and quiet'],
+  ['neon', 'Neon — purple light on a night city'],
   ['paper', 'Paper — light'],
 ];
 /* The levels Cozy Tavern proved on the wire, and nothing else — each house
@@ -113,6 +115,25 @@ function whoSection(house) {
   g.append(field('Their instructions, in your own words', frame));
   g.append(macroNote);
   showMacros();
+  /* RETURN TO DEFAULT (v2.1, his ask): the example — a vampire who keeps worlds —
+   * put back in place of what is here, to make his own from. What is here goes,
+   * so it asks first when there is anything of his in it. */
+  const backToDefault = (box, example, key, then) => async () => {
+    const now = box.value.trim();
+    if (now && now !== example.trim() && !confirm('Put the example back in place of what is written here? What is here now goes.')) return;
+    box.value = example;
+    const h = store.getHouse();
+    h[key] = example;
+    await store.saveHouse(h);
+    if (then) then();
+    toast('The example is back \u2014 make it your own.');
+  };
+  const frameBack = el('button', 'btn quiet small', 'Return to default');
+  frameBack.addEventListener('click', backToDefault(frame, EXAMPLE_FRAME, 'personaFrame', showMacros));
+  const frameRow = el('div', 'btnrow');
+  frameRow.append(frameBack);
+  g.append(frameRow);
+  g.append(el('p', 'hint', 'The default is an example to start from: {{char}}, a five-hundred-year-old vampire who keeps worlds the way she kept a countess\u2019s ledgers. Name her below, under \u201cWhat they are called\u201d.'));
 
   /* THE NOTE AT THE END — SillyTavern's post-history instructions, Cozy Tavern's
    * note at the end: anything he likes, sent after his message on every turn, read
@@ -130,6 +151,11 @@ function whoSection(house) {
   });
   g.append(field('The note at the end', note));
   g.append(el('p', 'hint', 'Your post-history instructions: read last, right after your message, on every turn \u2014 {{user}} and {{char}} read as the two names, as in their instructions.'));
+  const noteBack = el('button', 'btn quiet small', 'Return to default');
+  noteBack.addEventListener('click', backToDefault(note, EXAMPLE_NOTE, 'postNote'));
+  const noteRow = el('div', 'btnrow');
+  noteRow.append(noteBack);
+  g.append(noteRow);
   const sendNote = select([
     ['on', 'On \u2014 sent on every turn'],
     ['off', 'Off \u2014 kept here, not sent'],
@@ -222,15 +248,61 @@ function connectionsSection(house) {
       try { await store.saveHouse(store.getHouse()); } catch (_) { /* the line on screen still says it */ }
     });
     row.append(test);
+    /* COPY AND PASTE A CONNECTION (v2.1, his ask): the same provider again with
+     * nothing re-entered — Paste makes a new one from what was copied and opens it,
+     * so only the model needs changing. What a model taught the house about itself
+     * is the model's, so it is not copied. */
+    const copy = el('button', 'btn quiet', 'Copy');
+    copy.addEventListener('click', (e) => {
+      e.stopPropagation();
+      copied = copyableConnection(c);
+      copyText(JSON.stringify(copied, null, 2));
+      toast(`${c.name || c.model || 'That connection'} is copied \u2014 Paste makes another like it.`);
+    });
+    row.append(copy);
     g.append(row);
   }
 
   const add = el('button', 'btn quiet', house.connections.length ? 'Add another' : 'Add one');
   add.addEventListener('click', () => editConnection(null));
+  const paste = el('button', 'btn quiet', 'Paste');
+  paste.addEventListener('click', () => pasteConnection());
   const row = el('div', 'btnrow');
-  row.append(add);
+  row.append(add, paste);
   g.append(row);
   return g;
+}
+
+/* what was copied: in the house while it is open, and on the clipboard as text (so
+ * a connection copied elsewhere can be pasted here too) */
+let copied = null;
+const MODEL_OWN = ['id', 'tested', 'learned', 'modelHf', 'modelEfforts'];
+export function copyableConnection(c) {
+  const out = {};
+  for (const [k, v] of Object.entries(c || {})) if (!MODEL_OWN.includes(k)) out[k] = v;
+  return JSON.parse(JSON.stringify(out));
+}
+export function connectionFromPaste(source, taken) {
+  const c = copyableConnection(source);
+  if (!c || typeof c.url !== 'string' || !c.url.trim()) return null;
+  const base = String(c.name || c.model || 'connection').replace(/\s*\(copy( \d+)?\)$/, '');
+  let name = `${base} (copy)`;
+  for (let i = 2; (taken || []).includes(name); i++) name = `${base} (copy ${i})`;
+  return { ...c, id: 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name };
+}
+async function pasteConnection() {
+  let from = copied;
+  if (!from && navigator.clipboard && navigator.clipboard.readText) {
+    try { const t = await navigator.clipboard.readText(); from = JSON.parse(t); } catch (_) { from = null; }
+  }
+  const h = store.getHouse();
+  const made = from ? connectionFromPaste(from, h.connections.map((x) => x.name)) : null;
+  if (!made) { toast('Copy a connection first \u2014 its Copy is beside Try it.'); return; }
+  h.connections.push(made);
+  await store.saveHouse(h);
+  draw();
+  editConnection(made.id);
+  toast('Pasted \u2014 change the model, and the rest is as it was.');
 }
 
 function hostOf(url) {
