@@ -490,7 +490,7 @@ textarea.plain { resize: vertical; min-height: 90px; font-family: var(--mono); f
 }
 :root[data-theme="neon"] .topbar { border-bottom: 1px solid rgba(200,107,255,.45); box-shadow: 0 1px 14px rgba(200,107,255,.28); }
 :root[data-theme="neon"] .composer { border-top: 1px solid rgba(200,107,255,.4); box-shadow: 0 -1px 14px rgba(200,107,255,.18); }
-:root[data-theme="neon"] .turn.maker .bubble { border-color: rgba(200,107,255,.55); box-shadow: 0 0 16px rgba(200,107,255,.16), inset 0 0 14px rgba(200,107,255,.05); }
+:root[data-theme="neon"] .turn.maker .bubble { background: rgba(18,10,33,.82); padding: 12px 15px; border-color: rgba(200,107,255,.55); box-shadow: 0 0 16px rgba(200,107,255,.16), inset 0 0 14px rgba(200,107,255,.05); }
 :root[data-theme="neon"] .turn.writer .bubble { border: 1px solid rgba(94,242,194,.4); }
 :root[data-theme="neon"] .card, :root[data-theme="neon"] .row, :root[data-theme="neon"] .sent-req { border-color: rgba(200,107,255,.35); }
 :root[data-theme="neon"] .btn:not(.quiet) { box-shadow: 0 0 12px rgba(200,107,255,.5); }
@@ -502,3 +502,68 @@ textarea.plain { resize: vertical; min-height: 90px; font-family: var(--mono); f
 .check-line { color: var(--ink-faint); font-size: 13px; }
 .check-fold .fold-head { color: var(--ink-faint); font-size: 13px; }
 .check-text { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink-soft); font-size: 13.5px; line-height: 1.5; padding: 4px 2px; }
+
+/* ===================== lamplight =====================
+ * A warm room above a neon city, after rain (v2.3, his ask: cyberpunk purple and
+ * neon, cozy, good for the eyes). Purple light outside, lamplight inside: the room's
+ * edges carry the city's orchid glow, his own words sit in the lamp's warmth, the
+ * replies on calm plum. Nothing is pure black or pure white, nothing large is
+ * saturated, the glow is only ever a thin halo, and nothing moves. The scene is laid
+ * along the bottom at its own proportions (as the tavern's is) with a scrim over it. */
+:root[data-theme="lamplight"] {
+  color-scheme: dark;
+  --ink: #ede4f5; --ink-soft: #c6b7d8; --ink-faint: #9a8ab0;
+  --bg: #17111f; --bg-warm: rgba(23,17,31,.9); --panel: rgba(37,28,51,.94); --panel-high: #30243f;
+  --edge: rgba(178,140,228,.26); --glow: #c9a3ff; --glow-soft: #a883e6;
+  --mine: rgba(64,43,52,.94); --theirs: rgba(33,25,46,.9);
+  --good: #8fd8c4; --careful: #f2a3bb;
+}
+:root[data-theme="lamplight"] body {
+  background: linear-gradient(180deg, #17111f 0%, #1d1529 40%, #2a1d3b 100%);
+  background-attachment: fixed;
+}
+:root[data-theme="lamplight"] body::before {
+  content: ''; position: fixed; left: 0; right: 0; bottom: 0; z-index: -2;
+  height: min(78vh, calc(100vw * 0.5625 + 74px));
+  background: url('/css/lamplight-city.svg') no-repeat center calc(100% - 74px) / 100% auto;
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 26%, #000 100%);
+          mask-image: linear-gradient(180deg, transparent 0, #000 26%, #000 100%);
+}
+:root[data-theme="lamplight"] body::after {
+  content: ''; position: fixed; inset: 0; z-index: -1;
+  background: linear-gradient(180deg,
+    rgba(18,13,25,.20) 0%, rgba(18,13,25,.55) 26%, rgba(18,13,25,.62) 58%,
+    rgba(18,13,25,.24) 86%, rgba(18,13,25,.04) 100%);
+}
+:root[data-theme="lamplight"] .topbar {
+  background: linear-gradient(180deg, rgba(23,17,31,.96) 0%, rgba(23,17,31,.82) 78%, rgba(23,17,31,0) 100%);
+  box-shadow: 0 1px 0 rgba(201,163,255,.16);
+}
+:root[data-theme="lamplight"] #worldName { text-shadow: 0 0 14px rgba(201,163,255,.35); }
+:root[data-theme="lamplight"] .composer {
+  background: linear-gradient(0deg, rgba(23,17,31,.94) 62%, rgba(23,17,31,.55) 86%, rgba(23,17,31,0));
+}
+:root[data-theme="lamplight"] .composer textarea { background: rgba(37,28,51,.96); border-color: rgba(201,163,255,.22); }
+:root[data-theme="lamplight"] .composer textarea:focus { border-color: rgba(201,163,255,.55); box-shadow: 0 0 0 3px rgba(201,163,255,.12); }
+:root[data-theme="lamplight"] .composer .send,
+:root[data-theme="lamplight"] .btn:not(.quiet):not(.danger) { color: #1f1530; box-shadow: 0 0 14px rgba(201,163,255,.28); }
+:root[data-theme="lamplight"] .turn .bubble { line-height: 1.62; }
+:root[data-theme="lamplight"] .turn.maker .bubble {
+  /* a soft plum page for the replies: the scene behind them never sits under a word */
+  background: rgba(31,23,43,.86); border: 1px solid rgba(201,163,255,.18);
+  padding: 12px 15px; border-radius: var(--radius);
+  box-shadow: 0 0 24px rgba(150,100,220,.09);
+}
+:root[data-theme="lamplight"] .turn.writer .bubble {
+  border: 1px solid rgba(243,178,122,.30);
+  box-shadow: 0 0 18px rgba(243,178,122,.07);
+}
+:root[data-theme="lamplight"] .card { background: rgba(33,25,46,.92); }
+:root[data-theme="lamplight"] .card .undo,
+:root[data-theme="lamplight"] .check-fold .fold-head { color: #d9bcff; }
+:root[data-theme="lamplight"] .turn .thinking-box { border-left-color: rgba(201,163,255,.32); }
+:root[data-theme="lamplight"] .status .ember { background: #f3b27a; box-shadow: 0 0 10px rgba(243,178,122,.55); }
+:root[data-theme="lamplight"] .sheet,
+:root[data-theme="lamplight"] .drawer { background: linear-gradient(180deg, #1b1426 0%, #17111f 40%); }
+:root[data-theme="lamplight"] .drawer { border-right-color: rgba(201,163,255,.2); }
+:root[data-theme="lamplight"] .sheet header { box-shadow: 0 1px 0 rgba(201,163,255,.14); }

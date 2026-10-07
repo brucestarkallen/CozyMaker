@@ -164,11 +164,18 @@ and the house takes the new one from Hermes itself and carries on.
 
 ## The look
 
-Four coats of paint under the cog. **The tavern at night** puts a drawn scene
+Six coats of paint under the cog. **The tavern at night** puts a drawn scene
 behind the room — purple sky, two moons, an aurora, lanterns strung across a
 yard, a bard mid-song and somebody buying a round. It is one hand-drawn file,
 nothing is fetched from anywhere, and the words stay at 17.0:1 contrast over
 it, measured rather than assumed.
+
+**Lamplight** is a warm room above a neon city after rain: the city's purple
+light at the edges of the room, the replies on soft plum pages, your own words in
+the lamp's warmth, and along the bottom a skyline with lit windows, a neon sign or
+two, a plant and a mug on the windowsill. It is made for long nights: no pure
+black and no pure white (the words read at about 15:1, the hints above 4.5:1,
+measured), no glare, and nothing moves. **Neon** is the brighter, sharper purple.
 
 **Smooth streaming** (on unless you turn it off) evens out how a reply arrives. A
 provider sends words in clumps; with it on, each clump flows in over the next
@@ -252,7 +259,7 @@ the model needs changing.
 Read `AGENTS.md` first.
 
 ```
-bash tests/all.sh    eleven runs, 1,236 checks
+bash tests/all.sh    eleven runs, 1,240 checks
 ```
 
 `docs/lineage.md` lists every version of Cozy Tavern and Cozy Chat and what

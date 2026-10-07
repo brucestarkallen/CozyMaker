@@ -19,6 +19,7 @@ const THEMES = [
   ['tavern', 'The tavern at night — purple sky, a bard, somebody buying a round'],
   ['dusk', 'Dusk — cool and quiet'],
   ['neon', 'Neon — purple light on a night city'],
+  ['lamplight', 'Lamplight — a warm room above a neon city, soft on the eyes'],
   ['paper', 'Paper — light'],
 ];
 /* The levels Cozy Tavern proved on the wire, and nothing else — each house

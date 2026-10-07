@@ -1366,6 +1366,22 @@ document, for a message that only says what changed, and that the one he talks t
   the document; the engine's EXPERT EYE and SCAN EVIDENCE go between `<audit>` and `</audit>` — hidden from
   the stream and the reply, kept on the turn (`audit`), folded under the reply as "its own check".
 
+### Lamplight, and a reply's page in every look (v2.3)
+
+He asked for a look like Neon but cozy and good for the eyes. **Lamplight**: purple light outside, lamplight
+inside. Plum, never black (`--bg #17111f`); lavender-white words, never white (`--ink #ede4f5`, about 15:1 on
+the background, 13:1 on a reply's page; `--ink-faint` above 4.5:1); one orchid accent (`#c9a3ff`) used only
+as thin edges and soft halos; his own words warm (dusky rose, an amber edge); the replies on padded soft
+plum pages; nothing animates but the ember, which is lamp-coloured. `css/lamplight-city.svg` is the scene,
+laid along the bottom at its own proportions like the tavern's, under a scrim: a violet haze, two layers
+of skyline with warm and orchid windows, two small signs kept to the edges of the street (one sat right
+behind the words and was moved), rain long gone soft, and a windowsill in lamplight with a mug and a
+plant. No backdrop blur (costly on a phone). Checked by eye at 390x844 and by the browser suite.
+
+**Neon drew a box round a reply with no room inside it.** The base reply has no box (`padding: 2px 0`,
+transparent); Neon (v2.1) gave it a border and a glow and left the words touching the border. Both looks
+now give a reply a padded page, and the browser suite measures the padding in each.
+
 ## Testing
 
 ```
@@ -1380,7 +1396,7 @@ bash tests/all.sh           every suite, exit code intact
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       62 checks — the real serve.py, real files on disk, streams timed
-    python3 tests/browser.py      94 checks — real Chromium at 390x844, end to end: what it was sent, read off
+    python3 tests/browser.py      98 checks — real Chromium at 390x844, end to end: what it was sent, read off
                                               the wire, and the change on the device
     python3 tests/walk_worlds.py 227 checks — the drawer, conversations, swipes and versions, edit and
                                               send again, delete, branch, go on, re-quoting, crafts,
@@ -1399,7 +1415,7 @@ bash tests/all.sh           every suite, exit code intact
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-1,236 checks. Every suite must be green before a push. `tests/fixtures/` holds answers recorded from the
+1,240 checks. Every suite must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

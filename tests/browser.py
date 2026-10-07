@@ -577,8 +577,40 @@ def main():
                len(conns) == 2 and conns[1]["name"] == (conns[0].get("name") or conns[0]["model"]) + " (copy)" and conns[1]["url"] == conns[0]["url"]
                and conns[1]["key"] == conns[0]["key"] and conns[1]["model"] == conns[0]["model"] and conns[1]["id"] != conns[0]["id"], conns)
             ok("and opens it, so only the model needs changing", page.evaluate("[...document.querySelectorAll('#houseBody input')].some((i) => i.value === 'test-model')"))
+            # Lamplight (v2.3): cyberpunk purple, cozy, soft on the eyes -- readable, never glaring
+            # (Paste left the new connection open in the house; the house is opened again at its top)
+            page.click("#houseSheet [data-close]")
+            page.wait_for_timeout(300)
+            page.click("#settingsBtn")
+            page.wait_for_timeout(500)
+            page.evaluate("""() => { const s = [...document.querySelectorAll('#houseBody select')].find((x) => [...x.options].some((o) => o.value === 'lamplight'));
+              s.value = 'lamplight'; s.dispatchEvent(new Event('change')); }""")
+            page.wait_for_timeout(700)
+            lamp = page.evaluate("""() => { const cs = getComputedStyle(document.documentElement);
+              const rgb = (h) => { h = h.trim(); if (h.startsWith('rgb')) return h.match(/[\\d.]+/g).map(Number).slice(0, 3); h = h.replace('#', ''); return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)); };
+              const lum = ([r, g, b]) => { const f = (c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+              const ratio = (a, b) => { const x = lum(rgb(a)), y = lum(rgb(b)); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+              const v = (n) => cs.getPropertyValue(n).trim();
+              return { theme: document.documentElement.dataset.theme, ink: v('--ink'), bg: v('--bg'), body: ratio(v('--ink'), v('--bg')), faint: ratio(v('--ink-faint'), v('--bg')),
+                scene: getComputedStyle(document.body, '::before').backgroundImage }; }""")
+            ok("Lamplight is there by its name: words read clearly (7:1 or better, hints 4.5:1) without glaring \u2014 never pure white on pure black",
+               lamp["theme"] == "lamplight" and 7 <= lamp["body"] <= 16 and lamp["faint"] >= 4.5 and lamp["ink"].lower() != "#ffffff" and lamp["bg"].lower() != "#000000", lamp)
+            ok("with its lamplit city behind the conversation", "lamplight-city.svg" in lamp["scene"]
+               and urllib.request.urlopen(f"http://127.0.0.1:{PORT}/css/lamplight-city.svg").status == 200, lamp["scene"][:120])
+            page.click("#houseSheet [data-close]")
+            page.wait_for_timeout(300)
+            pads = {}
+            for look in ("lamplight", "neon"):
+                page.evaluate(f"document.documentElement.setAttribute('data-theme', '{look}')")
+                pads[look] = page.evaluate("() => { const b = document.querySelector('.turn.maker .bubble'); const s = getComputedStyle(b); return [parseFloat(s.paddingLeft), s.borderLeftWidth !== '0px' && s.borderLeftColor !== 'rgba(0, 0, 0, 0)']; }")
+            ok("a look that draws a box round a reply gives the words room inside it (Neon drew the box with no padding)",
+               all(p[0] >= 10 for p in pads.values()), pads)
+            page.click("#settingsBtn")
+            page.wait_for_timeout(400)
             page.evaluate("""() => { const s = [...document.querySelectorAll('#houseBody select')].find((x) => [...x.options].some((o) => o.value === 'neon'));
-              if (s) { s.value = 'hearth'; s.dispatchEvent(new Event('change')); } }""")
+              s.value = 'hearth'; s.dispatchEvent(new Event('change')); }""")
+            page.wait_for_timeout(500)
+            ok("and the look goes back to Hearth when chosen", page.evaluate("document.documentElement.dataset.theme") == "hearth")
             page.wait_for_timeout(300)
             page.click("#houseSheet [data-close]")
 

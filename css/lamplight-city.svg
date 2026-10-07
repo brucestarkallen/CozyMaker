@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMax slice" width="1600" height="900">
+<!-- CozyMaker — lamplight: a warm room above a neon city, after rain.
+     Hand-drawn, one file, nothing fetched. It sits behind the conversation with a
+     scrim over it: atmosphere, never something to read through. -->
+<defs>
+  <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="#17111f"/>
+    <stop offset="45%" stop-color="#231833"/>
+    <stop offset="78%" stop-color="#3a2352"/>
+    <stop offset="100%" stop-color="#4a2a5e"/>
+  </linearGradient>
+  <radialGradient id="bloom" cx="0.5" cy="0.78" r="0.55">
+    <stop offset="0%" stop-color="#cf72d6" stop-opacity=".58"/>
+    <stop offset="60%" stop-color="#6a3a8a" stop-opacity=".14"/>
+    <stop offset="100%" stop-color="#6a3a8a" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="lamp" cx="0.86" cy="0.96" r="0.42">
+    <stop offset="0%" stop-color="#f3b27a" stop-opacity=".55"/>
+    <stop offset="55%" stop-color="#c97a5a" stop-opacity=".12"/>
+    <stop offset="100%" stop-color="#c97a5a" stop-opacity="0"/>
+  </radialGradient>
+  <filter id="soft" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="7"/></filter>
+  <filter id="softer" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="18"/></filter>
+</defs>
+<rect width="1600" height="900" fill="url(#sky)"/>
+<rect width="1600" height="900" fill="url(#bloom)"/>
+<!-- a few stars that the haze has not taken -->
+<g fill="#e9dcff" opacity=".5">
+  <circle cx="140" cy="120" r="1.6"/><circle cx="420" cy="70" r="1.2"/><circle cx="760" cy="140" r="1.4"/>
+  <circle cx="1060" cy="90" r="1.1"/><circle cx="1330" cy="150" r="1.5"/><circle cx="1500" cy="60" r="1.2"/>
+</g>
+<!-- the far city: low, violet, a scatter of warm windows -->
+<path fill="#2b1f3e" d="M0 640 H70 V560 H130 V600 H190 V520 H250 V585 H320 V545 H360 V500 H420 V590 H480 V530 H560 V575 H620 V480 H690 V560 H760 V520 H820 V590 H880 V540 H950 V500 H1010 V575 H1080 V530 H1140 V590 H1210 V510 H1270 V560 H1340 V525 H1400 V585 H1470 V545 H1540 V570 H1600 V900 H0 Z"/>
+<g fill="#f3b27a" opacity=".55">
+  <rect x="200" y="540" width="6" height="8"/><rect x="214" y="556" width="6" height="8"/><rect x="636" y="500" width="6" height="8"/>
+  <rect x="650" y="520" width="6" height="8"/><rect x="966" y="520" width="6" height="8"/><rect x="1226" y="530" width="6" height="8"/>
+  <rect x="1240" y="548" width="6" height="8"/><rect x="380" y="520" width="6" height="8"/><rect x="1420" y="560" width="6" height="8"/>
+</g>
+<g fill="#c9a0ff" opacity=".45">
+  <rect x="96" y="580" width="5" height="7"/><rect x="506" y="550" width="5" height="7"/><rect x="842" y="560" width="5" height="7"/>
+  <rect x="1104" y="548" width="5" height="7"/><rect x="1356" y="540" width="5" height="7"/>
+</g>
+<!-- the near city: taller, darker, its signs glowing through the wet air -->
+<path fill="#1c1428" d="M0 900 V700 H90 V610 H150 V660 H230 V560 H300 V640 H360 V690 H420 V600 H470 V650 H540 V720 H600 V620 H680 V580 H740 V660 H800 V700 H860 V610 H930 V650 H990 V560 H1060 V640 H1120 V690 H1180 V600 H1250 V660 H1310 V620 H1380 V700 H1440 V640 H1520 V680 H1600 V900 Z"/>
+<g opacity=".9">
+  <rect x="1468" y="596" width="40" height="104" rx="6" fill="none" stroke="#d58cff" stroke-width="5" filter="url(#soft)" opacity=".75"/>
+  <rect x="1468" y="596" width="40" height="104" rx="6" fill="none" stroke="#efd3ff" stroke-width="1.4" opacity=".7"/>
+  <rect x="70" y="628" width="46" height="12" rx="6" fill="#8fe0d6" opacity=".55" filter="url(#soft)"/>
+  <rect x="70" y="628" width="46" height="12" rx="6" fill="none" stroke="#d8fff8" stroke-width="1.2" opacity=".6"/>
+  <circle cx="1546" cy="650" r="7" fill="#ff8fc8" opacity=".6" filter="url(#soft)"/>
+</g>
+<g fill="#f3b27a" opacity=".6">
+  <rect x="110" y="640" width="7" height="10"/><rect x="126" y="664" width="7" height="10"/><rect x="246" y="610" width="7" height="10"/>
+  <rect x="436" y="630" width="7" height="10"/><rect x="616" y="650" width="7" height="10"/><rect x="876" y="640" width="7" height="10"/>
+  <rect x="1196" y="630" width="7" height="10"/><rect x="1326" y="652" width="7" height="10"/><rect x="1456" y="670" width="7" height="10"/>
+</g>
+<!-- the street's glow, rising -->
+<rect x="0" y="700" width="1600" height="200" fill="#9b4fc0" opacity=".10" filter="url(#softer)"/>
+<!-- rain, long gone soft -->
+<g stroke="#cdb6ff" stroke-width="1.2" opacity=".13" stroke-linecap="round">
+  <line x1="180" y1="200" x2="170" y2="250"/><line x1="520" y1="300" x2="510" y2="350"/><line x1="880" y1="230" x2="870" y2="280"/>
+  <line x1="1190" y1="320" x2="1180" y2="370"/><line x1="1450" y1="210" x2="1440" y2="260"/><line x1="330" y1="420" x2="320" y2="470"/>
+  <line x1="1020" y1="420" x2="1010" y2="470"/><line x1="700" y1="380" x2="690" y2="430"/>
+</g>
+<!-- the room: a windowsill in lamplight, a mug still warm, a plant that has seen worse -->
+<rect width="1600" height="900" fill="url(#lamp)"/>
+<path fill="#241826" d="M0 820 H1600 V900 H0 Z"/>
+<rect x="0" y="812" width="1600" height="10" fill="#3a2630"/>
+<rect x="0" y="812" width="1600" height="2" fill="#f3b27a" opacity=".35"/>
+<g transform="translate(1250 742)">
+  <path d="M0 18 H52 V64 Q52 72 44 72 H8 Q0 72 0 64 Z" fill="#3b2a35"/>
+  <path d="M52 30 Q72 30 72 44 Q72 58 52 58" fill="none" stroke="#3b2a35" stroke-width="7"/>
+  <rect x="0" y="18" width="52" height="5" fill="#f3b27a" opacity=".4"/>
+  <path d="M16 10 Q10 -4 18 -16 M30 10 Q24 -6 32 -20" fill="none" stroke="#e9dcff" stroke-width="2" opacity=".22" stroke-linecap="round"/>
+</g>
+<g transform="translate(150 700)">
+  <path d="M10 62 H70 L62 112 H18 Z" fill="#3a2630"/>
+  <path d="M40 64 Q22 30 4 26 Q26 22 40 50 Q42 14 58 4 Q50 32 44 60 Q60 36 80 34 Q62 46 46 64 Z" fill="#2f3a35"/>
+</g>
+</svg>
