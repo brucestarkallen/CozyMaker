@@ -1382,6 +1382,16 @@ plant. No backdrop blur (costly on a phone). Checked by eye at 390x844 and by th
 transparent); Neon (v2.1) gave it a border and a glow and left the words touching the border. Both looks
 now give a reply a padded page, and the browser suite measures the padding in each.
 
+### The context line (v2.4)
+
+He asked to see how much context the current conversation uses. `run.js` now builds what the one he talks
+to reads in one place — `makerSystemFor`, `standingFor`, `makerMessagesFor` — used by every step of the
+turn and by `readingFor`, which the room calls (`drawContext`, after every draw and 400ms after he stops
+typing) to size the next message as it stands, his draft included: "Context ~N tokens" (estimated, 4
+characters a token). Each reply keeps what the service counted for its first step (`context`), shown
+beside it as "last reply N counted". The harness checks that `readingFor` is the first request the turn
+really sends, word for word and message for message. Tap the line for what was sent last.
+
 ## Testing
 
 ```
@@ -1389,14 +1399,14 @@ bash tests/all.sh           every suite, exit code intact
 ```
 
     node tests/units.mjs         594 checks — the real modules on a real document
-    node tests/harness.mjs       152 checks — the whole turn (v2.0): what the one he talks to reads, the
+    node tests/harness.mjs       156 checks — the whole turn (v2.0): what the one he talks to reads, the
                                               changes it makes, the steps, its helpers, the checks on
                                               what a turn brought in, put it back after a repair, Go on,
                                               Stop, a new world, search, the note at the end, too long
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       62 checks — the real serve.py, real files on disk, streams timed
-    python3 tests/browser.py      98 checks — real Chromium at 390x844, end to end: what it was sent, read off
+    python3 tests/browser.py     101 checks — real Chromium at 390x844, end to end: what it was sent, read off
                                               the wire, and the change on the device
     python3 tests/walk_worlds.py 227 checks — the drawer, conversations, swipes and versions, edit and
                                               send again, delete, branch, go on, re-quoting, crafts,
@@ -1415,7 +1425,7 @@ bash tests/all.sh           every suite, exit code intact
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-1,240 checks. Every suite must be green before a push. `tests/fixtures/` holds answers recorded from the
+1,247 checks. Every suite must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

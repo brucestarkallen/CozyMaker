@@ -754,6 +754,69 @@ function restamp(batches, fixed) {
   }
 }
 
+/* WHAT THE ONE HE TALKS TO READS, built in one place (v2.4): by the turn for every
+ * step, and by the room's context line for the message he has not sent yet — so the
+ * number on screen is the size of the real thing, never a second guess at it. */
+export function makerSystemFor(house, engine) {
+  const p = personaOf(house);
+  const searcher = searchOn(house) ? searcherFor(house) : null;
+  return openingFor(p, [engine, frontBody(p, { search: Boolean(searcher) })].filter(Boolean).join('\n\n---\n\n'));
+}
+
+/* WHAT WAS ALREADY CHANGED, AND STILL STANDS — the house's own record, so "did you
+ * add it?" is answered from what is so, never from memory */
+export function standingFor(past) {
+  const lines = [];
+  for (let i = past.length - 1; i >= 0 && lines.length < 8; i--) {
+    const t = past[i];
+    if (!t || t.role !== 'maker' || !(t.batches || []).some((b) => !b.undone)) continue;
+    for (const c of (t.cards || []).filter((x) => x.status === 'applied')) {
+      if (lines.length >= 8) break;
+      const why = String(c.reason || '').replace(/\s+/g, ' ').trim();
+      lines.push(`- ${c.name}: ${c.how || 'changed'}${why ? ` (${why})` : ''}`);
+    }
+  }
+  return lines.length ? `Changed earlier in this conversation, and standing now (newest first) \u2014 for reference, never to repeat as new:\n${lines.join('\n')}` : '';
+}
+
+export function makerMessagesFor({ house, p, past, world, working = world, message = '', standing = '', houseNotes = [], small = false, asked = [], goOn = false, extra = [] }) {
+  const n = (house.settings || {}).turnsOnScreen || 40;
+  const earlier = (small ? past.slice(-6) : past.slice(-n)).map((t) => (t.role === 'writer' ? { role: 'user', content: t.text || '' } : { role: 'assistant', content: ownWords(t.text || '') }));
+  /* ONE COPY OF THE DOCUMENTS, EVER (v2.2). Once a step has changed them, the copy in
+   * his message is out of date: it is taken out, and the documents as they stand now
+   * ride at the end of the house's latest note only — so a quote is never taken from
+   * a copy that no longer holds. */
+  let lastNote = -1;
+  for (let i = extra.length - 1; i >= 0; i--) if (extra[i].role === 'user') { lastNote = i; break; }
+  const docsHere = lastNote === -1
+    ? [small ? 'The documents, as they stand right now \u2014 too long for this model to read whole, so the outline and the parts in play:' : 'The documents, as they stand right now \u2014 whole, word for word:',
+      docBriefs(world, { message, recent: world.recentSections || [], asked, partial: small, limit: MAKER_WHOLE })]
+    : ['The documents have changed since this was said. They are shown as they stand now at the end of the house\u2019s latest note, below \u2014 the only copy to read and to quote from.'];
+  const later = extra.map((m, i) => (i === lastNote
+    ? { role: 'user', content: `${m.content}\n\nThe documents, as they stand now${small ? ' (the outline and the parts in play)' : ', whole, word for word'} \u2014 the only copy to read and to quote from:\n\n${docBriefs(working, { message, recent: working.recentSections || [], asked, partial: small, limit: MAKER_WHOLE })}` }
+    : m));
+  const ask = [
+    ...docsHere,
+    standing ? `\n${standing}` : '',
+    houseNotes.length ? `\n${houseNotes.join('\n\n')}` : '',
+    /* his words under his name; with no name set, never "you said:" (it tells the
+     * persona it said them itself); Go on is the house's note, with no speaker */
+    goOn ? `\n${message}` : `\n${p.you ? `${p.you} said:` : 'What was just said to you:'}\n${message}`,
+  ].filter(Boolean).join('\n\n');
+  const last = noteAtTheEnd(house, p);
+  return oneVoice(earlier.concat([{ role: 'user', content: ask }], later, last ? [last] : []));
+}
+
+/* The reading the next message would send, as it stands now: the context line. */
+export async function readingFor({ house, project, history = [], message = '' }) {
+  const engine = await loadEngineText();
+  const past = (history || []).filter((t) => !t.failed);
+  return {
+    system: makerSystemFor(house, engine),
+    messages: makerMessagesFor({ house, p: personaOf(house), past, world: project, message, standing: standingFor(past) }),
+  };
+}
+
 /* What the house tells the one he talks to between steps — never in his voice. */
 function stepReport({ p, landed = [], back = [], other = [], repaired = [], found = [], helpers = [], unknown = [], foundText = '', parts = '', nudge = '', docs = '' }) {
   const him = (p && p.you) || 'the author';
@@ -812,7 +875,7 @@ export async function runTurn({
   const hasPE = hasPlotEssential(docs);
   /* what the one he talks to reads: his instructions, then his whole engine, then
    * how this room works — nothing of it ever changes between steps */
-  const makerSystem = openingFor(p, [engine, frontBody(p, { search: Boolean(searcher) })].filter(Boolean).join('\n\n---\n\n'));
+  const makerSystem = makerSystemFor(house, engine);
   /* WHAT WAS SENT, every request of the turn, kept for him (app.js keeps it on the
    * device): each with who it was for, and for the one he talks to, where its
    * reading's three parts lie in what was sent */
@@ -827,19 +890,7 @@ export async function runTurn({
   ].filter((x) => x.start >= 0 && x.end > x.start);
   /* WHAT WAS ALREADY CHANGED, AND STILL STANDS — the house's own record, so
    * "did you add it?" is answered from what is so, never from memory */
-  const standing = (() => {
-    const lines = [];
-    for (let i = past.length - 1; i >= 0 && lines.length < 8; i--) {
-      const t = past[i];
-      if (!t || t.role !== 'maker' || !(t.batches || []).some((b) => !b.undone)) continue;
-      for (const c of (t.cards || []).filter((x) => x.status === 'applied')) {
-        if (lines.length >= 8) break;
-        const why = String(c.reason || '').replace(/\s+/g, ' ').trim();
-        lines.push(`- ${c.name}: ${c.how || 'changed'}${why ? ` (${why})` : ''}`);
-      }
-    }
-    return lines.length ? `Changed earlier in this conversation, and standing now (newest first) \u2014 for reference, never to repeat as new:\n${lines.join('\n')}` : '';
-  })();
+  const standing = standingFor(past);
 
   const crew = [];
   const allCards = [];
@@ -876,33 +927,7 @@ export async function runTurn({
    * the same opening (and its prefix stays the same); the house's report after each
    * step carries the documents as they stand by then */
   let opening = null;
-  const makerMessages = (world, extra) => {
-    const n = (house.settings || {}).turnsOnScreen || 40;
-    const earlier = (small ? past.slice(-6) : past.slice(-n)).map((t) => (t.role === 'writer' ? { role: 'user', content: t.text || '' } : { role: 'assistant', content: ownWords(t.text || '') }));
-    /* ONE COPY OF THE DOCUMENTS, EVER (v2.2). Once a step has changed them, the copy in
-     * his message is out of date: it is taken out, and the documents as they stand now
-     * ride at the end of the house's latest note only — so a quote is never taken from
-     * a copy that no longer holds. */
-    let lastNote = -1;
-    for (let i = extra.length - 1; i >= 0; i--) if (extra[i].role === 'user') { lastNote = i; break; }
-    const docsHere = lastNote === -1
-      ? [small ? 'The documents, as they stand right now \u2014 too long for this model to read whole, so the outline and the parts in play:' : 'The documents, as they stand right now \u2014 whole, word for word:',
-        docBriefs(world, { message, recent: world.recentSections || [], asked, partial: small, limit: MAKER_WHOLE })]
-      : ['The documents have changed since this was said. They are shown as they stand now at the end of the house\u2019s latest note, below \u2014 the only copy to read and to quote from.'];
-    const later = extra.map((m, i) => (i === lastNote
-      ? { role: 'user', content: `${m.content}\n\nThe documents, as they stand now${small ? ' (the outline and the parts in play)' : ', whole, word for word'} \u2014 the only copy to read and to quote from:\n\n${docBriefs(working, { message, recent: working.recentSections || [], asked, partial: small, limit: MAKER_WHOLE })}` }
-      : m));
-    const ask = [
-      ...docsHere,
-      standing ? `\n${standing}` : '',
-      houseNotes.length ? `\n${houseNotes.join('\n\n')}` : '',
-      /* his words under his name; with no name set, never "you said:" (it tells the
-       * persona it said them itself); Go on is the house's note, with no speaker */
-      goOn ? `\n${message}` : `\n${p.you ? `${p.you} said:` : 'What was just said to you:'}\n${message}`,
-    ].filter(Boolean).join('\n\n');
-    const last = noteAtTheEnd(house, p);
-    return oneVoice(earlier.concat([{ role: 'user', content: ask }], later, last ? [last] : []));
-  };
+  const makerMessages = (world, extra) => makerMessagesFor({ house, p, past, world, working, message, standing, houseNotes, small, asked, goOn, extra });
 
   /* ONE STEP: a reply from the one he talks to, streamed, its words on screen as
    * they come and everything else held back; cut inside a document, a block or a
@@ -1246,7 +1271,7 @@ function sortCards(cards) {
  * cards and the changes it made, never its undo payload, because a version
  * that is not shown has had its changes put back. */
 export function versionOf(t) {
-  return { text: t.text, thinking: t.thinking || '', thinkingMs: t.thinkingMs, cards: t.cards || [], edits: t.edits || [], asks: t.asks || [], cut: Boolean(t.cut), cutBy: t.cutBy || '', failed: Boolean(t.failed), at: t.at, batches: [], sent: t.sent || [], audit: t.audit || '', review: t.review || null };
+  return { text: t.text, thinking: t.thinking || '', thinkingMs: t.thinkingMs, cards: t.cards || [], edits: t.edits || [], asks: t.asks || [], cut: Boolean(t.cut), cutBy: t.cutBy || '', failed: Boolean(t.failed), at: t.at, batches: [], sent: t.sent || [], audit: t.audit || '', review: t.review || null, context: t.context || null };
 }
 
 export function landTurn(world, { chatId, snapshot, result, makerTurn, replaceAt = null }) {
@@ -1344,6 +1369,7 @@ export function landContinuation(world, { chatId, snapshot, result, at, words, m
     sent: (t.sent || []).concat(makerTurn.sent || []),
     audit: [t.audit, makerTurn.audit].filter(Boolean).join('\n\n'),
     review: makerTurn.review || t.review || null,
+    context: makerTurn.context || t.context || null,
   };
   if (t.versions) turn.versions = t.versions.map((v, j) => (j === t.shown ? { ...v, text: joined, cut: makerTurn.cut, cutBy: makerTurn.cutBy } : v));
   chat.turns = chat.turns.map((x, i) => (i === at ? turn : x));

@@ -15,7 +15,8 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { cutSections, setEngineForTests } from '../js/engine/slices.js';
 import { setCraftForTests } from '../js/engine/crafts.js';
-import { runTurn, makeVisibleStream, visibleText, readHelpers, frontBody, landContinuation, landTurn, ROOM_MARK, CRAFT_FRAME, GO_ON, FRONT_ONLY, MAKER_FLOOR, MAX_STEPS } from '../js/agents/run.js';
+import { runTurn, makeVisibleStream, visibleText, readHelpers, frontBody, landContinuation, landTurn, ROOM_MARK, CRAFT_FRAME, GO_ON, FRONT_ONLY, MAKER_FLOOR, MAX_STEPS, readingFor } from '../js/agents/run.js';
+import { estimateTokens } from '../js/doc/index.js';
 import { undoBatch } from '../js/doc/edits.js';
 import { SEARCH_MARK } from '../js/agents/search.js';
 import { countOf } from '../js/agents/call.js';
@@ -624,6 +625,26 @@ const edits = (list) => `<edits>\n${JSON.stringify(list)}\n</edits>`;
   stand({ maker: 'Fifteen.\n\n' + edits([{ file: 'Plot Essential.md', find: '- Majority is sixteen.', replace: '- Majority is fifteen.' }]), helper: () => { ctl.abort(); return 'CLEAN'; } });
   const { r } = await turn({ message: 'majority fifteen', signal: ctl.signal });
   ok('Stop during the read-back stops the turn, and the change stays with its way back', r.stopped && pe(r).includes('- Majority is fifteen.') && r.batches.length === 1, [r.stopped, r.error]);
+}
+
+/* ------------------------------------------- 26. the context line measures the real request (v2.4) */
+{
+  const world = WORLD();
+  world.chats[0].turns = [{ role: 'writer', text: 'how old is Claire?', at: 1 },
+    { role: 'maker', text: 'Sixteen.', at: 2, cards: [{ status: 'applied', name: 'Plot Essential.md', how: 'changed', reason: 'her age' }], batches: [{ items: [{ name: 'Plot Essential.md' }] }] }];
+  const house = HOUSE({ postNote: 'Stay warm, {{user}}.' });
+  stand({ maker: 'Hello.' });
+  await turn({ house, world, history: world.chats[0].turns, message: 'and Jovan?' });
+  const sentBody = calls[0].body;
+  const reading = await readingFor({ house, project: world, history: world.chats[0].turns, message: 'and Jovan?' });
+  ok('what the context line measures is exactly what the next message sends: the same instructions, word for word', sentBody.messages[0].role === 'system' && sentBody.messages[0].content === reading.system);
+  ok('and the same messages, in the same order \u2014 the talk, the documents whole, the record of changes, his words, the note at the end',
+    JSON.stringify(sentBody.messages.slice(1).map((m) => [m.role, m.content])) === JSON.stringify(reading.messages.map((m) => [m.role, m.content])),
+    [sentBody.messages.length, reading.messages.length]);
+  const tokens = estimateTokens(reading.system + reading.messages.map((m) => m.content).join('\n'));
+  ok('its size is the engine, the room, the documents and the talk \u2014 more than the engine alone', tokens > estimateTokens(ENGINE) && tokens < estimateTokens(ENGINE) + 6000, tokens);
+  const longer = await readingFor({ house, project: world, history: world.chats[0].turns, message: 'x '.repeat(2000) });
+  ok('a long draft makes it bigger by about its own size', estimateTokens(longer.system + longer.messages.map((m) => m.content).join('\n')) - tokens >= 900);
 }
 
 console.log(`${pass} passed, ${fail} failed`);

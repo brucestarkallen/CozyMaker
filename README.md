@@ -235,6 +235,12 @@ up: the service's own count when it sends one (with what it read from cache),
 otherwise an estimate, and it says which. The newest 40 replies of each world are
 kept on the device, in `~/.cozymaker/sent`, never with your key.
 
+**The context line**, just above the box you type in, says how much the one you
+talk to reads with your next message in this conversation — "Context ~38,412
+tokens" — built by the same code that builds the real request, your draft
+included, so it grows as you type. When the service counted the last reply itself,
+that number is beside it ("last reply 41,230 counted"). Tap it for what was sent.
+
 On a typical turn the one you talk to reads about 31,000 tokens of engine, about
 3,000 of the room and your instructions, your documents whole (a plot essential is
 usually 6,000–10,000), and the conversation.
@@ -259,7 +265,7 @@ the model needs changing.
 Read `AGENTS.md` first.
 
 ```
-bash tests/all.sh    eleven runs, 1,240 checks
+bash tests/all.sh    eleven runs, 1,247 checks
 ```
 
 `docs/lineage.md` lists every version of Cozy Tavern and Cozy Chat and what

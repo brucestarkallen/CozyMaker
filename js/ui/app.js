@@ -2,7 +2,8 @@
  * The room: the conversation that is open, and the way into everything else. */
 
 import * as store from '../store.js';
-import { runTurn, capUndo, landTurn, landContinuation, commit, versionOf, FRONT_ONLY, GO_ON } from '../agents/run.js';
+import { runTurn, capUndo, landTurn, landContinuation, commit, versionOf, FRONT_ONLY, GO_ON, readingFor } from '../agents/run.js';
+import { estimateTokens } from '../doc/index.js';
 import { openSent, saveSent } from './sent.js';
 import { EXAMPLE_FRAME, EXAMPLE_NOTE, shouldGiveExamples } from '../agents/examples.js';
 import { isNewStory, houseCommand } from '../agents/router.js';
@@ -56,6 +57,14 @@ function wire() {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); onSendButton(); }
   });
   say.addEventListener('input', grow);
+  say.addEventListener('input', () => { clearTimeout(contextTimer); contextTimer = setTimeout(drawContext, 400); });
+  $('contextLine').addEventListener('click', () => {
+    const p = store.getProject();
+    const chat = store.openChat();
+    const last = [...((chat && chat.turns) || [])].reverse().find((t) => t.role === 'maker' && (t.sent || []).length);
+    if (last && p) openSent(p.id, last.sent, last.at ? new Date(last.at).toLocaleString() : '');
+    else toast('Nothing has been sent in this conversation yet.');
+  });
   $('menuBtn').addEventListener('click', () => (drawerIsOpen() ? closeDrawer() : openDrawer()));
   $('scrim').addEventListener('click', closeDrawer);
   $('docsBtn').addEventListener('click', () => openDocs());
@@ -172,6 +181,7 @@ export function draw() {
   if (keepAt !== null) { stream.scrollTop = keepAt; return; }
   pinned = true;
   follow();
+  drawContext();
 }
 
 function emptyRoom(p) {
@@ -199,6 +209,30 @@ function emptyRoom(p) {
     box.append(el('p', '', `A fresh conversation about ${p.title}. Everything in the documents is still here — ask ${them} anything, or give the plot essential a job.`));
   }
   return box;
+}
+
+/* THE CONTEXT LINE (v2.4, his ask): how much the one he talks to reads with the
+ * next message, in this conversation, as it stands — built by the same code that
+ * builds the real request (run.js readingFor), his draft included, so it is the size
+ * of the real thing. Beside it, what the service itself counted for the last reply
+ * when it said. Tap it for what was sent. */
+let contextTimer = 0;
+let contextSeq = 0;
+async function drawContext() {
+  const line = $('contextLine');
+  const p = store.getProject();
+  const house = store.getHouse();
+  if (!line || !p || !house) return;
+  const seq = ++contextSeq;
+  const chat = store.openChat();
+  const history = (chat && chat.turns) || [];
+  let reading;
+  try { reading = await readingFor({ house, project: p, history, message: say.value.trim() }); } catch (_) { return; }
+  if (seq !== contextSeq) return;
+  const tokens = estimateTokens(reading.system + reading.messages.map((m) => String(m.content || '')).join('\n'));
+  const last = [...history].reverse().find((t) => t.role === 'maker' && t.context && Number.isFinite(t.context.in));
+  line.textContent = `Context ~${tokens.toLocaleString()} tokens${last ? ` \u00b7 last reply ${last.context.in.toLocaleString()} counted` : ''}`;
+  line.title = 'What the one you talk to reads with your next message: your instructions, your engine, the room, your documents whole and this conversation. Tap for what was sent last.';
 }
 
 function drawHeader() {
@@ -966,6 +1000,11 @@ async function send(text, forceWorker, opts = {}) {
     sent: sentKey ? [sentKey] : [],
     audit: result.audit || '',
     review: result.review || null,
+    /* what the service counted for its first step: the context that reply really used */
+    context: (() => {
+      const first = (result.sent || []).find((r) => /^the one you talk to/.test(r.who || '') && r.usage && Number.isFinite(r.usage.in));
+      return first ? { in: first.usage.in, cached: first.usage.cached || 0 } : null;
+    })(),
     cut: Boolean(result.cut && words),
     cutBy: result.cut && words ? (result.cutBy || 'length') : '',
     at: Date.now(),

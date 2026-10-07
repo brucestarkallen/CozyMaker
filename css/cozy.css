@@ -567,3 +567,11 @@ textarea.plain { resize: vertical; min-height: 90px; font-family: var(--mono); f
 :root[data-theme="lamplight"] .drawer { background: linear-gradient(180deg, #1b1426 0%, #17111f 40%); }
 :root[data-theme="lamplight"] .drawer { border-right-color: rgba(201,163,255,.2); }
 :root[data-theme="lamplight"] .sheet header { box-shadow: 0 1px 0 rgba(201,163,255,.14); }
+
+/* ------------------------------------------------ the context line (v2.4) */
+.context-line {
+  align-self: flex-end; margin: 0 var(--pad) -2px; padding: 2px 4px;
+  color: var(--ink-faint); font-size: 12px; font-variant-numeric: tabular-nums; text-align: right;
+  background: none; border: 0; cursor: pointer;
+}
+.context-line:empty { display: none; }

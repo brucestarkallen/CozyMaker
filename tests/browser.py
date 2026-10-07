@@ -95,6 +95,8 @@ class Model(http.server.BaseHTTPRequestHandler):
             for piece in [reply[i:i + 9] for i in range(0, len(reply), 9)]:
                 self.wfile.write(("data: " + json.dumps({"choices": [{"delta": {"content": piece}}]}) + "\n\n").encode())
                 self.wfile.flush()
+            # the service's own count, in the last chunk, as OpenAI-shaped services send it
+            self.wfile.write(("data: " + json.dumps({"choices": [], "usage": {"prompt_tokens": 40123, "completion_tokens": 12}}) + "\n\n").encode())
             self.wfile.write(b"data: [DONE]\n\n")
             self.wfile.flush()
             return
@@ -267,6 +269,21 @@ def main():
             ok("his words came after it, under his name", front["user"].rfind("Bruce said:") > front["user"].find("## SCENE"))
             ok("it streamed, with room to write a document", front["stream"] and (front["body"].get("max_tokens") or 0) >= 8000, front["body"].get("max_tokens"))
             ok("the block of changes never reached the screen", "<edits>" not in said and "find" not in said, said)
+
+            # -- the context line (v2.4) ------------------------------------------
+            page.wait_for_timeout(600)
+            cl = page.locator("#contextLine").inner_text()
+            m0 = re.search(r"Context ~([\d,]+) tokens", cl)
+            n0 = int(m0.group(1).replace(",", "")) if m0 else 0
+            ok("the context line says how much the next message reads \u2014 the engine alone is over 30,000", n0 > 30000, cl)
+            ok("and what the service counted for the last reply, when it said", "last reply 40,123 counted" in cl, cl)
+            page.fill("#say", "x " * 2000)
+            page.wait_for_timeout(900)
+            m1 = re.search(r"Context ~([\d,]+) tokens", page.locator("#contextLine").inner_text())
+            n1 = int(m1.group(1).replace(",", "")) if m1 else 0
+            ok("it grows with the message being typed", n1 - n0 >= 900, (n0, n1))
+            page.fill("#say", "")
+            page.wait_for_timeout(600)
 
             # -- it survives a reload, because the device holds it --------------
             page.reload(wait_until="networkidle")
@@ -526,8 +543,8 @@ def main():
                 ws.click()
                 page.wait_for_function("() => document.querySelector('#sentSheet.open') && !/Fetching/.test(document.getElementById('sentBody').textContent)", timeout=10000)
                 sbody = page.locator("#sentBody").inner_text()
-                ok("it says how many requests went out \u2014 the one he talks to, then the eye reading it back \u2014 and how many tokens went in, as an estimate",
-                   re.search(r"2 requests \u00b7 about [\d,]+ tokens in \u2014 an estimate", sbody) is not None and "the one you talk to \u2014 step 1" in sbody and "the eye \u2014 reading it back" in sbody, sbody[:300])
+                ok("it says how many requests went out \u2014 the one he talks to, then the eye reading it back \u2014 and how many tokens went in: the service's count where it gave one, an estimate where it did not",
+                   re.search(r"2 requests \u00b7 40,123 tokens in counted by the service, about [\d,]+ more estimated", sbody) is not None and "the one you talk to \u2014 step 1" in sbody and "the eye \u2014 reading it back" in sbody, sbody[:300])
                 ok("in parts: his instructions, his whole engine and the room, each with its tokens",
                    "Your instructions for them" in sbody and "Your engine \u2014 engine/generalist.md" in sbody and "How this room works" in sbody
                    and len(re.findall(r"~[\d,]+ tokens", sbody)) >= 4, sbody[:400])
