@@ -104,7 +104,7 @@ function stand(handlers) {
     const n = calls.filter((c) => c.who === who).length;
     const call = { who, n, sys, msgs, body, last: (msgs[msgs.length - 1] || {}).content || '' };
     calls.push(call);
-    const h = handlers[who];
+    const h = who === 'helper' && handlers.helper === undefined ? 'CLEAN \u2014 nothing wrong.' : handlers[who];
     const out = typeof h === 'function' ? h(call, init.signal) : h;
     if (out instanceof Response) return out;
     if (out && typeof out === 'object') return sse(out.text || '', { ...out, signal: init.signal });
@@ -118,6 +118,7 @@ async function turn({ house = HOUSE(), world = WORLD(), message, history = [], f
     onText: (t) => shown.push(t), onStatus: (l, d) => statuses.push([l, d || '']), onThinking: () => {} });
   return { r, shown: shown.join(''), statuses, world };
 }
+const makers = () => calls.filter((c) => c.who === 'maker');
 const pe = (r) => ((r.project.docs || []).find((d) => d.name === 'Plot Essential.md') || {}).text || '';
 const edits = (list) => `<edits>\n${JSON.stringify(list)}\n</edits>`;
 
@@ -144,7 +145,7 @@ const edits = (list) => `<edits>\n${JSON.stringify(list)}\n</edits>`;
 {
   stand({ maker: 'Done \u2014 majority is fifteen now.\n\n' + edits([{ file: 'Plot Essential.md', find: '- Majority is sixteen.', replace: '- Majority is fifteen.', reason: 'the world got younger' }]) });
   const { r, shown, statuses } = await turn({ message: 'make the age of majority fifteen' });
-  ok('a change that goes in cleanly takes one call \u2014 no second step, no read-back', calls.length === 1, calls.map((c) => c.who));
+  ok('a change that goes in cleanly: one call to the one he talks to, then the eye reads it back \u2014 clean, so nothing more', calls.map((c) => c.who).join(',') === 'maker,helper' && /Read back what was changed just now in Plot Essential\.md/.test(calls[1].last) && r.review && r.review.clean, calls.map((c) => c.who));
   ok('the change is in the document', pe(r).includes('- Majority is fifteen.') && !pe(r).includes('- Majority is sixteen.'));
   ok('nothing else moved', pe(r).replace('- Majority is fifteen.', '- Majority is sixteen.') === PE);
   ok('one card says what changed, and why', r.cards.length === 1 && r.cards[0].status === 'applied' && r.cards[0].reason === 'the world got younger', r.cards);
@@ -160,11 +161,15 @@ const edits = (list) => `<edits>\n${JSON.stringify(list)}\n</edits>`;
     ? 'Changing it.\n\n' + edits([{ file: 'Plot Essential.md', find: '- Majority is sixteen!', replace: '- Majority is fifteen.' }])
     : 'Quoted it right this time \u2014 it is in.\n\n' + edits([{ file: 'Plot Essential.md', find: '- Majority is sixteen.', replace: '- Majority is fifteen.' }])) });
   const { r, shown } = await turn({ message: 'majority fifteen please' });
-  ok('a missed quote: two steps', calls.length === 2 && calls.every((c) => c.who === 'maker'), calls.map((c) => c.who));
+  ok('a missed quote: two steps', makers().length === 2, calls.map((c) => c.who));
   const rep = calls[1].last;
   ok('the house says it is the house, not him', rep.startsWith('(From the house, not Bruce'), rep.slice(0, 80));
   ok('it is told exactly what it quoted and why it missed', rep.includes('you quoted: "- Majority is sixteen!"') && /not in the document as written/.test(rep), rep.slice(0, 600));
-  ok('it is shown the documents as they stand now', rep.includes('The documents, as they stand now:') && rep.includes('- Majority is sixteen.'));
+  ok('it is shown the documents as they stand now', rep.includes('The documents, as they stand now, whole, word for word') && rep.includes('- Majority is sixteen.'));
+  const line = 'CORE: Reads a room before he speaks.';
+  const copies = calls[1].msgs.reduce((k, m) => k + String(m.content).split(line).length - 1, 0);
+  ok('and only one copy of the documents is in what it reads \u2014 the newest, at the end of the house\u2019s note', copies === 1 && rep.includes(line), copies);
+  ok('his message says the documents have changed and where the only copy is', calls[1].msgs.some((m) => m.role === 'user' && m.content.includes('The documents have changed since this was said') && m.content.includes('Bruce said:\nmajority fifteen please')));
   ok('its first reply is in front of it as it wrote it', calls[1].msgs.some((m) => m.role === 'assistant' && m.content.includes('- Majority is sixteen!')));
   ok('the second try lands', pe(r).includes('- Majority is fifteen.'));
   ok('no "not done" card for a miss it then put right', !r.cards.some((c) => c.status === 'refused'), r.cards);
@@ -225,15 +230,15 @@ const edits = (list) => `<edits>\n${JSON.stringify(list)}\n</edits>`;
     : 'Dated it.\n\n' + edits([{ file: 'Plot Essential.md', find: 'e002 [duel]:', replace: 'e002 [Mon 14 Apr 247, 11:00] [duel]:' }])) });
   const { r } = await turn({ message: 'add that Claire challenged Jovan' });
   const rep = calls[1] ? calls[1].last : '';
-  ok('an undated event it brought in is found by the checks and handed back to it', calls.length === 2 && /without a full date-time/.test(rep), rep.slice(0, 400));
+  ok('an undated event it brought in is found by the checks and handed back to it', makers().length === 2 && /without a full date-time/.test(rep), rep.slice(0, 400));
   ok('it puts it right in the second step', pe(r).includes('e002 [Mon 14 Apr 247, 11:00] [duel]: Claire challenged Jovan in the east hall.'));
-  ok('no worker was sent behind its back', calls.every((c) => c.who === 'maker'));
+  ok('the only other call is the eye reading it back, once', calls.filter((c) => c.who !== 'maker').length === 1 && /Read back what was changed just now/.test(calls.find((c) => c.who !== 'maker').last));
 }
 {
   const OLD = PE.replace('e001 [Mon 14 Apr 247, 09:00] [setup]:', 'e001 [setup]:');
   stand({ maker: 'Fifteen.\n\n' + edits([{ file: 'Plot Essential.md', find: '- Majority is sixteen.', replace: '- Majority is fifteen.' }]) });
   const { r } = await turn({ world: WORLD([{ id: 'd1', name: 'Plot Essential.md', kind: 'pe', text: OLD }]), message: 'majority fifteen' });
-  ok('a finding that was already there before this turn is not raised \u2014 no churn through the whole document', calls.length === 1, calls.map((c) => c.last.slice(0, 120)));
+  ok('a finding that was already there before this turn is not raised \u2014 no churn through the whole document', makers().length === 1, calls.map((c) => c.last.slice(0, 120)));
   ok('and the old line is left exactly as it was', pe(r).includes('e001 [setup]: The showcase'));
 }
 
@@ -268,7 +273,7 @@ const edits = (list) => `<edits>\n${JSON.stringify(list)}\n</edits>`;
     ? { text: 'Rebuilt it with Mira in.\n\n<file name="Plot Essential.md">\n' + NEW.slice(0, half), finish: 'length' }
     : NEW.slice(half) + '\n</file>') });
   const { r, statuses } = await turn({ message: 'rebuild it with Mira the smith' });
-  ok('cut inside a document, it is asked for the rest', calls.length === 2 && /stopped inside <file name="Plot Essential.md">/.test(calls[1].last), calls.map((c) => c.last.slice(0, 120)));
+  ok('cut inside a document, it is asked for the rest', makers().length === 2 && /stopped inside <file name="Plot Essential.md">/.test(makers()[1].last), calls.map((c) => c.last.slice(0, 120)));
   ok('the document is written whole, nothing lost at the seam', pe(r).trimEnd() === NEW.trimEnd() && pe(r).startsWith('# PLOT ESSENTIAL'), pe(r).length + ' vs ' + NEW.length);
   ok('he never sees the document in the reply', r.reply === 'Rebuilt it with Mira in.', r.reply);
   ok('the status line said which document it was writing, and how far along', statuses.some(([l, d]) => l === 'writing Plot Essential.md' && /words so far/.test(d)), statuses.filter(([l]) => /writing/.test(l)).slice(0, 3));
@@ -350,7 +355,7 @@ const edits = (list) => `<edits>\n${JSON.stringify(list)}\n</edits>`;
 {
   stand({ maker: (c) => (c.n === 0 ? edits([{ file: 'Plot Essential.md', find: '- Majority is sixteen.', replace: '- Majority is fifteen.' }]) : 'Fifteen it is.') });
   const { r } = await turn({ message: 'majority fifteen' });
-  ok('a reply that was only a block: asked once to say what it did', calls.length === 2 && /Now tell Bruce, in your own voice, what you did/.test(calls[1].last) && r.reply === 'Fifteen it is.', [calls.length, r.reply]);
+  ok('a reply that was only a block: asked once to say what it did', makers().length === 2 && /Now tell Bruce, in your own voice, what you did/.test(makers()[1].last) && r.reply === 'Fifteen it is.', [calls.length, r.reply]);
 }
 
 /* -------------------- 14. "I changed it" with nothing changed: asked once, quietly */
@@ -358,7 +363,7 @@ const edits = (list) => `<edits>\n${JSON.stringify(list)}\n</edits>`;
   stand({ maker: (c) => (c.n === 0 ? "I've updated Claire's age to 17."
     : 'Here it is.\n\n' + edits([{ file: 'Plot Essential.md', find: '### Claire (student | core | 16)', replace: '### Claire (student | core | 17)' }])) });
   const { r, shown } = await turn({ message: 'Claire is 17 now' });
-  ok('a claimed change with no block is sent back for the block', calls.length === 2 && /no change came back/.test(calls[1].last));
+  ok('a claimed change with no block is sent back for the block', makers().length === 2 && /no change came back/.test(makers()[1].last));
   ok('and the change it then sends lands, its words joining the reply', pe(r).includes('### Claire (student | core | 17)') && r.reply === "I've updated Claire's age to 17.\n\nHere it is." && shown === r.reply, [r.reply, shown]);
 }
 {
@@ -447,7 +452,7 @@ const edits = (list) => `<edits>\n${JSON.stringify(list)}\n</edits>`;
 {
   stand({ maker: 'Here.\n\n<file name="Prompt.md">\nWhen unsure, write <search>the thing</search> and wait.\n</file>' });
   const { r } = await turn({ house: HOUSE({ settings: { searchInternet: 'on' }, connections: [{ id: 'h', name: 'Hermes', url: 'http://127.0.0.1:8642/v1', model: 'hermes-agent' }] }), message: 'write me a prompt' });
-  ok('a <search> inside a document it writes is part of the document, never a lookup', calls.length === 1 && !calls.some((c) => c.who === 'searcher') && ((r.project.docs || []).find((d) => d.name === 'Prompt.md') || {}).text.includes('<search>the thing</search>'), calls.map((c) => c.who));
+  ok('a <search> inside a document it writes is part of the document, never a lookup', makers().length === 1 && !calls.some((c) => c.who === 'searcher') && ((r.project.docs || []).find((d) => d.name === 'Prompt.md') || {}).text.includes('<search>the thing</search>'), calls.map((c) => c.who));
 }
 
 /* ------------------------------ 22. what was kept from the house before it */
@@ -574,6 +579,51 @@ const edits = (list) => `<edits>\n${JSON.stringify(list)}\n</edits>`;
   ok('and as a user message when he says so', noteAtTheEnd({ settings: { noteRole: 'user' }, postNote: EXAMPLE_NOTE }, p).role === 'user');
   ok('a brand-new house begins with the example', shouldGiveExamples({ settings: {}, personaFrame: '', postNote: '', connections: [] }));
   ok('a house he has set up is never touched', !shouldGiveExamples({ settings: {}, personaFrame: 'You are Eni.', postNote: '', connections: [] }) && !shouldGiveExamples({ settings: {}, personaFrame: '', postNote: '', connections: [{ id: 'c' }] }) && !shouldGiveExamples({ settings: { examplesGiven: true }, connections: [] }));
+}
+
+/* ------------------------------------------- 25. the second pass (v2.2) */
+{
+  stand({
+    maker: (c) => (c.n === 0
+      ? 'Made her easier to sway.\n\n' + edits([{ file: 'Plot Essential.md', find: 'CORE: Stubborn, catches detail nobody else does.', replace: 'CORE: Easily swayed, misses details.' }])
+      : 'The eye was right \u2014 she still refuses Jovan, so she stays stubborn.\n\n' + edits([{ file: 'Plot Essential.md', find: 'CORE: Easily swayed, misses details.', replace: 'CORE: Stubborn, but rattled since the duel.' }])),
+    helper: 'FOUND\n- "CORE: Easily swayed, misses details." contradicts her bond "\u2192 Jovan: refuses to back down": she should stay stubborn.\n\n' + edits([{ file: 'Plot Essential.md', find: 'ID: Small, freckled.', replace: 'ID: THE EYE WROTE THIS' }]),
+  });
+  const { r } = await turn({ message: 'make Claire easier to sway' });
+  const eye = calls.filter((c) => c.who === 'helper');
+  ok('what changed is read back by the eye before the turn ends, with exactly what changed', eye.length === 1 && eye[0].last.includes('was: CORE: Stubborn, catches detail nobody else does.') && eye[0].last.includes('now: CORE: Easily swayed, misses details.') && eye[0].sys.includes('Evidenced CLEAN vs False CLEAN'), eye.map((c) => c.last.slice(-500)));
+  ok('what it found goes to the one he talks to, which puts it right in one more step', makers().length === 2 && makers()[1].last.includes('The eye read back what you changed this turn') && makers()[1].last.includes('contradicts her bond') && pe(r).includes('CORE: Stubborn, but rattled since the duel.'), makers().map((c) => c.last.slice(0, 200)));
+  ok('the eye changes nothing itself \u2014 one writer', !pe(r).includes('THE EYE WROTE THIS') && pe(r).includes('ID: Small, freckled.'));
+  ok('once a turn: the fix is not read back again', eye.length === 1);
+  ok('and the turn says what the eye found', r.review && r.review.found && /contradicts her bond/.test(r.review.notes) && !/^FOUND/.test(r.review.notes), r.review);
+  ok('he reads both steps\u2019 summaries, nothing more', r.reply === 'Made her easier to sway.\n\nThe eye was right \u2014 she still refuses Jovan, so she stays stubborn.', r.reply);
+}
+{
+  stand({ maker: 'A worldbook entry for the harbour.\n\n' + edits([{ file: 'The Ashwood Pact.json', entries: [{ name: 'Harbour', keys: ['harbour'], content: 'A cold harbour.', strategy: 'green' }] }]) });
+  const { r } = await turn({ message: 'add the harbour to the worldbook' });
+  ok('a worldbook is not read back by the plot essential\u2019s eye', !calls.some((c) => c.who === 'helper') && !r.review);
+  stand({ maker: 'Nothing to change.' });
+  const t2 = await turn({ message: 'what do you think?' });
+  ok('and nothing is read back when nothing changed', !calls.some((c) => c.who === 'helper') && !t2.r.review);
+}
+{
+  stand({ maker: (c) => (c.n === 0 ? 'Fifteen, and having the eye look.\n\n' + edits([{ file: 'Plot Essential.md', find: '- Majority is sixteen.', replace: '- Majority is fifteen.' }]) + '\n<helper name="the eye">read back the age of majority</helper>' : 'The eye is happy.'), helper: 'Fine \u2014 the age reads cleanly.' });
+  await turn({ message: 'majority fifteen, and check it' });
+  ok('when the one he talks to already sent the eye after its change, it is not sent twice', calls.filter((c) => c.who === 'helper').length === 1, calls.map((c) => c.who));
+}
+{
+  stand({ maker: 'Fifteen.\n<audit>EXPERT EYE: TIER A \u2014 CLEAN. SCAN EVIDENCE: e001 checked.</audit>\n\n' + edits([{ file: 'Plot Essential.md', find: '- Majority is sixteen.', replace: '- Majority is fifteen.' }]) });
+  const { r, shown, statuses } = await turn({ message: 'majority fifteen' });
+  ok('his engine\u2019s own check never fills the message: he reads a short summary', r.reply === 'Fifteen.' && !shown.includes('EXPERT EYE'), [r.reply, shown]);
+  ok('it is kept, for the fold under the reply', r.audit === 'EXPERT EYE: TIER A \u2014 CLEAN. SCAN EVIDENCE: e001 checked.', r.audit);
+  ok('while it streams, the line says it is checking its work', statuses.some(([l]) => l === 'checking its work'), statuses.map((x) => x[0]).filter(Boolean));
+  ok('the room tells it to keep the message short and the check in the block', calls[0].sys.includes('keep it short: what you changed, where, and why') && calls[0].sys.includes('<audit>'));
+}
+{
+  const ctl = new AbortController();
+  stand({ maker: 'Fifteen.\n\n' + edits([{ file: 'Plot Essential.md', find: '- Majority is sixteen.', replace: '- Majority is fifteen.' }]), helper: () => { ctl.abort(); return 'CLEAN'; } });
+  const { r } = await turn({ message: 'majority fifteen', signal: ctl.signal });
+  ok('Stop during the read-back stops the turn, and the change stays with its way back', r.stopped && pe(r).includes('- Majority is fifteen.') && r.batches.length === 1, [r.stopped, r.error]);
 }
 
 console.log(`${pass} passed, ${fail} failed`);

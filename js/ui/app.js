@@ -449,6 +449,7 @@ function turnNode(t, index) {
     }
   }
   if (t.role === 'maker' && last && !t.failed) wrap.append(swipeBar(t, index));
+  if (t.role === 'maker' && (t.review || t.audit)) wrap.append(checksNode(t));
   if ((t.cards && t.cards.length) || (t.batches && t.batches.length)) wrap.append(cardsNode(t, index));
   /* THE FINDABLE RETRY (Cozy Tavern M25): the last turn, failed or stopped
    * with nothing changed, goes again with his same words. */
@@ -503,6 +504,22 @@ function actionsRow(t, index) {
   add('Branch here', () => branchHere(index));
   add('Delete', () => deleteTurn(index));
   return row;
+}
+
+/* WHAT CHECKED THIS REPLY (v2.2): the eye's read-back of what changed, in one line,
+ * and the engine's own check the one he talks to wrote — both folded, both his to open */
+function checksNode(t) {
+  const box = el('div', 'checks');
+  const r = t.review;
+  if (r) {
+    const line = r.failed ? `The eye could not read it back: ${r.failed}`
+      : r.clean ? 'The eye read back what changed \u2014 nothing wrong'
+        : 'The eye read back what changed and found something \u2014 put right before this reply';
+    if (r.notes) box.append(fold(line, el('div', 'check-text', r.notes), { className: 'fold check-fold' }));
+    else box.append(el('div', 'check-line', line));
+  }
+  if (t.audit) box.append(fold('its own check', el('div', 'check-text', t.audit), { className: 'fold check-fold' }));
+  return box;
 }
 
 function cardsNode(t, index) {
@@ -947,6 +964,8 @@ async function send(text, forceWorker, opts = {}) {
     edits: result.edits || [],
     asks: result.asks || [],
     sent: sentKey ? [sentKey] : [],
+    audit: result.audit || '',
+    review: result.review || null,
     cut: Boolean(result.cut && words),
     cutBy: result.cut && words ? (result.cutBy || 'length') : '',
     at: Date.now(),

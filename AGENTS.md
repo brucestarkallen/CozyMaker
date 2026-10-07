@@ -1345,6 +1345,27 @@ the sub-agents do — "like a harness on code". What was found, and what changed
   it so only the model changes. What a model taught the house about itself (`learned`, `tested`,
   `modelHf`, `modelEfforts`) is the model's, so it is not copied.
 
+### The second pass, one copy of the documents, a short message (v2.2)
+
+He asked why nothing checked the plot essential after a change, whether the changes go straight into the
+document, for a message that only says what changed, and that the one he talks to never mixes copies up.
+
+- **The second pass.** When a turn would end and it changed a plot essential or a continuation file the eye
+  has not seen (`REVIEWED_KINDS`), the eye reads back exactly those changes (each card's was / now), the
+  whole document for context, judging only the changes and what they touch — the craft's *edit "required
+  scan", never a full re-audit. It answers CLEAN or FOUND; it changes nothing itself (its edits are never
+  applied: one writer). FOUND goes to the one he talks to as the house's note, and it puts it right in one
+  more step. Once a turn; skipped when the one he talks to already sent the eye after its last change, when
+  the reply was cut, and for worldbooks, transplants, instructions and notes. The verdict is kept on the
+  turn (`review`) and said under the reply.
+- **One copy of the documents, ever.** Step 1 reads them in his message. Once a step changes them, his
+  message says they have changed and where; the documents as they stand now ride only at the end of the
+  house's latest note. Before this, a three-step turn held three copies, two out of date, and a quote taken
+  from an old copy missed.
+- **The message is a short summary.** The room asks for what changed, where and why, in a few lines, never
+  the document; the engine's EXPERT EYE and SCAN EVIDENCE go between `<audit>` and `</audit>` — hidden from
+  the stream and the reply, kept on the turn (`audit`), folded under the reply as "its own check".
+
 ## Testing
 
 ```
@@ -1352,7 +1373,7 @@ bash tests/all.sh           every suite, exit code intact
 ```
 
     node tests/units.mjs         594 checks — the real modules on a real document
-    node tests/harness.mjs       136 checks — the whole turn (v2.0): what the one he talks to reads, the
+    node tests/harness.mjs       152 checks — the whole turn (v2.0): what the one he talks to reads, the
                                               changes it makes, the steps, its helpers, the checks on
                                               what a turn brought in, put it back after a repair, Go on,
                                               Stop, a new world, search, the note at the end, too long
@@ -1378,7 +1399,7 @@ bash tests/all.sh           every suite, exit code intact
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-1,220 checks. Every suite must be green before a push. `tests/fixtures/` holds answers recorded from the
+1,236 checks. Every suite must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

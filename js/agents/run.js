@@ -102,8 +102,8 @@ export function frontBody(p, { search = false } = {}) {
       `${Him} and I are building the guide to a world together: the plot essential, its continuation files, the worldbook \u2014 the documents a storyteller will later read as the whole truth of that world. This is the comfortable room where they get made, so I talk like it: two people making something good, not a service desk. ${Him} only ever talks to me, and I am the one who does the work.`,
       `The documents. Every document in this world is in front of me, whole and word for word, at the end of what ${him} sends me. I read them there and answer from them: when ${him} asks what something says, I can see it.`,
       `Talking is not writing. Brainstorming, ideas, what-ifs, a world still being talked through, a question, an opinion \u2014 I answer it, and write nothing. Nothing goes into a document until ${him} asks for it to be written: build it, write it up, put that in, add it, change it, fold it in. A suggestion to put something into a document that already exists is an ask, however softly it is put. ${coFirst}`,
-      `Changing a document. I make every change myself, in my reply \u2014 my engine's deliverables are delivered here as changes to the documents, never pasted into my reply. A change to part of a document goes in one block of changes:\n\n${CHANGE_FORM}\n\nA whole document \u2014 a new one, or one rebuilt from start to finish \u2014 is written out plainly, exactly as it should read, with nothing escaped:\n\n${FILE_FORM}\n\n${rules('my')}\n\nWhat I write outside the blocks is what ${him} reads.`,
-      `What happens next. The house puts my changes in and runs its checks. When something needs me \u2014 a change that did not go in, something the checks found that my changes brought in, a helper's report \u2014 it tells me, with the documents as they now stand, and I put right what needs it and finish my answer. When everything went in cleanly, my reply stands as I wrote it. A change I only describe in words has not happened.`,
+      `Changing a document. I make every change myself, in my reply \u2014 my engine's deliverables are delivered here as changes to the documents, never pasted into my reply. A change to part of a document goes in one block of changes:\n\n${CHANGE_FORM}\n\nA whole document \u2014 a new one, or one rebuilt from start to finish \u2014 is written out plainly, exactly as it should read, with nothing escaped:\n\n${FILE_FORM}\n\n${rules('my')}\n\nWhat I write outside the blocks is what ${him} reads, so it stays short: what I changed, where, and why \u2014 a few lines, never the document itself \u2014 and my answer. My engine's EXPERT EYE and SCAN EVIDENCE go between <audit> and </audit>: they are kept, folded under my reply, for when ${him} wants them.`,
+      `What happens next. The house puts my changes in and runs its checks. When something needs me \u2014 a change that did not go in, something the checks found that my changes brought in, a helper's report \u2014 it tells me, with the documents as they now stand, and I put right what needs it and finish my answer. When everything went in cleanly, my reply stands as I wrote it. After any change to a plot essential or a continuation file, the eye reads back what I changed against my engine, and what it finds comes back to me to put right before I answer. A change I only describe in words has not happened.`,
       `My helpers. I can hand a job to one of them and have its report back before I answer:\n\n${HELPER_FORM}\n\n${helperLines('my')}\n\nA helper sees the documents and this conversation, never my thinking, so I write its task in full. What it changes goes in like my own changes, and what it says comes back to me. The plot essential and its continuation files are my own work: I hold the whole engine.`,
       search ? 'Searching. If something real is uncertain \u2014 a canon detail of an existing story, a real person, place, date or fact \u2014 and getting it wrong would matter, I have it looked up before I write it: each thing to look up goes between <search> and </search> (a few words each, at most three), and what is found is put in front of me.' : '',
       `A different story. If ${him} is starting a different story from the one in these documents \u2014 another world, to talk through or to build \u2014 I write only <new_world/>, and nothing else. The house opens a world of its own for it and hands it back to me there.`,
@@ -115,8 +115,8 @@ export function frontBody(p, { search = false } = {}) {
     `You and ${him} are building the guide to a world together: the plot essential, its continuation files, the worldbook \u2014 the documents a storyteller will later read as the whole truth of that world. This is the comfortable room where they get made, so talk like it: two people making something good, not a service desk. ${Him} only ever talks to you, and you are the one who does the work.`,
     `The documents. Every document in this world is in front of you, whole and word for word, at the end of what ${him} sends you. Read them there and answer from them: when ${him} asks what something says, you can see it.`,
     `Talking is not writing. Brainstorming, ideas, what-ifs, a world still being talked through, a question, an opinion \u2014 answer it, and write nothing. Nothing goes into a document until ${him} asks for it to be written: build it, write it up, put that in, add it, change it, fold it in. A suggestion to put something into a document that already exists is an ask, however softly it is put. ${coSecond}`,
-    `Changing a document. You make every change yourself, in your reply \u2014 your engine's deliverables are delivered here as changes to the documents, never pasted into your reply. A change to part of a document goes in one block of changes:\n\n${CHANGE_FORM}\n\nA whole document \u2014 a new one, or one rebuilt from start to finish \u2014 is written out plainly, exactly as it should read, with nothing escaped:\n\n${FILE_FORM}\n\n${rules('your')}\n\nWhat you write outside the blocks is what ${him} reads.`,
-    `What happens next. The house puts your changes in and runs its checks. When something needs you \u2014 a change that did not go in, something the checks found that your changes brought in, a helper's report \u2014 it tells you, with the documents as they now stand: put right what needs it, then finish your answer. When everything went in cleanly, your reply stands as you wrote it. A change you only describe in words has not happened.`,
+    `Changing a document. You make every change yourself, in your reply \u2014 your engine's deliverables are delivered here as changes to the documents, never pasted into your reply. A change to part of a document goes in one block of changes:\n\n${CHANGE_FORM}\n\nA whole document \u2014 a new one, or one rebuilt from start to finish \u2014 is written out plainly, exactly as it should read, with nothing escaped:\n\n${FILE_FORM}\n\n${rules('your')}\n\nWhat you write outside the blocks is what ${him} reads, so keep it short: what you changed, where, and why \u2014 a few lines, never the document itself \u2014 and your answer. Your engine's EXPERT EYE and SCAN EVIDENCE go between <audit> and </audit>: they are kept, folded under your reply, for when ${him} wants them.`,
+    `What happens next. The house puts your changes in and runs its checks. When something needs you \u2014 a change that did not go in, something the checks found that your changes brought in, a helper's report \u2014 it tells you, with the documents as they now stand: put right what needs it, then finish your answer. When everything went in cleanly, your reply stands as you wrote it. After any change to a plot essential or a continuation file, the eye reads back what you changed against your engine, and what it finds comes back to you to put right before you answer. A change you only describe in words has not happened.`,
     `Your helpers. You can hand a job to one of them and have its report back before you answer:\n\n${HELPER_FORM}\n\n${helperLines('your')}\n\nA helper sees the documents and this conversation, never your thinking, so write its task in full. What it changes goes in like your own changes, and what it says comes back to you. The plot essential and its continuation files are your own work: you hold the whole engine.`,
     search ? 'Searching. If something real is uncertain \u2014 a canon detail of an existing story, a real person, place, date or fact \u2014 and getting it wrong would matter, have it looked up before you write it: each thing to look up goes between <search> and </search> (a few words each, at most three), and what is found is put in front of you.' : '',
     `A different story. If ${him} is starting a different story from the one in these documents \u2014 another world, to talk through or to build \u2014 write only <new_world/>, and nothing else. The house opens a world of its own for it and hands it back to you there.`,
@@ -168,6 +168,9 @@ export function visibleText(raw) {
   if (open !== -1) t = t.slice(0, open);
   t = t.replace(/<new_world\s*\/?>(?:\s*<\/new_world>)?/gi, '');
   t = stripSearch(stripNeed(t));
+  t = t.replace(/<audit>[\s\S]*?<\/audit>/gi, '');
+  const half = t.search(/<audit>/i);
+  if (half !== -1) t = t.slice(0, half);
   return t.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
@@ -175,7 +178,12 @@ export function visibleText(raw) {
  * a block of changes, a helper call, a search or the new-world word is held back
  * whole — said on the status line instead ("writing Plot Essential.md · 1,240
  * words so far"). A tag cut in two by a chunk is held until it is whole. */
+/* the engine's own check of a reply, between <audit> and </audit>: kept, folded under it */
+export function readAudit(raw) {
+  return [...outsideBlocks(raw).matchAll(/<audit>([\s\S]*?)<\/audit>/gi)].map((m) => m[1].trim()).filter(Boolean).join('\n\n');
+}
 const OPENERS = [
+  { re: /<audit>/i, close: /<\/audit>/i, kind: 'audit' },
   { re: /<(?:doc)?edits>/i, close: /<\/(?:doc)?edits>/i, kind: 'edits' },
   { re: /<file\s+(?:name|path)\s*=\s*(?:"([^"\n]*)"|'([^'\n]*)'|([^>\n]+?))\s*\/?>/i, close: /<\/file\s*>/i, kind: 'file' },
   { re: /<helper\b([^>]*)>/i, close: /<\/helper\s*>/i, kind: 'helper' },
@@ -183,7 +191,7 @@ const OPENERS = [
   { re: /<need>/i, close: /<\/need>/i, kind: 'need' },
   { re: /<new_world\s*\/?>/i, close: null, kind: 'new_world' },
 ];
-const OPENER_WORDS = ['edits', 'docedits', 'file', 'helper', 'search', 'need', 'new_world'];
+const OPENER_WORDS = ['edits', 'docedits', 'file', 'helper', 'search', 'need', 'new_world', 'audit'];
 function couldOpen(tail) {
   const w = tail.slice(1).toLowerCase();
   return OPENER_WORDS.some((x) => x.startsWith(w) || w.startsWith(x));
@@ -670,6 +678,12 @@ export const GO_ON = 'Your last reply was cut off partway through. Carry straigh
  * read). Helpers per step and lookups per turn are capped so a turn always ends. */
 export const MAX_STEPS = 6;
 export const MAX_HELPERS = 4;
+/* what the second pass reads back: the documents his engine is the craft of */
+const REVIEWED_KINDS = new Set(['pe', 'continuity']);
+function kindOfName(project, name) {
+  const d = ((project && project.docs) || []).find((x) => x.name === name);
+  return d ? (d.kind || 'pe') : '';
+}
 /* the room a reply needs to write a document in it (the floor every worker had):
  * a value he set that is higher is his; nothing lower than this is sent */
 export const MAKER_FLOOR = 8000;
@@ -767,7 +781,6 @@ function stepReport({ p, landed = [], back = [], other = [], repaired = [], foun
   if (parts) lines.push(parts);
   if (nudge) lines.push(nudge);
   lines.push(`Put right what needs it, then finish your answer to ${him} \u2014 ${him} has already read what you wrote, so carry on from there and never say it again. If nothing needs doing, just finish your answer.`);
-  if (docs) lines.push(`The documents, as they stand now:\n\n${docs}`);
   return lines.join('\n\n');
 }
 
@@ -866,9 +879,21 @@ export async function runTurn({
   const makerMessages = (world, extra) => {
     const n = (house.settings || {}).turnsOnScreen || 40;
     const earlier = (small ? past.slice(-6) : past.slice(-n)).map((t) => (t.role === 'writer' ? { role: 'user', content: t.text || '' } : { role: 'assistant', content: ownWords(t.text || '') }));
+    /* ONE COPY OF THE DOCUMENTS, EVER (v2.2). Once a step has changed them, the copy in
+     * his message is out of date: it is taken out, and the documents as they stand now
+     * ride at the end of the house's latest note only — so a quote is never taken from
+     * a copy that no longer holds. */
+    let lastNote = -1;
+    for (let i = extra.length - 1; i >= 0; i--) if (extra[i].role === 'user') { lastNote = i; break; }
+    const docsHere = lastNote === -1
+      ? [small ? 'The documents, as they stand right now \u2014 too long for this model to read whole, so the outline and the parts in play:' : 'The documents, as they stand right now \u2014 whole, word for word:',
+        docBriefs(world, { message, recent: world.recentSections || [], asked, partial: small, limit: MAKER_WHOLE })]
+      : ['The documents have changed since this was said. They are shown as they stand now at the end of the house\u2019s latest note, below \u2014 the only copy to read and to quote from.'];
+    const later = extra.map((m, i) => (i === lastNote
+      ? { role: 'user', content: `${m.content}\n\nThe documents, as they stand now${small ? ' (the outline and the parts in play)' : ', whole, word for word'} \u2014 the only copy to read and to quote from:\n\n${docBriefs(working, { message, recent: working.recentSections || [], asked, partial: small, limit: MAKER_WHOLE })}` }
+      : m));
     const ask = [
-      small ? 'The documents, as they stand right now \u2014 too long for this model to read whole, so the outline and the parts in play:' : 'The documents, as they stand right now \u2014 whole, word for word:',
-      docBriefs(world, { message, recent: world.recentSections || [], asked, partial: small, limit: MAKER_WHOLE }),
+      ...docsHere,
       standing ? `\n${standing}` : '',
       houseNotes.length ? `\n${houseNotes.join('\n\n')}` : '',
       /* his words under his name; with no name set, never "you said:" (it tells the
@@ -876,7 +901,7 @@ export async function runTurn({
       goOn ? `\n${message}` : `\n${p.you ? `${p.you} said:` : 'What was just said to you:'}\n${message}`,
     ].filter(Boolean).join('\n\n');
     const last = noteAtTheEnd(house, p);
-    return oneVoice(earlier.concat([{ role: 'user', content: ask }], extra, last ? [last] : []));
+    return oneVoice(earlier.concat([{ role: 'user', content: ask }], later, last ? [last] : []));
   };
 
   /* ONE STEP: a reply from the one he talks to, streamed, its words on screen as
@@ -915,7 +940,7 @@ export async function runTurn({
       if (done) { status(''); return; }
       const words = (String(body || '').match(/\S+/g) || []).length;
       const label = kind === 'file' ? `writing ${name || 'a document'}` : kind === 'edits' ? 'writing the changes'
-        : kind === 'helper' ? `handing it to ${HELPER_NAMES[helperId(name)] || name || 'a helper'}` : kind === 'search' ? 'asking for a search' : '';
+        : kind === 'helper' ? `handing it to ${HELPER_NAMES[helperId(name)] || name || 'a helper'}` : kind === 'search' ? 'asking for a search' : kind === 'audit' ? 'checking its work' : '';
       if (label) status(label, words ? `${words.toLocaleString()} words so far` : '');
     });
     if (!opening || small) opening = working;
@@ -986,12 +1011,33 @@ export async function runTurn({
   let needRounds = 0;
   let needNudged = false;
   const changedAny = () => allCards.some((c) => c.status === 'applied');
+  const audits = [];
+  let review = null;
+  let readUpTo = allCards.length;
+  const readBack = async (fresh) => {
+    const names = [...new Set(fresh.map((c) => c.name))];
+    const cut2 = (t) => { const s = String(t || '').replace(/\s+/g, ' ').trim(); return s.length > 600 ? `${s.slice(0, 600)}\u2026` : s; };
+    const changes = fresh.map((c) => `- ${c.name}: ${c.how || 'changed'}${c.reason ? ` (${c.reason})` : ''}${c.was ? `\n  was: ${cut2(c.was)}` : ''}${c.now ? `\n  now: ${cut2(c.now)}` : ''}`).join('\n');
+    const task = `Read back what was changed just now in ${names.join(', ')}, against your craft \u2014 the Verification Engine and the Expert Eye. Find what these changes got wrong or broke: a wrong fact, a contradiction with the rest of the document, a date out of order, a name spelled two ways, anything your craft forbids. Read the whole document for that, but judge only these changes and what they touch.\n\nThe changes:\n${changes}\n\nChange nothing yourself. Begin your answer with CLEAN if nothing is wrong, or with FOUND and then each mistake: the exact words as they stand now, and what they should be.`;
+    let craft = null;
+    try { craft = await craftFor('eye', house); } catch (_) { /* its slice of the engine, as always */ }
+    const res = await enqueue(project.id, 'eye', ({ signal: s, stale }) =>
+      runWorker({ worker: 'eye', sections, conn: connFor('eye'), project: working, message: task, talk, note: registryNote(working, 'eye'),
+        asker: p.maker || 'the one making this with the author', onStatus: status, onProgress: progress, signal: either(signal, s), stale, craft,
+        onSent: recorder('the eye \u2014 reading it back') }));
+    if (!res || !res.ok) return { clean: false, found: false, notes: '', failed: plainFailure((res && res.error) || 'did not finish'), at: Date.now() };
+    const said = String(res.notes || '').trim();
+    const clean = /^\W*CLEAN\b/i.test(said);
+    const notes = said.replace(/^\W*(?:CLEAN|FOUND)\b[\s:.\u2014-]*/i, '').trim();
+    crew.push({ worker: 'eye', notes: said, review: true });
+    return { clean, found: !clean && Boolean(notes), notes, at: Date.now() };
+  };
   const fail = (error, isStop) => {
     const partial = isStop && !quiet ? streamed.replace(/^\s+/, '') : '';
     const said = partial ? (reply ? `${reply}\n\n${partial}` : partial) : reply;
     /* a failure after words were already said is still said: on a card, exactly */
     const told = !isStop && said ? [{ status: 'refused', name: '', reason: '', failure: true, why: `${plainFailure(error)} (${String(error).slice(0, 160)})` }] : [];
-    return { project: working, reply: said, thinking, cards: allCards.concat(pending, told), batches, crew, edits: turnEdits, asks, error: said && !isStop ? null : error, stopped: Boolean(isStop), sent };
+    return { project: working, reply: said, thinking, cards: allCards.concat(pending, told), batches, crew, edits: turnEdits, asks, error: said && !isStop ? null : error, stopped: Boolean(isStop), sent, audit: audits.join('\n\n'), review };
   };
 
   for (let n = 0; n < MAX_STEPS; n++) {
@@ -1008,6 +1054,8 @@ export async function runTurn({
       return fail(why, false);
     }
     if (got.thought) thinking = thinking ? `${thinking}\n\n${got.thought}` : got.thought;
+    const ownCheck = readAudit(got.raw);
+    if (ownCheck) audits.push(ownCheck);
     /* the step is done: its words are counted below, never again as words in flight */
     streamed = '';
     const raw = got.raw;
@@ -1072,6 +1120,7 @@ export async function runTurn({
       if (!h.id) { report.unknown.push(h.name || '(no name)'); follow = true; continue; }
       status(`${HELPER_NAMES[h.id]} is on it`);
       const res = await sendHelper(h.id, h.task || message, `${HELPER_NAMES[h.id]} \u2014 ${short(h.task || message)}`);
+      if (h.id === 'eye') readUpTo = allCards.length;
       report.helpers.push({ id: h.id, name: h.name, notes: res.notes || '', cards: res.cards || [], ask: res.ask || '', failed: res.failed || '' });
       follow = true;
     }
@@ -1130,6 +1179,25 @@ export async function runTurn({
     }
     if (!follow) {
       if (got.cut) cut = { cutBy: got.cutBy || 'length' };
+      /* THE SECOND PASS (v2.2, his ask). Any change this turn made to a plot essential
+       * or a continuation file that the eye has not seen is read back by it, against
+       * its part of the engine, before the turn ends. It changes nothing itself; what
+       * it finds goes to the one he talks to, which puts it right in one more step.
+       * Once a turn. */
+      if (!got.cut && !review && n + 1 < MAX_STEPS) {
+        const fresh = allCards.slice(readUpTo).filter((c) => c.status === 'applied' && REVIEWED_KINDS.has(kindOfName(working, c.name)));
+        if (fresh.length) {
+          status('the eye is reading it back');
+          review = await readBack(fresh);
+          readUpTo = allCards.length;
+          if (stopped()) return fail('stopped', true);
+          if (review.found) {
+            extra.push({ role: 'assistant', content: raw }, { role: 'user', content: stepReport({ p, other: [
+              `The eye read back what you changed this turn, against your engine, and found:\n${review.notes}\n\nPut right what is wrong, the way your engine says to \u2014 or, where the eye is mistaken, say why in a line. Then finish your answer.`] }) });
+            continue;
+          }
+        }
+      }
       /* changes made and not a word said about them: one more step to say them */
       if (!seen && !reply && changedAny() && !toldToSpeak && n + 1 < MAX_STEPS) {
         toldToSpeak = true;
@@ -1138,13 +1206,12 @@ export async function runTurn({
       }
       break;
     }
-    const docsNow = docBriefs(working, { message, recent: working.recentSections || [], asked, partial: small, limit: MAKER_WHOLE });
-    extra.push({ role: 'assistant', content: raw }, { role: 'user', content: stepReport({ ...report, foundText, parts, nudge, docs: docsNow }) });
+    extra.push({ role: 'assistant', content: raw }, { role: 'user', content: stepReport({ ...report, foundText, parts, nudge }) });
   }
   status('');
   if (stopped()) return fail('stopped', true);
   allCards.push(...pending);
-  const out = { project: working, reply, thinking, cards: allCards, batches, crew, edits: turnEdits, asks, error: null, sent };
+  const out = { project: working, reply, thinking, cards: allCards, batches, crew, edits: turnEdits, asks, error: null, sent, audit: audits.join('\n\n'), review };
   if (cut) { out.cut = true; out.cutBy = cut.cutBy; }
   return out;
 }
@@ -1179,7 +1246,7 @@ function sortCards(cards) {
  * cards and the changes it made, never its undo payload, because a version
  * that is not shown has had its changes put back. */
 export function versionOf(t) {
-  return { text: t.text, thinking: t.thinking || '', thinkingMs: t.thinkingMs, cards: t.cards || [], edits: t.edits || [], asks: t.asks || [], cut: Boolean(t.cut), cutBy: t.cutBy || '', failed: Boolean(t.failed), at: t.at, batches: [], sent: t.sent || [] };
+  return { text: t.text, thinking: t.thinking || '', thinkingMs: t.thinkingMs, cards: t.cards || [], edits: t.edits || [], asks: t.asks || [], cut: Boolean(t.cut), cutBy: t.cutBy || '', failed: Boolean(t.failed), at: t.at, batches: [], sent: t.sent || [], audit: t.audit || '', review: t.review || null };
 }
 
 export function landTurn(world, { chatId, snapshot, result, makerTurn, replaceAt = null }) {
@@ -1275,6 +1342,8 @@ export function landContinuation(world, { chatId, snapshot, result, at, words, m
     thinkingMs: ((t.thinkingMs || 0) + (makerTurn.thinkingMs || 0)) || undefined,
     cards: (t.cards || []).concat(cards), batches: (t.batches || []).concat(batches), edits: (t.edits || []).concat(makerTurn.edits || []),
     sent: (t.sent || []).concat(makerTurn.sent || []),
+    audit: [t.audit, makerTurn.audit].filter(Boolean).join('\n\n'),
+    review: makerTurn.review || t.review || null,
   };
   if (t.versions) turn.versions = t.versions.map((v, j) => (j === t.shown ? { ...v, text: joined, cut: makerTurn.cut, cutBy: makerTurn.cutBy } : v));
   chat.turns = chat.turns.map((x, i) => (i === at ? turn : x));

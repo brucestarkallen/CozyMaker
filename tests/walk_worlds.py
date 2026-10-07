@@ -333,7 +333,8 @@ class Model(http.server.BaseHTTPRequestHandler):
             body = ('I changed the scene.\n\n<edits>\n' + json.dumps([{"file": "Plot Essential.md", "find": line,
                     "replace": "WHERE: the " + place, "reason": "moved the scene"}]) + '\n</edits>')
         else:
-            body = "Read it all back; nothing else needed changing."
+            body = ("CLEAN \u2014 nothing wrong." if "Read back what was changed just now" in (rest[0]["content"] if rest else "")
+                    else "Read it all back; nothing else needed changing.")
         calls[-1]["reply"] = body
         try:
             if sent.get("stream"):
@@ -535,8 +536,10 @@ def main():
             page.wait_for_timeout(1300)
             editor = [c for c in calls if c.get("did") == "editor"]
             ok("the one he talks to made the change itself", len(editor) == 1, [c.get("did") or c["who"] for c in calls])
-            ok("a one-field edit is not followed by a full read-back (the craft's *edit: required scan only)",
-               not any(c["who"] == "eye" for c in calls), [c["who"] for c in calls])
+            eyes = [c for c in calls if c["who"] == "eye"]
+            ok("a one-field edit is read back only for what it changed, never in full (the craft's *edit: required scan only)",
+               len(eyes) == 1 and "judge only these changes and what they touch" in eyes[0]["messages"][0]["content"]
+               and "now: WHERE: the Heartworks" in eyes[0]["messages"][0]["content"], [c["who"] for c in calls])
             ok("his own request is labelled as his",
                editor and "Bruce said:\nmove the scene to the Heartworks" in editor[0]["messages"][-1]["content"])
             if editor:
@@ -981,7 +984,9 @@ def main():
             page.click("#sendBtn")
             settle()
             ok("the crew's answer changed the document", pe_text().count("dormant, not dead") == 1, pe_text()[:160])
-            ok("nothing is read back behind his back: no helper was sent unasked", not any(c["who"] == "eye" for c in calls), [c["who"] for c in calls])
+            eyes = [c for c in calls if c["who"] == "eye"]
+            ok("what changed is read back by the eye before the turn ends, and it is said under the reply", len(eyes) == 1
+               and "Read back what was changed just now" in eyes[0]["messages"][0]["content"] and "nothing wrong" in last_maker().inner_text(), [c["who"] for c in calls])
             last_maker().locator(".diff-fold .fold-head").first.click()
             page.wait_for_timeout(300)
             was = last_maker().locator(".diff .was").first.inner_text()
@@ -1170,6 +1175,7 @@ def main():
             settle()
             refused_small = [c for c in calls if c["who"] == "small-refused"]
             eds = [c for c in calls if c.get("did") == "editor"]
+            refused_small = [c for c in refused_small if "How this room works" in json.dumps(c["body"].get("messages", [])[:1])]
             ok("a model too small for the whole world refuses it once", len(refused_small) == 1, [c["who"] for c in calls])
             ok("the whole world was sent first, the long document with it", refused_small and "A long draft line" in refused_small[0]["body"]["messages"][-1]["content"]
                and refused_small[0]["size"] > 70000, refused_small[0]["size"] if refused_small else None)
@@ -1470,7 +1476,7 @@ def main():
             page.locator("#docsBody .btn", has_text="Build it").click()
             page.wait_for_function("() => document.querySelectorAll('.turn.maker').length >= 1 && !document.querySelector('#sendBtn.stop')", timeout=30000)
             page.wait_for_timeout(1300)
-            workers = [c.get("did") for c in calls if c["who"] == "front" and c.get("did") not in ("talk", "done")] + [c["who"] for c in calls if c["who"] != "front"]
+            workers = [c.get("did") for c in calls if c["who"] == "front" and c.get("did") not in ("talk", "done")] + [c["who"] for c in calls if c["who"] not in ("front", "eye")]
             ok("the card is one job, built by the one he talks to \u2014 no tidying for \"clean up her messes\"", workers == ["builder"], workers)
             b_call = [c for c in calls if c.get("did") == "builder"]
             ok("it is given the whole card, with what the house's *card means",

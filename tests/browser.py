@@ -77,6 +77,13 @@ class Model(http.server.BaseHTTPRequestHandler):
                 user = m.get("content", "")
         crew = "This is craft work on a piece of fiction" in system
         seen_prompts.append({"system": system, "user": user, "stream": bool(sent.get("stream")), "crew": crew, "body": sent})
+        if crew and "Read back what was changed just now" in user:
+            body = json.dumps({"choices": [{"message": {"content": "CLEAN \u2014 nothing wrong."}, "finish_reason": "stop"}]}).encode() if not sent.get("stream") else None
+            if body is not None:
+                self.send_response(200); self.send_header("Content-Type", "application/json"); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body); return
+            self.send_response(200); self.send_header("Content-Type", "text/event-stream"); self.end_headers()
+            self.wfile.write(("data: " + json.dumps({"choices": [{"delta": {"content": "CLEAN \u2014 nothing wrong."}}]}) + "\n\n").encode())
+            self.wfile.write(("data: " + json.dumps({"choices": [{"delta": {}, "finish_reason": "stop"}]}) + "\n\ndata: [DONE]\n\n").encode()); self.wfile.flush(); return
 
         if sent.get("stream") and not crew:
             # the one the writer talks to (v2.0): it makes the change itself, in its reply, the
@@ -248,7 +255,8 @@ def main():
             # -- the one he talks to did the work, reading everything ------------
             workers = [p for p in seen_prompts if p["crew"]]
             fronts = [p for p in seen_prompts if not p["crew"]]
-            ok("the one he talks to was asked once, and nobody else was sent", len(fronts) == 1 and not workers, f"{len(fronts)} / {len(workers)}")
+            ok("the one he talks to was asked once; the only other call was the eye reading back what changed", len(fronts) == 1 and len(workers) == 1
+               and "Read back what was changed just now in Plot Essential.md" in workers[0]["user"], f"{len(fronts)} / {len(workers)}")
             front = fronts[0]
             engine = (ROOT / "engine" / "generalist.md").read_text()
             ok("it was given his own instructions first", front["system"].startswith("You are Eni. You are warm"), front["system"][:80])
@@ -518,8 +526,8 @@ def main():
                 ws.click()
                 page.wait_for_function("() => document.querySelector('#sentSheet.open') && !/Fetching/.test(document.getElementById('sentBody').textContent)", timeout=10000)
                 sbody = page.locator("#sentBody").inner_text()
-                ok("it says how many requests went out and how many tokens went in, and that it is an estimate",
-                   re.search(r"1 request \u00b7 about [\d,]+ tokens in \u2014 an estimate", sbody) is not None, sbody[:240])
+                ok("it says how many requests went out \u2014 the one he talks to, then the eye reading it back \u2014 and how many tokens went in, as an estimate",
+                   re.search(r"2 requests \u00b7 about [\d,]+ tokens in \u2014 an estimate", sbody) is not None and "the one you talk to \u2014 step 1" in sbody and "the eye \u2014 reading it back" in sbody, sbody[:300])
                 ok("in parts: his instructions, his whole engine and the room, each with its tokens",
                    "Your instructions for them" in sbody and "Your engine \u2014 engine/generalist.md" in sbody and "How this room works" in sbody
                    and len(re.findall(r"~[\d,]+ tokens", sbody)) >= 4, sbody[:400])

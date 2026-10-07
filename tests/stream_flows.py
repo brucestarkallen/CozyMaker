@@ -79,6 +79,9 @@ class Fake(http.server.BaseHTTPRequestHandler):
             self.wfile.flush()
 
         try:
+            if "craft work on a piece of fiction" in system:
+                send({"content": "CLEAN \u2014 nothing wrong."}, "stop")    # the eye, reading back what changed
+                return done()
             # the one he talks to
             if "stop me while you think" in now:
                 # a long think, for Stop to land in the middle of

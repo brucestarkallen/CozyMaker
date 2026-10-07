@@ -191,6 +191,18 @@ the documents as they now stand, and they carry on in the same reply. Problems
 that were already in a document before this turn are never raised again, so a
 small change never sets off a rewrite of everything around it.
 
+**The second pass.** Before a turn that changed a plot essential or a continuation
+file ends, the eye reads back exactly what changed — the whole document for
+context, judging only the changes and what they touch — against your engine. It
+changes nothing itself: anything it finds goes to the one you talk to, which puts it
+right before it answers. Under the reply, one line says how the read-back went
+("nothing wrong", or what it found), and the engine's own EXPERT EYE check is
+folded beside it. The message itself stays a short summary of what changed.
+
+**One copy of your documents.** What the one you talk to reads holds your documents
+once: as they stand now, labelled by name. When a step changes them, the old copy is
+taken out and the new one is the only one it can quote from.
+
 Their helpers, each called by name, each reporting back to them:
 
 | | |
@@ -240,7 +252,7 @@ the model needs changing.
 Read `AGENTS.md` first.
 
 ```
-bash tests/all.sh    eleven runs, 1,220 checks
+bash tests/all.sh    eleven runs, 1,236 checks
 ```
 
 `docs/lineage.md` lists every version of Cozy Tavern and Cozy Chat and what
