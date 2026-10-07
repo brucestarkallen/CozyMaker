@@ -53,14 +53,84 @@ def until(check, timeout=6.0):
 # Each worker is known by words only its own sections carry. (Section 2's heading, "THE EXPERT
 # EYE", is in every worker's shared reading since v1.2.4; the eye's own is 13.6.)
 def which(system):
-    if "You are the one who listens." in system:
-        return "listener"
+    if "How this room works" in system:
+        return "front"
     for marker, name in (("worldbook architect for SillyTavern", "worldbook"), ("PROACTIVE CO-WRITER", "builder"), ("THE CLEANUP WORKFLOW", "showrunner"),
                          ("Evidenced CLEAN vs False CLEAN", "eye"), ("Edit Mode Discipline", "editor"),
                          ("SMART COMPRESSION SYSTEM", "compressor")):
         if marker in system:
             return name
     return "front" if "craft work on a piece of fiction" not in system else "worker"
+
+
+def his_words(content):
+    for key in ("Bruce said:\n", "What was just said to you:\n"):
+        if key in content:
+            return content.split(key)[-1]
+    return ""
+
+
+def where_line(text):
+    m = re.search(r"(?m)^WHERE[^:\n]*: [^\n/]*", text)
+    return m.group(0).rstrip() if m else "WHERE: the Ribway"
+
+
+TIDY = ('I tidied it: the rule now says what it means.\n\n<edits>\n'
+        '[{"file":"Plot Essential.md","find":"- The city lives inside a dormant leviathan.",'
+        '"replace":"- The city lives inside a leviathan that is dormant, not dead.","reason":"clearer"}]\n</edits>')
+
+
+# Since v2.0 the one he talks to does the work itself, reading the whole engine and every document.
+# This stand-in writes, for the same words, what the crew it replaced used to write -- in its own
+# reply -- and says which job it did ("did"), so the walk can tell.
+def maker_job(rest):
+    last = rest[-1]["content"] if rest else ""
+    if last.startswith("(From the house"):
+        if 'you quoted: "WHERE: the Ribwayy"' in last:
+            now = last.split("The documents, as they stand now:")[-1]
+            return "editor", ("Quoted exactly this time.\n\n<edits>\n" + json.dumps([{"file": "Plot Essential.md", "find": where_line(now),
+                              "replace": "WHERE: the Lighthouse", "reason": "moved the scene"}]) + "\n</edits>")
+        if "It needs Bruce to decide:\n" in last:
+            return "ask", "Before it can start: " + last.split("It needs Bruce to decide:\n")[-1].split("\n\n")[0]
+        return "done", "Done."
+    said = his_words(last)
+    low = said.lower()
+    talk = json.dumps(rest).lower()
+    docs = last.rsplit("Bruce said:", 1)[0]
+    if re.search(r"\b(?:make|start|begin)\b[^.?!]{0,30}\bnew\s+(?:plot essential|story)", low) and "this world" not in low and "# PLOT ESSENTIAL" in docs:
+        return "new_world", "<new_world/>"
+    if "shorter" in low or "*optimize" in low:
+        return "compressor", "<need>SCENE</need>"
+    if "*card" in said or "*new" in said or re.search(r"\b(?:start|build|make|create|write)\b[^.?!]{0,30}\bplot essential\b", low):
+        title = ("Her Highness Needs A Minute" if "her highness" in talk else "The Ember Crown" if "ember crown" in talk
+                 else "The Saltmarsh Court" if "saltmarsh" in talk else "The Leviathan Quarter")
+        return "builder", ('I started the plot essential from what you described.\n\n<file name="Plot Essential.md">\n'
+                           '# PLOT ESSENTIAL \u2014 ' + title + ' \u2014 V1.0\n\n## WORLD\n### Rules\n- The city lives inside a dormant leviathan.\n\n'
+                           '## SCENE\nWHERE: the Ribway / LAST: "Hold the rope," Mira said.\n</file>')
+    if "worldbook" in low or "brin the smith" in low or ("what is this world called" in talk and "drowned harbour" in low):
+        return "worldbook-helper", '<helper name="the worldbook keeper">' + said + '</helper>'
+    if "jovan should be seventeen" in low:
+        m = re.search(r"(?m)^## MC \u2014 Jovan \(16\)$", docs)
+        return "editor", ('Changed his age.\n\n<edits>\n' + json.dumps([{"file": "My Old PE.md", "find": m.group(0) if m else "(not shown)",
+                          "replace": "## MC \u2014 Jovan (17)", "reason": "his age"}]) + '\n</edits>')
+    if "misquote test" in low:
+        return "editor", ('I moved it.\n\n<edits>\n' + json.dumps([{"file": "Plot Essential.md", "find": "WHERE: the Ribwayy",
+                          "replace": "WHERE: the Lighthouse", "reason": "moved the scene"}]) + '\n</edits>')
+    place = "Lighthouse" if "lighthouse would suit" in low else None
+    if not place and (re.search(r"\b(?:move|change)\b[^.?!]{0,20}\bscene\b", low) or low.startswith("*edit")):
+        t = re.search(r"to the (\w+)", said)
+        place = t.group(1) if t else "Heartworks"
+    if place:
+        return "editor", ('I changed the scene.\n\n<edits>\n' + json.dumps([{"file": "Plot Essential.md", "find": where_line(docs),
+                          "replace": "WHERE: the " + place, "reason": "moved the scene"}]) + '\n</edits>')
+    if "north arc" in low:
+        return "ask", ("I read the whole plot essential and the north arc.\n\nNORTH ARC PLAN: say the leviathan is dormant, not dead, "
+                       "so the arc stops reading as a funeral. Go ahead?")
+    if low.strip() == "yes, all of it" or "tidy up" in low or "*cleanup" in low:
+        return "showrunner", TIDY
+    if re.search(r"\bcheck\b", low):
+        return "eye-helper", '<helper name="the eye">' + said + '</helper>'
+    return "talk", ""
 
 
 class Model(http.server.BaseHTTPRequestHandler):
@@ -99,6 +169,8 @@ class Model(http.server.BaseHTTPRequestHandler):
         rest = [m for m in msgs if m.get("role") != "system"]
         who = which(system)
         calls.append({"who": who, "system": system, "messages": rest, "stream": bool(sent.get("stream")), "body": sent})
+        if who == "front":
+            calls[-1]["did"] = maker_job(rest)[0]
 
         if sent.get("stream") and who == "front" and self.path.startswith("/dropped/"):
             # a provider that breaks off partway: part of a reply, then an error in the stream
@@ -154,16 +226,27 @@ class Model(http.server.BaseHTTPRequestHandler):
             return
 
         if sent.get("stream") and who == "front":
-            time.sleep(DELAY["front"])
+            did, job = maker_job(rest)
+            time.sleep(DELAY["front"] + DELAY["worker"])
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.end_headers()
             try:
-                FRONT_N[0] += 1
-                for piece in ["All ", "right — ", "done ", "and ", "done. "] + ["More words so the reply is long. "] * 30 + [f"[reply {FRONT_N[0]}]"]:
+                slow = 0
+                if did in ("new_world", "ask", "done"):
+                    pieces = [job]
+                else:
+                    FRONT_N[0] += 1
+                    pieces = ["All ", "right — ", "done ", "and ", "done. "] + ["More words so the reply is long. "] * 30 + [f"[reply {FRONT_N[0]}]"]
+                    slow = len(pieces)
+                    if job:
+                        block = "\n\n" + job
+                        pieces += [block[i:i + 40] for i in range(0, len(block), 40)]
+                calls[-1]["reply"] = "".join(pieces)
+                for k, piece in enumerate(pieces):
                     self.wfile.write(("data: " + json.dumps({"choices": [{"delta": {"content": piece}}]}) + "\n\n").encode())
                     self.wfile.flush()
-                    time.sleep(0.01)
+                    time.sleep(DELAY["piece"] if did == "builder" and k >= slow else 0.01)
                 self.wfile.write(b"data: [DONE]\n\n")
                 self.wfile.flush()
             except (BrokenPipeError, ConnectionResetError):
@@ -208,7 +291,7 @@ class Model(http.server.BaseHTTPRequestHandler):
             body = ('I tidied it: the rule now says what it means.\n\n<edits>\n'
                     '[{"file":"Plot Essential.md","find":"- The city lives inside a dormant leviathan.",'
                     '"replace":"- The city lives inside a leviathan that is dormant, not dead.","reason":"clearer"}]\n</edits>')
-        elif who == "worldbook" and "What you put to" in rest[0]["content"]:
+        elif who == "worldbook" and "drowned harbour" in rest[0]["content"].lower():
             # his answer came back to it: the world, as entries written as data, quotes and all
             book = [{"name": "Ash Harbour", "keys": [], "content": "A drowned harbour city where the tide-cult rules the quays.", "strategy": "blue", "order": 300, "position": "before_char"},
                     {"name": "The Tide-Mother", "keys": ["Tide-Mother", "the cult's mother"], "content": 'The cult\'s leader. She says "the sea keeps what it is owed."',
@@ -419,13 +502,13 @@ def main():
             page.wait_for_timeout(1300)
             ok("the job appears in the conversation in plain words",
                "Let's start a new plot essential" in page.locator(".turn.writer .bubble").first.inner_text())
-            ok("the builder was the one sent", any(c["who"] == "builder" for c in calls), [c["who"] for c in calls])
+            ok("the one he talks to built it itself", any(c.get("did") == "builder" for c in calls), [c.get("did") or c["who"] for c in calls])
             saved = world("p_new")
             pe = [d for d in saved["docs"] if d["name"] == "Plot Essential.md"]
             ok("the plot essential now exists on the device", pe and "dormant leviathan" in pe[0]["text"], json.dumps(saved["docs"])[:200])
             ok("written plainly, its dialogue quotes arrive as they were written",
                pe and 'LAST: "Hold the rope," Mira said.' in pe[0]["text"] and "<file" not in pe[0]["text"], json.dumps(saved["docs"])[:300])
-            builder_call = [c for c in calls if c["who"] == "builder"]
+            builder_call = [c for c in calls if c.get("did") == "builder"]
             ok("the builder is told to write a whole document plainly",
                builder_call and '<file name="which document.md">' in builder_call[0]["system"])
             ok("the conversation took its name from what was said",
@@ -439,7 +522,8 @@ def main():
             ok("his words reach the front exactly once",
                sum(m["content"].count("Let's start a new plot essential") for m in front["messages"]) == 1)
             ok("the front is never taught the workers' tools", "<need>" not in json.dumps(front["messages"]))
-            ok("the front never calls him 'the writer'", "the writer" not in front["system"].lower())
+            house_words = front["system"].replace((ROOT / "engine" / "generalist.md").read_text(), "")
+            ok("the house never calls him 'the writer' (his engine's own words are his)", "the writer" not in house_words.lower())
 
             # ---------------------------------------- the workers hear the talk
             calls.clear()
@@ -447,16 +531,16 @@ def main():
             page.click("#sendBtn")
             page.wait_for_function("() => document.querySelectorAll('.turn.maker').length >= 2 && !document.querySelector('#sendBtn.stop')", timeout=30000)
             page.wait_for_timeout(1300)
-            editor = [c for c in calls if c["who"] == "editor"]
-            ok("the editor was sent for a change", len(editor) == 1, [c["who"] for c in calls])
+            editor = [c for c in calls if c.get("did") == "editor"]
+            ok("the one he talks to made the change itself", len(editor) == 1, [c.get("did") or c["who"] for c in calls])
             ok("a one-field edit is not followed by a full read-back (the craft's *edit: required scan only)",
                not any(c["who"] == "eye" for c in calls), [c["who"] for c in calls])
             ok("his own request is labelled as his",
-               editor and "What the author just asked for:\nmove the scene to the Heartworks" in editor[0]["messages"][0]["content"])
+               editor and "Bruce said:\nmove the scene to the Heartworks" in editor[0]["messages"][-1]["content"])
             if editor:
-                u = editor[0]["messages"][0]["content"]
-                ok("the worker hears the conversation that led here", "Let's start a new plot essential" in u)
-                ok("the worker hears who said what, by name", "Bruce:" in u and "Eni:" in u)
+                ms = editor[0]["messages"]
+                ok("it hears the conversation that led here, his words as his", any(m["role"] == "user" and "Let's start a new plot essential" in m["content"] for m in ms[:-1]))
+                ok("and its own earlier reply as its own", any(m["role"] == "assistant" and "done" in m["content"] for m in ms[:-1]))
             saved = world("p_new")
             ok("the change reached the device", "WHERE: the Heartworks" in saved["docs"][0]["text"])
 
@@ -471,7 +555,7 @@ def main():
             page.locator(".doc-jobs .btn", has_text="Tidy it up").click()
             page.wait_for_function("() => document.querySelectorAll('.turn.maker').length >= 3 && !document.querySelector('#sendBtn.stop')", timeout=30000)
             page.wait_for_timeout(1300)
-            ok("Tidy it up sends the showrunner", any(c["who"] == "showrunner" for c in calls), [c["who"] for c in calls])
+            ok("Tidy it up reaches the one he talks to, which tidies it", any(c.get("did") == "showrunner" for c in calls), [c.get("did") or c["who"] for c in calls])
             ok("and shows in the conversation as his own words",
                "Tidy up Plot Essential.md." in page.locator(".turn.writer .bubble").last.inner_text())
             saved = world("p_new")
@@ -503,7 +587,7 @@ def main():
             page.locator(".item.chat:not(.current) .item-main").first.click()   # walk into the other conversation mid-turn
             page.wait_for_timeout(300)
             ok("elsewhere, the composer says the crew is busy and where",
-               page.locator("#say").is_disabled() and "The crew is working in" in page.get_attribute("#say", "placeholder"))
+               page.locator("#say").is_disabled() and "Working in" in page.get_attribute("#say", "placeholder"))
             page.wait_for_function("() => !document.querySelector('#say').disabled", timeout=30000)
             page.wait_for_timeout(1300)
             DELAY["front"] = 0.0
@@ -528,7 +612,7 @@ def main():
             page.wait_for_function("() => !document.querySelector('#sendBtn.stop')", timeout=30000)
             page.wait_for_timeout(2500)
             DELAY["worker"] = 0.0
-            ok("after Stop, the front is never called", not any(c["who"] == "front" for c in calls), [c["who"] for c in calls])
+            ok("after Stop, nothing more is asked", sum(1 for c in calls if c["who"] == "front") <= 1, [c["who"] for c in calls])
             ok("the turn says it was stopped", page.locator(".turn.maker .bubble").last.inner_text() == "(stopped)")
             ok("a stopped turn is never handed back to the model as its own words",
                world("p_new")["chats"] and any(t.get("failed") for c in world("p_new")["chats"] for t in c["turns"]))
@@ -678,8 +762,8 @@ def main():
             by = {}
             for c in refused:
                 by.setdefault(c["asker"], []).append(c)
-            ok("a refused thinking level is learned from and goes again — the listener and the front each",
-               sorted(by) == ["front", "listener"] and all(2 <= len(v) <= 3 for v in by.values()), {k: len(v) for k, v in by.items()})
+            ok("a refused thinking level is learned from and goes again",
+               sorted(by) == ["front"] and all(2 <= len(v) <= 3 for v in by.values()), {k: len(v) for k, v in by.items()})
             ok("each one's first try carried the level as set", all("reasoning_effort" in v[0]["body"] for v in by.values()))
             ok("each one's later tries left out the field that was named", all("reasoning_effort" not in c["body"] for v in by.values() for c in v[1:]))
             ok("each one's last try carried no thinking at all, and went through", all(not any(k in v[-1]["body"] for k in THINK) for v in by.values()))
@@ -693,8 +777,8 @@ def main():
             page.wait_for_function("() => !document.querySelector('#sendBtn.stop')", timeout=30000)
             page.wait_for_timeout(900)
             again = [c for c in calls if c["who"] == "refuse"]
-            ok("the next turn goes right the first time — the listener and the front, once each, no thinking",
-               len(again) == 2 and not any(any(k in c["body"] for k in THINK) for c in again), len(again))
+            ok("the next turn goes right the first time — once, no thinking",
+               len(again) == 1 and not any(any(k in c["body"] for k in THINK) for c in again), len(again))
 
             h["agentConnections"]["keeper"] = "c3"
             api("/api/house", "PUT", h)
@@ -708,8 +792,8 @@ def main():
             last = page.locator(".turn.maker .bubble").last.inner_text()
             ok("a refused call says what the provider said", "did not go through" in last and "Incorrect API key" in last, last[:160])
             bad = [c for c in calls if c["who"] == "badkey"]
-            ok("a bad key is asked once, not retried — once by the listener, once by the front",
-               sorted(c["asker"] for c in bad) == ["front", "listener"], [c["asker"] for c in bad])
+            ok("a bad key is asked once, not retried",
+               [c["asker"] for c in bad] == ["front"], [c["asker"] for c in bad])
 
             # ---------------------------------------- the findable retry
             ok("a failed turn that changed nothing offers Try again",
@@ -736,10 +820,10 @@ def main():
             page.locator(".doc-jobs .btn", has_text="Make it shorter").click()
             page.wait_for_function("() => !document.querySelector('#sendBtn.stop')", timeout=30000)
             page.wait_for_timeout(800)
-            comp = [c for c in calls if c["who"] == "compressor"]
-            ok("a worker that only asks to read more is told to do the job with what it has",
-               any("You have been shown everything" in c["messages"][0]["content"] for c in comp), len(comp))
-            ok("and it is asked at most four times", len(comp) <= 4, len(comp))
+            fr = [c for c in calls if c["who"] == "front"]
+            ok("a reply that only asks to read more is told to do the job with what it has",
+               any("You have been shown everything" in c["messages"][-1]["content"] for c in fr), [c.get("did") for c in fr])
+            ok("and it is asked at most four times", len(fr) <= 4, len(fr))
 
             # ---------------------------------------- the drawer keeps its place when redrawn
             page.set_viewport_size({"width": 390, "height": 420})
@@ -820,6 +904,10 @@ def main():
             page.wait_for_timeout(700)
 
             def settle():
+                try:
+                    page.wait_for_selector("#sendBtn.stop", timeout=1500)
+                except Exception:
+                    pass                     # a turn that was over before it could be seen
                 page.wait_for_function("() => !document.querySelector('#sendBtn.stop')", timeout=30000)
                 page.wait_for_timeout(1000)
 
@@ -870,10 +958,7 @@ def main():
             page.click("#sendBtn")
             settle()
             ok("the crew's answer changed the document", pe_text().count("dormant, not dead") == 1, pe_text()[:160])
-            eyes = [c for c in calls if c["who"] == "eye"]
-            ok("real work is read back afterwards, and the read-back says it is the house asking, not him",
-               bool(eyes) and "What the house needs from you" in eyes[0]["messages"][0]["content"]
-               and "What the author just asked for" not in eyes[0]["messages"][0]["content"], [c["who"] for c in calls])
+            ok("nothing is read back behind his back: no helper was sent unasked", not any(c["who"] == "eye" for c in calls), [c["who"] for c in calls])
             last_maker().locator(".diff-fold .fold-head").first.click()
             page.wait_for_timeout(300)
             was = last_maker().locator(".diff .was").first.inner_text()
@@ -901,27 +986,21 @@ def main():
             page.fill("#say", "Honestly a lighthouse would suit this scene far better.")
             page.click("#sendBtn")
             settle()
-            ok("plain words no keyword names are heard by the listener", any(c["who"] == "listener" for c in calls), [c["who"] for c in calls])
-            ok("and the one it sent changed the document on the device", "WHERE: the Lighthouse" in pe_text(), pe_text()[-60:])
+            ok("plain words no keyword names reach the one he talks to, which makes the change", any(c.get("did") == "editor" for c in calls), [c.get("did") or c["who"] for c in calls])
+            ok("and the change is on the device", "WHERE: the Lighthouse" in pe_text(), pe_text()[-60:])
             calls.clear()
             page.fill("#say", "*cleanup the north arc feels muddled")
             page.click("#sendBtn")
             settle()
             ok("a plan that needs his say changes nothing yet", "dormant leviathan." in pe_text() and "dormant, not dead" not in pe_text(), pe_text()[:200])
-            chat = max(world("p_new")["chats"], key=lambda c: c.get("updated", 0))
-            waiting = [t for t in chat["turns"] if t["role"] == "maker"][-1].get("asks") or []
-            ok("what waits on him is kept on the turn, on the device", len(waiting) == 1 and waiting[0]["worker"] == "showrunner"
-               and "NORTH ARC PLAN" in waiting[0]["ask"], waiting)
-            fronts = [c for c in calls if c["who"] == "front"]
-            ok("the persona was told to put all of it to him", bool(fronts) and "Still to decide" in json.dumps(fronts[-1]["messages"])
-               and "NORTH ARC PLAN" in json.dumps(fronts[-1]["messages"]))
+            ok("the plan is put to him by the one he talks to, in its own reply", "NORTH ARC PLAN" in last_maker().inner_text(), last_maker().inner_text()[:200])
             calls.clear()
             page.fill("#say", "yes, all of it")
             page.click("#sendBtn")
             settle()
-            sr = [c for c in calls if c["who"] == "showrunner"]
-            ok("his yes went back to the same worker with its plan, word for word", bool(sr)
-               and "What you put to Bruce last time, word for word:\nNORTH ARC PLAN" in sr[0]["messages"][0]["content"], [c["who"] for c in calls])
+            sr = [c for c in calls if c.get("did") == "showrunner"]
+            ok("his yes reaches the one who made the plan, with the plan in front of it as its own words", bool(sr)
+               and any(m["role"] == "assistant" and "NORTH ARC PLAN" in m["content"] for m in sr[0]["messages"]), [c.get("did") or c["who"] for c in calls])
             ok("and the plan he approved landed on the device", pe_text().count("dormant, not dead") == 1, pe_text()[:200])
             # the scenes after this one start where the swipes left the world: the scene back at the Ribway
             wd = world("p_new")
@@ -954,9 +1033,9 @@ def main():
             page.fill("#say", "Jovan should be seventeen now, not sixteen")
             page.click("#sendBtn")
             settle()
-            eds = [c for c in calls if c["who"] == "editor"]
-            ok("plain words reach the editor through the listener, and it is shown his document word for word",
-               any(c["who"] == "listener" for c in calls) and bool(eds) and WHOLE.split("## MC")[0] in eds[0]["messages"][0]["content"], [c["who"] for c in calls])
+            eds = [c for c in calls if c.get("did") == "editor"]
+            ok("plain words reach the one he talks to, and it is shown his document word for word",
+               bool(eds) and WHOLE.split("## MC")[0] in eds[0]["messages"][-1]["content"], [c.get("did") or c["who"] for c in calls])
             after = [d for d in world("p_new")["docs"] if d["name"] == "My Old PE.md"][0]["text"]
             ok("the edit lands in his plot essential", "## MC \u2014 Jovan (17)" in after, after[:200])
             ok("and nothing else of his changed \u2014 not his TBD line, not his empty heading, not his bond, not [HIDDEN]",
@@ -967,14 +1046,14 @@ def main():
             page.fill("#say", "*edit misquote test: move the scene to the Lighthouse")
             page.click("#sendBtn")
             settle()
-            eds = [c for c in calls if c["who"] == "editor"]
+            eds = [c for c in calls if c.get("did") == "editor"]
             ok("a quote that missed is sent back once", len(eds) == 2, len(eds))
-            ok("with exactly what it quoted and why it missed", len(eds) == 2 and "WHERE: the Ribwayy" in eds[1]["messages"][0]["content"]
-               and "not in the document as written" in eds[1]["messages"][0]["content"])
+            ok("with exactly what it quoted and why it missed", len(eds) == 2 and "WHERE: the Ribwayy" in eds[1]["messages"][-1]["content"]
+               and "not in the document as written" in eds[1]["messages"][-1]["content"])
             where_line = lambda: (re.search(r"WHERE:[^\n]*", pe_text()) or re.search("", "")).group(0)
             ok("and the quote made again lands, where he asked", where_line() == "WHERE: the Lighthouse",
                {"where": where_line(), "second reply": (eds[1].get("reply") or "")[-240:] if len(eds) > 1 else None,
-                "second ask tail": eds[1]["messages"][0]["content"][-420:] if len(eds) > 1 else None,
+                "second ask tail": eds[1]["messages"][-1]["content"][-420:] if len(eds) > 1 else None,
                 "cards": last_maker().inner_text()[-300:]})
             ok("the miss that was put right is not left on the card", "Ribwayy" not in last_maker().inner_text())
 
@@ -1058,7 +1137,7 @@ def main():
             api("/api/project/p_new", "PUT", wd)
             h = api("/api/house")
             h["connections"].append({"id": "c6", "name": "small", "url": f"http://127.0.0.1:{MODEL_PORT}/small/v1", "model": "test-model", "key": "k"})
-            h["agentConnections"]["editor"] = "c6"
+            h["agentConnections"]["keeper"] = "c6"
             api("/api/house", "PUT", h)
             page.reload(wait_until="networkidle")
             page.wait_for_timeout(600)
@@ -1067,18 +1146,18 @@ def main():
             page.click("#sendBtn")
             settle()
             refused_small = [c for c in calls if c["who"] == "small-refused"]
-            eds = [c for c in calls if c["who"] == "editor"]
+            eds = [c for c in calls if c.get("did") == "editor"]
             ok("a model too small for the whole world refuses it once", len(refused_small) == 1, [c["who"] for c in calls])
             ok("the whole world was sent first, the long document with it", refused_small and "A long draft line" in refused_small[0]["body"]["messages"][-1]["content"]
                and refused_small[0]["size"] > 70000, refused_small[0]["size"] if refused_small else None)
-            ok("and the worker is asked again with the outline, which fits", len(eds) == 1 and sum(len(m["content"]) for m in eds[0]["messages"]) < 30000
-               and "more characters of it are not shown" in eds[0]["messages"][0]["content"], [len(m["content"]) for m in eds[0]["messages"]] if eds else None)
+            ok("and it is asked again with the outline, which fits", len(eds) == 1 and sum(len(m["content"]) for m in eds[0]["messages"]) < 30000
+               and "more characters of it are not shown" in eds[0]["messages"][-1]["content"], [len(m["content"]) for m in eds[0]["messages"]] if eds else None)
             ok("so the change still lands", where_line() == "WHERE: the Quay", where_line())
             wd = world("p_new")
             wd["docs"] = [d for d in wd["docs"] if d["id"] != "dbig"]
             api("/api/project/p_new", "PUT", wd)
             h = api("/api/house")
-            h["agentConnections"].pop("editor", None)
+            h["agentConnections"]["keeper"] = "c1"
             h["connections"] = [c for c in h["connections"] if c["id"] != "c6"]
             api("/api/house", "PUT", h)
             page.reload(wait_until="networkidle")
@@ -1299,7 +1378,7 @@ def main():
                 watched = page.evaluate("() => { const n = document.querySelector('.status .label'); return n ? n.textContent : ''; }")
                 time.sleep(0.2)
             DELAY["piece"] = 0.0
-            ok("while the builder writes, the status says how far along it is", re.match(r"^the builder is on it \u00b7 [\d,]+ words so far", watched or ""), watched)
+            ok("while it writes the plot essential, the status says which document and how far along it is", re.match(r"^writing Plot Essential\.md \u00b7 [\d,]+ words so far", watched or ""), watched)
             page.wait_for_function("() => document.querySelectorAll('.turn.maker').length >= 2 && !document.querySelector('#sendBtn.stop')", timeout=30000)
             page.wait_for_timeout(1300)
             ok("the world takes the name its plot essential gave it", page.locator("#worldName").inner_text() == "The Saltmarsh Court",
@@ -1340,7 +1419,6 @@ def main():
             # (measured before the change: 4.2s with a 2s listener and a 2s reply; the two in a row)
             page.mouse.click(372, 420)
             page.wait_for_timeout(300)
-            DELAY["worker"] = 2.0
             DELAY["front"] = 2.0
             calls.clear()
             page.fill("#say", "the tide should feel like a character to me")
@@ -1351,8 +1429,8 @@ def main():
             DELAY["worker"] = 0.0
             DELAY["front"] = 0.0
             page.wait_for_function("() => !document.querySelector('#sendBtn.stop')", timeout=30000)
-            ok("plain talk: the reply is written while the listener reads — the wait is the slower of the two, not both", took < 3.4, round(took, 2))
-            ok("and one reply was asked for, beside one listener", sorted(c["who"] for c in calls) == ["front", "listener"], [c["who"] for c in calls])
+            ok("plain talk: one call, so the wait is the reply alone (2s here; 4.2s on 1.2.2)", took < 3.4, round(took, 2))
+            ok("and nothing but the one he talks to was asked", [c["who"] for c in calls] == ["front"], [c["who"] for c in calls])
 
             # ---------------------------------------- a story card, pasted, becomes a world ready to play
             page.click("#menuBtn")
@@ -1369,12 +1447,12 @@ def main():
             page.locator("#docsBody .btn", has_text="Build it").click()
             page.wait_for_function("() => document.querySelectorAll('.turn.maker').length >= 1 && !document.querySelector('#sendBtn.stop')", timeout=30000)
             page.wait_for_timeout(1300)
-            workers = [c["who"] for c in calls if c["who"] not in ("front", "eye")]
-            ok("the card goes to the builder alone — no listener, and no showrunner for \"clean up her messes\"", workers == ["builder"], workers)
-            b_call = [c for c in calls if c["who"] == "builder"]
-            ok("the builder is given the whole card, framed as the craft's *new",
-               b_call and "The card, as he pasted it:" in b_call[0]["messages"][0]["content"] and "clean up her messes" in b_call[0]["messages"][0]["content"]
-               and "Blueprint Ingestion Protocol" in b_call[0]["messages"][0]["content"])
+            workers = [c.get("did") for c in calls if c["who"] == "front" and c.get("did") not in ("talk", "done")] + [c["who"] for c in calls if c["who"] != "front"]
+            ok("the card is one job, built by the one he talks to \u2014 no tidying for \"clean up her messes\"", workers == ["builder"], workers)
+            b_call = [c for c in calls if c.get("did") == "builder"]
+            ok("it is given the whole card, with what the house's *card means",
+               b_call and "The card, as he pasted it:" in b_call[0]["messages"][-1]["content"] and "clean up her messes" in b_call[0]["messages"][-1]["content"]
+               and "Blueprint Ingestion Protocol" in b_call[0]["messages"][-1]["content"])
             ok("and the world is ready, named for its story", page.locator("#worldName").inner_text() == "Her Highness Needs A Minute", page.locator("#worldName").inner_text())
             card_world = [p for p in api("/api/projects")["projects"] if p["title"] == "Her Highness Needs A Minute"]
             ok("its plot essential is on the device", card_world and any(d["name"] == "Plot Essential.md" for d in world(card_world[0]["id"])["docs"]))
@@ -1457,8 +1535,8 @@ def main():
             except Exception:
                 pass                         # the checks below say what did not happen
             page.wait_for_timeout(1500)
-            ok("his answer reaches the keeper even though the listener's reply could not be read",
-               [c["who"] for c in calls if c["who"] != "front"] == ["listener", "worldbook"], [c["who"] for c in calls])
+            ok("his answer reaches the keeper, sent by the one he talks to",
+               [c["who"] for c in calls if c["who"] != "front"] == ["worldbook"], [c["who"] for c in calls])
             ok("and the plot essential's read-back is not sent over a worldbook", not any(c["who"] == "eye" for c in calls))
             saved = world(wb_world[0]) if wb_world else {"docs": [], "title": ""}
             book = [d for d in saved["docs"] if d["name"] == "Ash Harbour.json"]
@@ -1538,7 +1616,7 @@ def main():
             p_box = sc.locator(".shortcut", has=page.locator(".cmd", has_text=re.compile(r"^\*p$"))) if sc.count() else None
             p_text = p_box.inner_text() if p_box is not None and p_box.count() else ""
             ok("each says what it does, who does it, how to type it, and his engine's own words, read from the engine file",
-               "Folds the latest story" in p_text and "Who does it: the chronicler." in p_text and "Try it: *p" in p_text and "In your engine: Update Pipeline (7.2)" in p_text, p_text[:300])
+               "Folds the latest story" in p_text and "Who does it: the one you talk to, with your whole engine." in p_text and "Try it: *p" in p_text and "In your engine: Update Pipeline (7.2)" in p_text, p_text[:300])
             page.click("#houseSheet [data-close]")
             page.wait_for_timeout(300)
             page.click("#menuBtn")

@@ -17,7 +17,7 @@ import { originalCraft, ownCraft } from '../engine/crafts.js';
 import { parseDoc, indexLines, estimateTokens, nameWorld, hasPlotEssential, hasWorldbook } from '../doc/index.js';
 import { lint, readEvents, readWorldbook } from '../doc/lint.js';
 import { parseWorldbook, worldbookToST } from '../doc/worldbook.js';
-import { WHOLE_LIMIT } from '../agents/run.js';
+import { MAKER_WHOLE } from '../agents/run.js';
 import { isStoryCard } from '../agents/router.js';
 export { worldbookToST };
 
@@ -179,9 +179,9 @@ function drawList() {
   if (docs.length) {
     const size = docs.reduce((n, x) => n + (x.text || '').length, 0);
     const tokens = estimateTokens(docs.map((x) => x.text || '').join('\n')).toLocaleString();
-    body.append(group('What a worker reads', size <= WHOLE_LIMIT
-      ? `Every document here, whole \u2014 about ${tokens} tokens \u2014 beside its own craft and the talk.`
-      : `These are too big to send whole (about ${tokens} tokens), so each worker reads the outline and the parts in play, and asks for more when it needs them.`));
+    body.append(group('What the one you talk to reads', size <= MAKER_WHOLE
+      ? `Every document here, whole \u2014 about ${tokens} tokens \u2014 with your whole engine and the talk, every time you speak.`
+      : `These are too big to send whole (about ${tokens} tokens), so the one you talk to reads the outline and the parts in play, and asks for more when it needs them.`));
   }
 
   body.append(group('A copy on the device',
@@ -198,7 +198,7 @@ function kindLabel(kind) {
 /* The builder is a co-writer, not a form: it starts by working out the world
  * with him, and writes the plot essential as it goes. */
 export function newPlotEssential() {
-  ask("Let's start a new plot essential for this world.", 'builder');
+  ask("Let's start a new plot essential for this world.");
 }
 
 /* A WORLDBOOK, CHOSEN AT THE START. He builds either one: a plot essential to
@@ -208,7 +208,7 @@ export function newPlotEssential() {
  * builds it from everything said, told by the house what to call it (run.js
  * worldbookNote), and asks first when nothing has been said yet. */
 export function newWorldbook() {
-  ask("Let's start a worldbook for this world.", 'worldbook');
+  ask("Let's start a worldbook for this world.");
 }
 
 /* WHAT A WORLD CAN BE STARTED WITH — one answer, for the room, The documents and
@@ -466,7 +466,7 @@ function openOne(id) {
       tidyOnLeaving(id);
       closeSheet('docsSheet');
       openDocIdValue = null;
-      ask(typeof words === 'function' ? words() : words, worker);
+      ask(typeof words === 'function' ? words() : words);
     });
     return b;
   };

@@ -86,7 +86,7 @@ export async function draw() {
         redraw(); draw();
       }],
       ['Delete', async () => {
-        if (busyElsewhere()) return toast('The crew is still working — this can go when they are done.');
+        if (busyElsewhere()) return toast('Still working — this can go when it is done.');
         if (!confirm(`Delete "${w.title}" — every document and conversation in it? A copy stays in the backups folder on the device.`)) return;
         await store.deleteProject(w.id);
         if (!store.getProject()) {
@@ -119,7 +119,7 @@ function openWorldParts(world) {
   th.append(el('h3', '', 'Conversations'));
   const nc = el('button', 'btn quiet small', 'New conversation');
   nc.addEventListener('click', async () => {
-    if (busyElsewhere()) return toast('The crew is still working — the new conversation can start when they are done.');
+    if (busyElsewhere()) return toast('Still working — the new conversation can start when it is done.');
     await store.newChat();
     redraw();
     closeDrawer();

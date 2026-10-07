@@ -5,17 +5,15 @@ The live stream's two harder roads, in a real browser against the real serve.py
 (v1.6.0). The stand-in model reads who is asking and answers the way a thinking
 model does.
 
-  1. Talk that turns out to be a job. His words read as talk to the keyword
-     reading, so the reply he talks to starts at once and its thinking is on
-     screen while the listener reads. The listener then sends the editor: that
-     reply will never be written, so its thinking is taken away, the line says
-     the editor is on it, and the reply written after the work thinks from its
-     own first word. Nothing of the first one is kept.
+  1. A reply that makes a change itself (v2.0). The one he talks to thinks, says
+     what it is doing, and writes its block of changes in the same reply: the
+     thinking streams from its first word, the words stream, the block never
+     reaches the screen (the line says it is writing the changes while it
+     streams), and the change lands with its card.
 
-  2. The quiet before the reply. When the crew is done and the reply has not
-     sent its first piece yet (a provider that thinks without sending its
-     thinking), the ember stays on screen with no words, and goes the moment
-     the first thought is there.
+  2. The quiet before the reply. While the reply has not sent its first piece
+     yet (a provider that thinks without sending its thinking), the ember stays
+     on screen with no words, and goes the moment the first thought is there.
 
     python3 tests/stream_flows.py
 """
@@ -81,18 +79,6 @@ class Fake(http.server.BaseHTTPRequestHandler):
             self.wfile.flush()
 
         try:
-            if "You are the one who listens." in system:
-                time.sleep(1.2)
-                if "second moon" in now:
-                    send({"content": '{"jobs": [{"worker": "editor", "task": "Add a second moon to the rules."}]}'}, "stop")
-                else:
-                    send({"content": '{"jobs": []}'}, "stop")
-                return done()
-            if "craft work on a piece of fiction" in system:
-                time.sleep(1.0)  # the editor at work, long enough to be seen
-                send({"content": 'Added it.\n<edits>[{"file": "Plot Essential.md", "insert_after": "- The tide decides who rules.", '
-                                 '"replace": "- The kingdom has a second moon.", "reason": "a second moon"}]</edits>'}, "stop")
-                return done()
             # the one he talks to
             if "stop me while you think" in now:
                 # a long think, for Stop to land in the middle of
@@ -122,20 +108,19 @@ class Fake(http.server.BaseHTTPRequestHandler):
                 send({"content": f"Answer {n}."}, "stop")
                 return done()
             fronts.append(time.time())
-            k = len(fronts)
-            if k == 1:
-                # the early reply: it thinks out loud, slowly, until it is let go
-                for i in range(40):
-                    send({"reasoning_content": f"EARLY THOUGHT {i}. "})
-                    time.sleep(0.1)
-                send({"content": "EARLY WORDS"}, "stop")
-                return done()
-            # the reply after the work: a provider that thinks without a word for a while first
+            # a provider that thinks without a word for a while first, then thinks out loud, then
+            # answers and writes its change in the same reply, slowly enough for the block to be seen
             time.sleep(1.5)
             for piece in ["With the moon in, ", "the nights change. ", "Say so warmly."]:
                 send({"reasoning_content": piece})
                 time.sleep(0.3)
-            send({"content": "Two moons it is."}, "stop")
+            block = ('\n\n<edits>[{"file": "Plot Essential.md", "insert_after": "- The tide decides who rules.", '
+                     '"replace": "- The kingdom has a second moon.", "reason": "a second moon"}]</edits>')
+            send({"content": "Two moons it is."})
+            for i in range(0, len(block), 20):
+                send({"content": block[i:i + 20]})
+                time.sleep(0.12)
+            send({"content": ""}, "stop")
             done()
         except (BrokenPipeError, ConnectionResetError):
             pass
@@ -222,24 +207,19 @@ def main():
             w = page.evaluate("window.__watch")
             run = [x for x in w if x["running"]]
 
-            # 1. talk that turns out to be a job
-            early_seen = [x for x in run if "EARLY THOUGHT 0." in x["thinking"]]
-            ok("the early reply's thinking was on screen while the listener read", bool(early_seen))
-            editor_at = next((i for i, x in enumerate(run) if (x["status"] or "").startswith("the editor is on it")), None)
-            ok("the line then says the editor is on it", editor_at is not None, [x["status"] for x in run][:40])
-            after = run[editor_at:] if editor_at is not None else []
-            ok("and from then on nothing of the early reply is anywhere on screen", after and not any(x["anyEarly"] for x in after),
-               [x["thinking"][:30] for x in after if x["anyEarly"]][:3])
-            ok("its words were never shown", not any("EARLY WORDS" in x["words"] for x in w))
+            # 1. a reply that makes a change itself, live
+            writing = [x for x in run if (x["status"] or "").startswith("writing the changes")]
+            ok("while its block of changes streams, the line says it is writing the changes", bool(writing), sorted({str(x["status"]) for x in run})[:12])
+            ok("the block never reaches the screen", not any("<edits" in x["words"] or "second moon\"" in x["words"] or "insert_after" in x["words"] for x in w),
+               [x["words"][:80] for x in w if "<" in x["words"]][:2])
+            ok("its words do, as they come", any(x["words"].startswith("Two moons it is.") for x in run))
 
             # 2. the quiet before the reply
-            second = next((i for i, x in enumerate(run) if "With the moon in" in x["thinking"]), None)
-            ok("the reply after the work thinks from its own first word, in an open box", second is not None and run[second]["thinking"].startswith("With the moon in"),
-               run[second]["thinking"][:60] if second is not None else None)
-            # the gap ends at the first moment any of the new thinking is on screen (it is drawn a few letters at a time)
-            first = next((i for i in range(editor_at or 0, len(run)) if run[i]["thinking"]), None) if editor_at is not None else None
-            gap = [x for x in run[editor_at:first] if not (x["status"] or "").startswith("the editor")] if first is not None else []
-            ok("between the crew and the first thought, the ember stays", gap and all(x["ember"] for x in gap), [(x["status"], x["ember"]) for x in gap][:8])
+            first = next((i for i, x in enumerate(run) if x["thinking"]), None)
+            ok("it thinks from its own first word, in an open box", first is not None and "With the moon in, the nights change. Say so warmly.".startswith(run[first]["thinking"]),
+               run[first]["thinking"][:60] if first is not None else None)
+            gap = run[2:first] if first is not None else []
+            ok("between the press and the first thought, the ember stays", gap and all(x["ember"] for x in gap), [(x["status"], x["ember"]) for x in gap][:8])
             ok("with no words beside it", gap and all((x["status"] or "") == "" or x["status"].startswith("0:") for x in gap), sorted({str(x["status"]) for x in gap}))
             ok("and it goes the moment the first thought is there", first is not None and run[first]["status"] is None and not run[first]["ember"], run[first] if first is not None else None)
             ok("nothing on screen stood still: every moment of the turn had the ember, the thinking or the words", all(x["ember"] or x["thinking"] or x["words"] for x in run[2:]),
@@ -251,10 +231,11 @@ def main():
             world = call("/api/project/p_flow")
             chat = next(c for c in world["chats"] if c["id"] == world["openChat"])
             kept = chat["turns"][-1]
-            ok("the turn keeps the reply after the work", kept.get("text") == "Two moons it is.", kept.get("text"))
-            ok("and only its own thinking", kept.get("thinking") == "With the moon in, the nights change. Say so warmly.", kept.get("thinking"))
+            ok("the turn keeps its words and nothing of the block", kept.get("text") == "Two moons it is.", kept.get("text"))
+            ok("and its thinking", kept.get("thinking") == "With the moon in, the nights change. Say so warmly.", kept.get("thinking"))
             ok("its clock is its own: from its first thought to its first word", 500 <= (kept.get("thinkingMs") or 0) < 2500, kept.get("thinkingMs"))
             ok("the change landed", "- The kingdom has a second moon." in world["docs"][0]["text"])
+            ok("with its card on screen", "Plot Essential.md" in page.locator(".turn.maker").last.locator(".cards").inner_text())
 
             def seen(js, name, timeout=20000):
                 # a wait that never comes true is a failed law, said by name, never a crash

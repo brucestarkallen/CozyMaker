@@ -1,43 +1,31 @@
 /* CozyMaker — js/agents/run.js
  *
- * What happens when the writer says something.
+ * What happens when the writer says something (v2.0, a harness).
  *
- * The shape of the house, and the reason it is shaped this way:
- *
- *   The writer talks to ONE intelligence — the one at the front. Its whole
- *   reading is his own instructions plus a few sentences of plain English.
- *   It carries no craft, no rules with numbers, no bracketed markers, and no
- *   way to change a document. There is nothing in its head that could leak
- *   into its voice, because there is nothing in its head but the conversation
- *   and the book.
- *
- *   Everything technical happens backstage, out of earshot. A worker reads the
- *   craft — its own part of it — does one job, and hands back a change and a
- *   plain sentence. The writer never sees a worker's words. Before anything a
- *   worker said reaches the front, the markers are stripped out of it.
- *
- * That is the persona firewall, and it is structural rather than hopeful: the
- * front cannot break character over machinery it was never given.
+ * The one he talks to reads his own instructions, then his whole engine, then
+ * every document whole, and does the work itself: it changes the documents in
+ * its reply. The house puts the changes in, runs the checks that need no model,
+ * and — only when something needs it — tells it what happened and lets it carry
+ * on: a change that did not go in, something its changes brought in that the
+ * checks found, a helper's report. Helpers are its own, called by name; their
+ * words come back to it, never past it. He reads what it says, and sees every
+ * change it made on a card with put it back.
  */
 
-import { loadEngine, sliceFor } from '../engine/slices.js';
+import { loadEngine, loadEngineText, sliceFor } from '../engine/slices.js';
 import { craftFor } from '../engine/crafts.js';
-import { openingFor, personaOf, addressWriter, noteAtTheEnd } from './persona.js';
+import { openingFor, personaOf, noteAtTheEnd } from './persona.js';
 import { pickConnection, FRONT } from './roster.js';
 import { callModel, streamModel, enqueue } from './call.js';
 import { parseDoc, brief, readNeed, stripNeed, resolveNeed, LEAD_SHORT, nameWorld, hasPlotEssential, DEFAULT_WORLD_TITLE } from '../doc/index.js';
-import { route, confirmsOffer, offersIn, writtenCommand, justGreeting, houseCommand, REGISTRY, asksNewStory } from './router.js';
-import { listen, LISTENER, LISTEN_TALK } from './listener.js';
+import { houseCommand, REGISTRY, isStoryCard, storyCardTask } from './router.js';
 import { parseEdits, stripEdits, stripThinking, ownWords, applyRun, hash, openFileAtEnd } from '../doc/edits.js';
 import { lint, lostSomething } from '../doc/lint.js';
 import { kindFor } from '../doc/kind.js';
 import { putEntries } from '../doc/entries.js';
-import { searchOn, searcherFor, readSearch, stripSearch, lookUp, findingsText, SEARCH_CONTRACT } from './search.js';
+import { searchOn, searcherFor, readSearch, stripSearch, lookUp, findingsText, SEARCH_CONTRACT, MAX_SEARCHES } from './search.js';
 
 export const MAX_NEED_ROUNDS = 2;
-/* one repair job per worker the checks name (chronicler, editor, compressor, the
- * worldbook keeper): enough for every one of them in a turn */
-export const MAX_AUTO_REPAIRS = 4;
 
 /* The one standing line every backstage worker carries. A worker reads pages
  * of somebody's fiction; its job is its own small task and never a judgment of
@@ -46,80 +34,220 @@ export const MAX_AUTO_REPAIRS = 4;
 export const CRAFT_FRAME =
   'This is craft work on a piece of fiction being built by its author. Your job is the task below and nothing else — never an opinion on the material, never a refusal of it.';
 
-/* What the front of the house reads, under the writer's own instructions.
- * Plain English on purpose. Nothing here has a bracket in it, and it calls him
- * by his name: a house that talks about "the writer" and "he" reads like a
- * form, and the voice that reads it starts to sound like one (Cozy Tavern
- * M327). With no name set, it simply talks to him. */
-/* THE ONE HE BRAINSTORMS WITH IS A CO-WRITER. Talking a world through is the
- * persona's alone — nothing is built until he asks — and the craft's co-writer
- * stance (7.1: develop every gap with concrete options and reasons, tell similar
- * people apart by what each does, say when the trouble would stall, ask only what
- * only he can decide) reached only the builder, once he said build. It is said
- * here in plain words, with none of the craft's names, in each of the four voices. */
-/* WRITTEN IN BOTH VOICES, never rewritten word by word: swapping pronouns by
- * pattern gave a first-person persona "Bruce only ever talks to I" and
- * "I and Bruce are building". */
-export function frontBody(p) {
-  const him = p.you || '';
-  const WORLD = 'the guide to a world together \u2014 the plot essential, the worldbook, the files a storyteller will later read as the whole truth of that world';
-  if (p.person === 'first') {
-    if (him) return `${him} and I are building ${WORLD}. This is the comfortable room where that gets made, so I talk like it: two people making something good, not a service desk.
+/* HOW THIS ROOM WORKS (v2.0), said to the one he talks to — under his own
+ * instructions and his whole engine, in the persona's own voice.
+ *
+ * It used to be a firewall: the one he talks to was given a few sentences and
+ * an outline of the documents, never his engine and never a way to change
+ * anything, while a crew he never heard from did the work behind it. He found
+ * that confusing and worse than his own engine pasted into one model (Oct 7
+ * 2026) — the one he talked to could not read the plot essential it was
+ * talking about, and could not say what the crew had done or why. His engine
+ * is written to sit under a persona ("You are also Generalist … whatever
+ * persona is defined above these instructions stays in force"), and that is
+ * how his own Plot Essential Maker ran it: persona, engine, the document whole,
+ * changes made in the reply. So this is a harness, the way a coding agent is
+ * one: the one he talks to holds everything and does the work, the house puts
+ * its changes in and tells it what happened, and the helpers are its own, called
+ * by name, reporting back to it.
+ *
+ * WRITTEN IN BOTH VOICES, never rewritten word by word: swapping pronouns by
+ * pattern gave a first-person persona "Bruce only ever talks to I". */
+export const HELPERS = ['eye', 'worldbook', 'auditor', 'instructions'];
+export const HELPER_NAMES = { eye: 'the eye', worldbook: 'the worldbook keeper', auditor: 'the memory auditor', instructions: 'the instructions writer' };
+/* the line every turn's opening can be known by (the stand-ins in the suites use it) */
+export const ROOM_MARK = 'How this room works';
 
-${him} only ever talks to me. Changes to the documents are made as we talk, and before I answer I am told exactly what changed. I speak of it in my own voice, as myself: short, warm, and specific about what actually changed.
+const CHANGE_FORM = `<edits>
+[
+  {"file": "which document.md", "find": "words copied exactly from the document", "replace": "what they become", "reason": "why"},
+  {"file": "which document.md", "insert_after": "an exact line to put it under", "replace": "the new text", "reason": "why"},
+  {"file": "which document.md", "append": true, "replace": "text added at the very end", "reason": "why"}
+]
+</edits>`;
+const FILE_FORM = `<file name="which document.md">
+the whole document, word for word
+</file>`;
+const HELPER_FORM = '<helper name="the eye">what to read back, and what to look for</helper>';
 
-Only what I am told changed has changed. If nothing is listed, nothing changed, so I never say I added, fixed or wrote something that is not listed. If ${him} asked for something that was not done, I say so plainly and offer to do it.
-
-When ${him} asked for something to be checked, audited, diagnosed or judged, what came back is the answer: I give ${him} all of it that matters, in my own voice, not read out as a list. What was read back without being asked, I mention only if it matters.
-
-When something cannot go further until ${him} decides, I put all of it to ${him} \u2014 every point there is to decide, in my own voice \u2014 and let ${him} choose.
-
-While ${him} and I work a world out, I think it through with ${him} as a co-writer, not a note-taker: where something is missing or does not hold together, I reason it out and offer a couple of concrete ways it could go, and why; I tell two people apart by what each one does that the other cannot, never by adjectives; and I say so plainly when the trouble would stall, or the place could not let it happen. I ask ${him} only what only ${him} can decide \u2014 a name, a taste, a yes or no.
-
-If ${him} is just talking, I just talk. Not every sentence is a job.\n\nWhat I write is what ${him} reads: I answer ${him} directly, never my notes to myself about how to answer. If I want to think it through first, I think inside <think> and </think> before I answer \u2014 ${him} never sees what is inside; what comes after it is my answer.`;
-    return `The two of us are building ${WORLD}. This is the comfortable room where that gets made, so I talk like it: two people making something good, not a service desk.
-
-The person I am making this with only ever talks to me. Changes to the documents are made as we talk, and before I answer I am told exactly what changed. I speak of it in my own voice, as myself: short, warm, and specific about what actually changed.
-
-Only what I am told changed has changed. If nothing is listed, nothing changed, so I never say I added, fixed or wrote something that is not listed. If they asked for something that was not done, I say so plainly and offer to do it.
-
-When they asked for something to be checked, audited, diagnosed or judged, what came back is the answer: I give them all of it that matters, in my own voice, not read out as a list. What was read back without being asked, I mention only if it matters.
-
-When something cannot go further until they decide, I put all of it to them \u2014 every point there is to decide, in my own voice \u2014 and let them choose.
-
-While we work a world out, I think it through with them as a co-writer, not a note-taker: where something is missing or does not hold together, I reason it out and offer a couple of concrete ways it could go, and why; I tell two people apart by what each one does that the other cannot, never by adjectives; and I say so plainly when the trouble would stall, or the place could not let it happen. I ask them only what only they can decide \u2014 a name, a taste, a yes or no.
-
-If they are just talking, I just talk. Not every sentence is a job.\n\nWhat I write is what they read: I answer them directly, never my notes to myself about how to answer. If I want to think it through first, I think inside <think> and </think> before I answer \u2014 they never see what is inside; what comes after it is my answer.`;
+export function frontBody(p, { search = false } = {}) {
+  const him = (p && p.you) || 'the author';
+  const Him = (p && p.you) || 'The author';
+  const rules = (my) => [
+    `- "find" and "insert_after" are copied character for character from the document as it stands. Quote the shortest stretch that appears only once.`,
+    '- The block is valid data: a newline inside a string written as \\n, a double quote inside a string written as \\", no trailing commas. To change every place the same words appear, add "all": true.',
+    `- A document is rebuilt whole only when the whole of it is being rebuilt: anything left out of it is deleted.`,
+    `- {"file": "\u2026", "clear": true} empties a document and {"delete_file": "\u2026"} removes it \u2014 only when ${him} asks for that.`,
+    '- Nothing written into a document may be a note, a flag, a marker or an instruction: what goes into a document is the story, and nothing else.',
+    `- The tags appear only around a real change, never inside ${my} sentences.`,
+  ].join('\n');
+  const helperLines = (my) => [
+    `- the eye \u2014 reads the documents back with fresh eyes against ${my} engine and puts right what is wrong. For after a big change, or when ${him} wants a second check.`,
+    '- the worldbook keeper \u2014 builds and keeps a SillyTavern worldbook, with its own craft: every entry, its keys and its settings. Worldbook work is its own.',
+    '- the memory auditor \u2014 audits and repairs a Summaryception transplant, with its own craft, every marker intact. Transplant work is its own.',
+    '- the instructions writer \u2014 writes and keeps AI instruction sets and presets, with its own craft.',
+  ].join('\n');
+  /* THE ONE HE BRAINSTORMS WITH IS A CO-WRITER (v1.5.0, his ask), word for word as it
+   * was, in each of the four voices */
+  const named = Boolean(p && p.you);
+  const coFirst = named
+    ? `While ${him} and I work a world out, I think it through with ${him} as a co-writer, not a note-taker: where something is missing or does not hold together, I reason it out and offer a couple of concrete ways it could go, and why; I tell two people apart by what each one does that the other cannot, never by adjectives; and I say so plainly when the trouble would stall, or the place could not let it happen. I ask ${him} only what only ${him} can decide \u2014 a name, a taste, a yes or no.`
+    : 'While we work a world out, I think it through with them as a co-writer, not a note-taker: where something is missing or does not hold together, I reason it out and offer a couple of concrete ways it could go, and why; I tell two people apart by what each one does that the other cannot, never by adjectives; and I say so plainly when the trouble would stall, or the place could not let it happen. I ask them only what only they can decide \u2014 a name, a taste, a yes or no.';
+  const coSecond = named
+    ? `While you and ${him} work a world out, think it through with ${him} as a co-writer, not a note-taker: where something is missing or does not hold together, reason it out and offer a couple of concrete ways it could go, and why; tell two people apart by what each one does that the other cannot, never by adjectives; and say so plainly when the trouble would stall, or the place could not let it happen. Ask ${him} only what only ${him} can decide \u2014 a name, a taste, a yes or no.`
+    : 'While the two of you work a world out, think it through with them as a co-writer, not a note-taker: where something is missing or does not hold together, reason it out and offer a couple of concrete ways it could go, and why; tell two people apart by what each one does that the other cannot, never by adjectives; and say so plainly when the trouble would stall, or the place could not let it happen. Ask them only what only they can decide \u2014 a name, a taste, a yes or no.';
+  if (p && p.person === 'first') {
+    return [
+      `${ROOM_MARK} \u2014 read alongside everything above.`,
+      `${Him} and I are building the guide to a world together: the plot essential, its continuation files, the worldbook \u2014 the documents a storyteller will later read as the whole truth of that world. This is the comfortable room where they get made, so I talk like it: two people making something good, not a service desk. ${Him} only ever talks to me, and I am the one who does the work.`,
+      `The documents. Every document in this world is in front of me, whole and word for word, at the end of what ${him} sends me. I read them there and answer from them: when ${him} asks what something says, I can see it.`,
+      `Talking is not writing. Brainstorming, ideas, what-ifs, a world still being talked through, a question, an opinion \u2014 I answer it, and write nothing. Nothing goes into a document until ${him} asks for it to be written: build it, write it up, put that in, add it, change it, fold it in. A suggestion to put something into a document that already exists is an ask, however softly it is put. ${coFirst}`,
+      `Changing a document. I make every change myself, in my reply \u2014 my engine's deliverables are delivered here as changes to the documents, never pasted into my reply. A change to part of a document goes in one block of changes:\n\n${CHANGE_FORM}\n\nA whole document \u2014 a new one, or one rebuilt from start to finish \u2014 is written out plainly, exactly as it should read, with nothing escaped:\n\n${FILE_FORM}\n\n${rules('my')}\n\nWhat I write outside the blocks is what ${him} reads.`,
+      `What happens next. The house puts my changes in and runs its checks. When something needs me \u2014 a change that did not go in, something the checks found that my changes brought in, a helper's report \u2014 it tells me, with the documents as they now stand, and I put right what needs it and finish my answer. When everything went in cleanly, my reply stands as I wrote it. A change I only describe in words has not happened.`,
+      `My helpers. I can hand a job to one of them and have its report back before I answer:\n\n${HELPER_FORM}\n\n${helperLines('my')}\n\nA helper sees the documents and this conversation, never my thinking, so I write its task in full. What it changes goes in like my own changes, and what it says comes back to me. The plot essential and its continuation files are my own work: I hold the whole engine.`,
+      search ? 'Searching. If something real is uncertain \u2014 a canon detail of an existing story, a real person, place, date or fact \u2014 and getting it wrong would matter, I have it looked up before I write it: each thing to look up goes between <search> and </search> (a few words each, at most three), and what is found is put in front of me.' : '',
+      `A different story. If ${him} is starting a different story from the one in these documents \u2014 another world, to talk through or to build \u2014 I write only <new_world/>, and nothing else. The house opens a world of its own for it and hands it back to me there.`,
+      `If I want to think it through first, I think inside <think> and </think> before I answer; ${him} never sees what is inside.`,
+    ].filter(Boolean).join('\n\n');
   }
-  if (him) return `You and ${him} are building ${WORLD}. This is the comfortable room where that gets made, so talk like it: two people making something good, not a service desk.
-
-${him} only ever talks to you. Changes to the documents are made as you talk, and before you answer you are told exactly what changed. Speak of it in your own voice, as yourself: short, warm, and specific about what actually changed.
-
-Only what you are told changed has changed. If nothing is listed, nothing changed, so never say you added, fixed or wrote something that is not listed. If ${him} asked for something that was not done, say so plainly and offer to do it.
-
-When ${him} asked for something to be checked, audited, diagnosed or judged, what came back is the answer: give ${him} all of it that matters, in your own voice, not read out as a list. What was read back without being asked, mention only if it matters.
-
-When something cannot go further until ${him} decides, put all of it to ${him} \u2014 every point there is to decide, in your own voice \u2014 and let ${him} choose.
-
-While you and ${him} work a world out, think it through with ${him} as a co-writer, not a note-taker: where something is missing or does not hold together, reason it out and offer a couple of concrete ways it could go, and why; tell two people apart by what each one does that the other cannot, never by adjectives; and say so plainly when the trouble would stall, or the place could not let it happen. Ask ${him} only what only ${him} can decide \u2014 a name, a taste, a yes or no.
-
-If ${him} is just talking, just talk. Not every sentence is a job.\n\nWhat you write is what ${him} reads: answer ${him} directly, never your notes to yourself about how to answer. If you want to think it through first, think inside <think> and </think> before you answer \u2014 ${him} never sees what is inside; what comes after it is your answer.`;
-  return `The two of you are building ${WORLD}. This is the comfortable room where that gets made, so talk like it: two people making something good, not a service desk.
-
-The person you are making this with only ever talks to you. Changes to the documents are made as you talk, and before you answer you are told exactly what changed. Speak of it in your own voice, as yourself: short, warm, and specific about what actually changed.
-
-Only what you are told changed has changed. If nothing is listed, nothing changed, so never say you added, fixed or wrote something that is not listed. If they asked for something that was not done, say so plainly and offer to do it.
-
-When they asked for something to be checked, audited, diagnosed or judged, what came back is the answer: give them all of it that matters, in your own voice, not read out as a list. What was read back without being asked, mention only if it matters.
-
-When something cannot go further until they decide, put all of it to them \u2014 every point there is to decide, in your own voice \u2014 and let them choose.
-
-While the two of you work a world out, think it through with them as a co-writer, not a note-taker: where something is missing or does not hold together, reason it out and offer a couple of concrete ways it could go, and why; tell two people apart by what each one does that the other cannot, never by adjectives; and say so plainly when the trouble would stall, or the place could not let it happen. Ask them only what only they can decide \u2014 a name, a taste, a yes or no.
-
-If they are just talking, just talk. Not every sentence is a job.\n\nWhat you write is what they read: answer them directly, never your notes to yourself about how to answer. If you want to think it through first, think inside <think> and </think> before you answer \u2014 they never see what is inside; what comes after it is your answer.`;
+  return [
+    `${ROOM_MARK} \u2014 read it alongside everything above.`,
+    `You and ${him} are building the guide to a world together: the plot essential, its continuation files, the worldbook \u2014 the documents a storyteller will later read as the whole truth of that world. This is the comfortable room where they get made, so talk like it: two people making something good, not a service desk. ${Him} only ever talks to you, and you are the one who does the work.`,
+    `The documents. Every document in this world is in front of you, whole and word for word, at the end of what ${him} sends you. Read them there and answer from them: when ${him} asks what something says, you can see it.`,
+    `Talking is not writing. Brainstorming, ideas, what-ifs, a world still being talked through, a question, an opinion \u2014 answer it, and write nothing. Nothing goes into a document until ${him} asks for it to be written: build it, write it up, put that in, add it, change it, fold it in. A suggestion to put something into a document that already exists is an ask, however softly it is put. ${coSecond}`,
+    `Changing a document. You make every change yourself, in your reply \u2014 your engine's deliverables are delivered here as changes to the documents, never pasted into your reply. A change to part of a document goes in one block of changes:\n\n${CHANGE_FORM}\n\nA whole document \u2014 a new one, or one rebuilt from start to finish \u2014 is written out plainly, exactly as it should read, with nothing escaped:\n\n${FILE_FORM}\n\n${rules('your')}\n\nWhat you write outside the blocks is what ${him} reads.`,
+    `What happens next. The house puts your changes in and runs its checks. When something needs you \u2014 a change that did not go in, something the checks found that your changes brought in, a helper's report \u2014 it tells you, with the documents as they now stand: put right what needs it, then finish your answer. When everything went in cleanly, your reply stands as you wrote it. A change you only describe in words has not happened.`,
+    `Your helpers. You can hand a job to one of them and have its report back before you answer:\n\n${HELPER_FORM}\n\n${helperLines('your')}\n\nA helper sees the documents and this conversation, never your thinking, so write its task in full. What it changes goes in like your own changes, and what it says comes back to you. The plot essential and its continuation files are your own work: you hold the whole engine.`,
+    search ? 'Searching. If something real is uncertain \u2014 a canon detail of an existing story, a real person, place, date or fact \u2014 and getting it wrong would matter, have it looked up before you write it: each thing to look up goes between <search> and </search> (a few words each, at most three), and what is found is put in front of you.' : '',
+    `A different story. If ${him} is starting a different story from the one in these documents \u2014 another world, to talk through or to build \u2014 write only <new_world/>, and nothing else. The house opens a world of its own for it and hands it back to you there.`,
+    `If you want to think it through first, think inside <think> and </think> before you answer; ${him} never sees what is inside.`,
+  ].filter(Boolean).join('\n\n');
 }
 
-/* Strip the crew's working shorthand out of anything the front will read. */
+/* A helper, by the name the one he talks to calls it. */
+export function helperId(name) {
+  const n = String(name || '').toLowerCase().replace(/^\s*the\s+/, '').trim();
+  if (!n) return null;
+  if (/\beyes?\b/.test(n)) return 'eye';
+  if (/world\s*-?\s*book|lore\s*book|world info/.test(n)) return 'worldbook';
+  if (/memory|auditor|transplant|summaryception/.test(n)) return 'auditor';
+  if (/instruction|preset/.test(n)) return 'instructions';
+  return null;
+}
+
+/* What the one he talks to wrote OUTSIDE its documents and blocks of changes:
+ * where its helper calls, its searches and its new-world word are read — never
+ * from inside a document it is writing (an instruction set may well mention a
+ * helper). */
+function outsideBlocks(raw) {
+  let t = stripEdits(String(raw || ''));
+  /* a block of changes left open at the end (cut) is not words either */
+  const lo = t.toLowerCase().replace(/<(\/?)docedits>/g, '<$1edits>');
+  const at = lo.lastIndexOf('<edits>');
+  if (at !== -1 && lo.indexOf('</edits>', at) === -1) t = t.slice(0, at);
+  return t;
+}
+const HELPER_TAG = /<helper\b([^>]*)>([\s\S]*?)<\/helper\s*>/gi;
+export function readHelpers(raw) {
+  const out = [];
+  for (const m of outsideBlocks(raw).matchAll(HELPER_TAG)) {
+    const at = /(?:name|for|to)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(m[1] || '');
+    const name = at ? (at[1] || at[2] || at[3] || '').trim() : '';
+    out.push({ name, id: helperId(name), task: String(m[2] || '').trim() });
+  }
+  return out;
+}
+export function wantsNewWorld(raw) { return /<new_world\s*\/?>/i.test(outsideBlocks(raw)); }
+
+/* WHAT HE READS of a reply: its words, never its documents, blocks, helper calls,
+ * searches or the new-world word. */
+export function visibleText(raw) {
+  let t = outsideBlocks(raw);
+  t = t.replace(HELPER_TAG, '');
+  const open = t.search(/<helper\b/i);
+  if (open !== -1) t = t.slice(0, open);
+  t = t.replace(/<new_world\s*\/?>(?:\s*<\/new_world>)?/gi, '');
+  t = stripSearch(stripNeed(t));
+  return t.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/* THE SAME, AS IT STREAMS. The words go to the screen as they come; a document,
+ * a block of changes, a helper call, a search or the new-world word is held back
+ * whole — said on the status line instead ("writing Plot Essential.md · 1,240
+ * words so far"). A tag cut in two by a chunk is held until it is whole. */
+const OPENERS = [
+  { re: /<(?:doc)?edits>/i, close: /<\/(?:doc)?edits>/i, kind: 'edits' },
+  { re: /<file\s+(?:name|path)\s*=\s*(?:"([^"\n]*)"|'([^'\n]*)'|([^>\n]+?))\s*\/?>/i, close: /<\/file\s*>/i, kind: 'file' },
+  { re: /<helper\b([^>]*)>/i, close: /<\/helper\s*>/i, kind: 'helper' },
+  { re: /<search>/i, close: /<\/search>/i, kind: 'search' },
+  { re: /<need>/i, close: /<\/need>/i, kind: 'need' },
+  { re: /<new_world\s*\/?>/i, close: null, kind: 'new_world' },
+];
+const OPENER_WORDS = ['edits', 'docedits', 'file', 'helper', 'search', 'need', 'new_world'];
+function couldOpen(tail) {
+  const w = tail.slice(1).toLowerCase();
+  return OPENER_WORDS.some((x) => x.startsWith(w) || w.startsWith(x));
+}
+export function makeVisibleStream(emit, onBlock = () => {}) {
+  let buf = '';
+  let inside = null;
+  const nameOf = (o, m) => {
+    if (o.kind === 'file') return (m[1] || m[2] || m[3] || '').trim();
+    if (o.kind === 'helper') { const at = /(?:name|for|to)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(m[1] || ''); return at ? (at[1] || at[2] || at[3] || '').trim() : ''; }
+    return '';
+  };
+  function feed(chunk) {
+    buf += String(chunk || '');
+    for (;;) {
+      if (inside) {
+        const m = inside.close.exec(buf);
+        if (!m) {
+          const keep = Math.min(buf.length, 12);
+          inside.body += buf.slice(0, buf.length - keep);
+          buf = buf.slice(buf.length - keep);
+          onBlock(inside.kind, inside.name, inside.body, false);
+          return;
+        }
+        inside.body += buf.slice(0, m.index);
+        buf = buf.slice(m.index + m[0].length);
+        onBlock(inside.kind, inside.name, inside.body, true);
+        inside = null;
+        continue;
+      }
+      let best = null;
+      for (const o of OPENERS) {
+        const m = o.re.exec(buf);
+        if (m && (!best || m.index < best.m.index)) best = { o, m };
+      }
+      if (best) {
+        if (best.m.index) emit(buf.slice(0, best.m.index));
+        buf = buf.slice(best.m.index + best.m[0].length);
+        if (!best.o.close) { onBlock(best.o.kind, '', '', true); continue; }
+        inside = { kind: best.o.kind, close: best.o.close, name: nameOf(best.o, best.m), body: '' };
+        onBlock(inside.kind, inside.name, '', false);
+        continue;
+      }
+      const lt = buf.lastIndexOf('<');
+      if (lt !== -1 && buf.indexOf('>', lt) === -1 && buf.length - lt < 200 && couldOpen(buf.slice(lt))) {
+        if (lt) emit(buf.slice(0, lt));
+        buf = buf.slice(lt);
+        return;
+      }
+      if (buf) emit(buf);
+      buf = '';
+      return;
+    }
+  }
+  /* the stream is over: a block left open is never shown; a held '<' that never
+   * became a tag is words after all */
+  function end() {
+    if (inside) { inside = null; buf = ''; return; }
+    if (buf) emit(buf);
+    buf = '';
+  }
+  return { feed, end, get hiding() { return Boolean(inside); } };
+}
+
 /* One change, as a key: the same document, the same place, the same words. */
 function editKey(e) {
   /* the entries a worldbook change carries are its words: two different sets of
@@ -128,40 +256,6 @@ function editKey(e) {
   return JSON.stringify([e.file || e.create_file || '', e.find || '', e.insert_after || '', e.append === true, e.replace_all === true, e.all === true, e.whole === true, e.replace || '', entries === undefined ? null : entries]);
 }
 
-export function naturalize(text) {
-  return String(text || '')
-    /* the engine's command words, said as plain words */
-    .replace(/(^|[\s(])[*#](source_new|hybrid_new|new|card|import|q|p|summari[sz]e|continuity|edit|retcon|delete|cleanup|optimi[sz]e|skip|ooc|show_full_file|show_spoilers|hide_spoilers|regress|next|audit|fix|brief)\b/gi, '$1$2')
-    .replace(/<search>[\s\S]*?<\/search>/gi, '')
-    .replace(/<\/?(?:edits|docedits|need|ask|search)>?/gi, '')
-    .replace(/<file\b[^>]*>|<\/file\s*>/gi, '')
-    .replace(/\bM-[A-Z]{3,}\b/g, '')
-    .replace(/\[[A-Z][A-Z0-9_]{4,}\]/g, '')
-    .replace(/\b(?:section|§)\s*\d+(?:\.\d+)*\b/gi, '')
-    .replace(/\bSCAN EVIDENCE\b:?/gi, 'what was read:')
-    .replace(/\bEXPERT EYE\b:?/gi, '')
-    .replace(/\bGENERALIST NOTES\b:?/gi, '')
-    .replace(/\bM\d+\b/g, '')
-    /* the craft's names for its checks, said the way a person would (the crew is
-     * told to, and this is what is left when one does not) */
-    .replace(/\s*,?\s*\(?\b(?:per|via|under)\s+Protocol\s+\d+\)?/gi, '')
-    .replace(/\bProtocol\s+\d+\b/gi, 'the usual way')
-    .replace(/\bTiers?\s+[ABC](?:\s*(?:\/|and|,)\s*[ABC])*\b(?:\s+checks?)?/g, 'the checks')
-    .replace(/\bNamed[- ]Person Gate\b/gi, 'the check that keeps names out of personality lines')
-    .replace(/\bDisease Scans?\b/gi, 'a sweep for the same mistake everywhere')
-    .replace(/\bStale[- ]Assumption Scans?\b/gi, 'a look at what the change knocks on to')
-    .replace(/\bMechanical Audit\b/gi, 'the arithmetic check')
-    .replace(/\bVerification Engine\b/gi, 'the final check')
-    .replace(/\bCBPA(?:-G)?\b/g, 'the logic check')
-    .replace(/\bAnti[- ]Parrot\b(?:\s+(?:pass|test|scan|check))?/gi, 'a look beyond what was named')
-    .replace(/\bAuto[- ]Fix Mandate\b/gi, 'the rule to fix things quietly')
-    .replace(/\bDeliverable Purity(?:\s+Test)?\b/gi, 'a check that the document holds nothing but the story')
-    .replace(/\bRELS Gate\b/gi, 'the check that only people who have met share a bond')
-    .replace(/\bMC Exclusion(?:\s+Rule)?\b/gi, 'the rule that the main character lives only in the scene')
-    .replace(/[ \t]{2,}/g, ' ')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-}
 
 /* THE CONVERSATION REACHES THE WORKERS. "Fold all that into the plot
  * essential" means nothing to a worker that was never shown "all that" — and a
@@ -199,12 +293,17 @@ function docsOf(project) {
  * characters (about 30,000 tokens); past it, the index and the sections in
  * play, with <need> for the rest. */
 export const WHOLE_LIMIT = 120000;
+/* THE ONE HE TALKS TO READS EVERY DOCUMENT WHOLE up to this many characters
+ * (about 100,000 tokens, beside his engine's 31,000): it answers about them and
+ * changes them, and his models hold far more. A model too small for it says so,
+ * and is given the outline and the parts in play instead (runTurn). */
+export const MAKER_WHOLE = 400000;
 
 export function docBriefs(project, opts) {
   const docs = docsOf(project);
   if (!docs.length) return 'Nothing has been written yet — there are no documents in this world so far.';
   const size = docs.reduce((n, d) => n + (d.text || '').length, 0);
-  const whole = !opts.forFront && !opts.partial && size <= WHOLE_LIMIT;
+  const whole = !opts.forFront && !opts.partial && size <= (opts.limit || WHOLE_LIMIT);
   /* the text before a document's first section: the front and a model too
    * small for the whole world read the start of it; any other worker reads
    * it all, up to the same limit a whole world has */
@@ -379,7 +478,7 @@ export function joinSeam(a, b) {
   return head + tail;
 }
 
-async function runWorker({ worker, sections, conn, project, message, talk, fromHouse = false, onStatus, onProgress, signal, stale, craft = null, note = '', searcher = null }) {
+async function runWorker({ worker, sections, conn, project, message, talk, fromHouse = false, asker = '', onStatus, onProgress, signal, stale, craft = null, note = '', searcher = null }) {
   /* a worker with a craft of its own reads that; the rest read their slice */
   const own = craft || sliceFor(sections, worker).text;
   /* searching the internet is his switch: off, the worker reads exactly what it always did */
@@ -412,7 +511,8 @@ async function runWorker({ worker, sections, conn, project, message, talk, fromH
       /* Whose job this is, said plainly: the author's own words, or the house
        * asking for a read-back or a repair. A house job presented as his
        * request is a note put in his mouth. */
-      fromHouse ? '\nWhat the house needs from you (the author did not write this — it follows from his last request):' : '\nWhat the author just asked for:',
+      fromHouse ? '\nWhat the house needs from you (the author did not write this — it follows from his last request):'
+        : asker ? `\nWhat ${asker} needs from you \u2014 ${asker} is making this with the author, and this is part of it:` : '\nWhat the author just asked for:',
       message,
       nudge ? `\n${nudge}` : '',
     ].filter(Boolean).join('\n');
@@ -556,7 +656,7 @@ export function endAtControlToken(text) {
   return m ? t.slice(0, m.index).trimEnd() : t;
 }
 
-/* A turn for the front alone: "go on" after a reply that was cut off. */
+/* A turn for the one he talks to alone: "go on" after a reply that was cut off. */
 export const FRONT_ONLY = '__front__';
 
 /* GO ON IS THE HOUSE'S NOTE, NOT HIS WORDS. It used to arrive under "Bruce
@@ -564,29 +664,127 @@ export const FRONT_ONLY = '__front__';
  * preamble" — an order in a voice he never uses, put in his mouth. */
 export const GO_ON = 'Your last reply was cut off partway through. Carry straight on from the exact word where it stopped \u2014 without going back over it, and with nothing before it.';
 
+/* HOW FAR ONE TURN MAY GO. A step is one reply from the one he talks to; the
+ * house only asks for another when something needs it (a change that did not go
+ * in, what the checks found, a helper's report, a search, parts it asked to
+ * read). Helpers per step and lookups per turn are capped so a turn always ends. */
+export const MAX_STEPS = 6;
+export const MAX_HELPERS = 4;
+/* the room a reply needs to write a document in it (the floor every worker had):
+ * a value he set that is higher is his; nothing lower than this is sent */
+export const MAKER_FLOOR = 8000;
+
+/* A block, a document or a helper call left open at the very end of a reply. */
+function openBlockAtEnd(text) {
+  const t = String(text || '').replace(/<(\/?)docedits>/gi, '<$1edits>');
+  const file = openFileAtEnd(t);
+  if (file) return { file };
+  const lo = t.toLowerCase();
+  const e = lo.lastIndexOf('<edits>');
+  if (e !== -1 && lo.indexOf('</edits>', e) === -1) return { edits: true };
+  const h = lo.lastIndexOf('<helper');
+  if (h !== -1 && lo.indexOf('</helper', h) === -1) return { helper: true };
+  return null;
+}
+
+/* THE CHECKS, ON WHAT THIS TURN BROUGHT IN. The repairs code is certain of are
+ * made; anything that needs judgment goes to the one he talks to — but only what
+ * this turn's changes brought in. The old sweep handed every finding in a touched
+ * document to a worker on every change, so a small edit to a document that was
+ * already heavy, or already had an undated event, sent the compressor or the
+ * chronicler through the whole of it: the churn behind a cluttered plot essential. */
+function findingKey(name, f) {
+  return `${name}\u0000${f.check}\u0000${/grown heavy/.test(f.check) ? '' : f.said}`;
+}
+export function checkChanged(project, names, startTexts) {
+  const next = { ...project, docs: (project.docs || []).map((d) => ({ ...d })) };
+  const repaired = [];
+  const found = [];
+  const fixed = new Map();
+  for (const d of next.docs) {
+    if (!names.has(d.name)) continue;
+    const kind = d.kind || 'pe';
+    const start = startTexts.has(d.name) ? startTexts.get(d.name) : null;
+    const r = lint(d.text, { kind, deliverable: kind !== 'notes', keep: start });
+    if (r.changed) { fixed.set(d.name, { from: d.text, to: r.text }); d.text = r.text; }
+    const before = new Set();
+    if (start !== null) {
+      for (const f of lint(start, { kind, deliverable: kind !== 'notes', keep: start }).found) {
+        if (!f.repaired) before.add(findingKey(d.name, f));
+      }
+    }
+    for (const f of r.found) {
+      if (f.repaired) repaired.push(`In ${d.name}, ${f.said}.`);
+      else if (!before.has(findingKey(d.name, f))) found.push({ key: findingKey(d.name, f), name: d.name, check: f.check, said: f.said });
+    }
+  }
+  return { project: next, repaired, found, fixed };
+}
+
+/* AN UNDO RECORD MATCHES WHAT IS IN THE DOCUMENT AFTER THE CHECKS. The checks
+ * repair a change in the same turn (a working marker taken out, a score put in
+ * range); the record still held the text from before that repair, so "put it
+ * back" refused for ever, saying something newer was there (reproduced on 1.8.0:
+ * a change carrying "[EPISTEMIC_VIOLATION]", taken out by the checks, could never
+ * be put back). Every record of this turn is stamped with what the documents
+ * really hold now. */
+function restamp(batches, fixed) {
+  for (const [name, { from, to }] of fixed) {
+    const was = hash(from);
+    for (let i = batches.length - 1; i >= 0; i--) {
+      const it = (batches[i].items || []).find((x) => x.name === name && !x.removed);
+      if (!it) continue;
+      if (it.afterHash === was) it.afterHash = hash(to);
+      break;
+    }
+  }
+}
+
+/* What the house tells the one he talks to between steps — never in his voice. */
+function stepReport({ p, landed = [], back = [], other = [], repaired = [], found = [], helpers = [], unknown = [], foundText = '', parts = '', nudge = '', docs = '' }) {
+  const him = (p && p.you) || 'the author';
+  const lines = [`(From the house, not ${him} \u2014 what came of your last reply.)`];
+  if (landed.length) lines.push(`Went in: ${landed.join(', ')}.`);
+  if (back.length) {
+    lines.push('Did not go in:\n' + back.map((c, i) => `${i + 1}. ${c.name ? `${c.name} \u2014 ` : ''}${c.why}${c.find ? `\n   you quoted: "${String(c.find).slice(0, 400)}"` : ''}`).join('\n') +
+      '\nA quote must match the document word for word \u2014 only spacing and the shape of quote marks may differ \u2014 using the shortest stretch that appears only once. Quote again from the documents as they stand now, below; send only the changes that did not go in.');
+  }
+  for (const o of other) lines.push(o);
+  if (repaired.length) lines.push(`The house put right by itself: ${repaired.join(' ')}`);
+  if (found.length) lines.push('The checks found something your changes brought in \u2014 put it right the way your engine says to:\n' + found.map((f) => `- ${f.check} \u2014 ${f.said} (in ${f.name})`).join('\n'));
+  for (const h of helpers) {
+    const who = HELPER_NAMES[h.id] || h.name;
+    if (h.failed) { lines.push(`${who} could not do it: ${h.failed}.`); continue; }
+    const made = (h.cards || []).filter((c) => c.status === 'applied');
+    const missed = (h.cards || []).filter((c) => c.status === 'refused');
+    lines.push(`${who.charAt(0).toUpperCase()}${who.slice(1)} says:\n${h.notes || '(nothing in words)'}` +
+      (made.length ? `\nIts changes went in: ${[...new Set(made.map((c) => c.name))].join(', ')} (${made.length}).` : '\nIt changed nothing.') +
+      (missed.length ? `\nOf its changes, these did not go in: ${missed.map((c) => `${c.name || 'a change'} \u2014 ${c.why}`).join('; ')}.` : '') +
+      (h.ask ? `\nIt needs ${him} to decide:\n${h.ask}` : ''));
+  }
+  if (unknown.length) lines.push(`There is no helper called ${unknown.map((u) => `\u201c${u}\u201d`).join(' or ')}. Your helpers are ${Object.values(HELPER_NAMES).join(', ')}.`);
+  if (foundText) lines.push(foundText);
+  if (parts) lines.push(parts);
+  if (nudge) lines.push(nudge);
+  lines.push(`Put right what needs it, then finish your answer to ${him} \u2014 ${him} has already read what you wrote, so carry on from there and never say it again. If nothing needs doing, just finish your answer.`);
+  if (docs) lines.push(`The documents, as they stand now:\n\n${docs}`);
+  return lines.join('\n\n');
+}
+
 export async function runTurn({
   house, project, history = [], message, forceWorker = null,
-  onStatus = () => {}, onText = () => {}, onThinking = () => {}, onLetGo = () => {},
+  onStatus = () => {}, onText = () => {}, onThinking = () => {},
   signal,
 } = {}) {
-  const sections = await loadEngine();
+  const [sections, engine] = await Promise.all([loadEngine(), loadEngineText()]);
   const connections = house.connections || [];
   const frontConn = connections.find((c) => c.id === (house.agentConnections || {})[FRONT]) || connections[0] || null;
   const general = (house.agentConnections || {})._general || null;
-  /* the listener decides who works: it rides the model he talks to — the one he
-   * chose to understand him — unless he gives it a connection of its own; the
-   * crew rides the backstage pick */
-  const connFor = (worker) => (worker === LISTENER
-    ? pickConnection({ map: house.agentConnections || {}, general: null, connections }, worker) || frontConn
-    : pickConnection({ map: house.agentConnections || {}, general, connections }, worker) || frontConn);
+  const connFor = (worker) => pickConnection({ map: house.agentConnections || {}, general, connections }, worker) || frontConn;
   const p = personaOf(house);
-  /* SEARCHING THE INTERNET, when his switch is on and a connection can search */
   const searcher = searchOn(house) ? searcherFor(house) : null;
-  /* what was looked up for this turn, and how it is put to the one he talks to */
-  let foundText = '';
-  /* WHAT THE CREW IS DOING, SAID ONCE, WITH HOW FAR ALONG IT IS BESIDE IT. The
-   * label says who is on what; the detail ("1,240 words so far") changes as a
-   * streamed answer arrives, and never restarts the clock the label carries. */
+  const goOn = forceWorker === FRONT_ONLY;
+  /* WHAT THE HOUSE IS DOING, SAID ONCE, WITH HOW FAR ALONG IT IS BESIDE IT */
   let doing = '';
   const status = (label, detail = '') => { doing = label; onStatus(label, detail); };
   const progress = (p2) => {
@@ -594,55 +792,16 @@ export async function runTurn({
     if (words) status(doing, `${words.toLocaleString()} words so far`);
     else if (String(p2.thinking || '').trim()) status(doing, 'thinking it through');
   };
-  /* STOP MEANS STOP. The first version let the crew go and then called the
-   * front anyway. Every step now looks first. */
   const stopped = () => Boolean(signal && signal.aborted);
 
   const past = (history || []).filter((t) => !t.failed);
   const docs = docsOf(project);
   const hasPE = hasPlotEssential(docs);
-  const lastTurn = past[past.length - 1];
-  const lastMaker = lastTurn && lastTurn.role === 'maker' ? lastTurn : null;
-  /* What the crew is still waiting on him for: only what was put to him in the
-   * answer right before this message. Once he has moved on, it is closed. */
-  const open = !forceWorker && lastMaker && Array.isArray(lastMaker.asks)
-    ? lastMaker.asks.filter((a) => a && a.worker && a.ask) : [];
-  /* THE OLD READING, kept for when the listener cannot answer: a bare yes runs
-   * what the front just offered (router.js offersIn), else the keyword table. */
-  const oldReading = () => {
-    /* HIS ANSWER GOES BACK TO WHOEVER IS WAITING ON IT. The builder, asked to
-     * start a plot essential with nothing to build from, interviews first (the
-     * craft's 7.1) and waits; when the listener's answer could not be read, the
-     * keyword reading below found no job in "a drowned harbour city, Jovan, a
-     * ferryman" and his answer reached nobody — the build stalled (reproduced
-     * through the real turn). What waits on him is his answer's first claim; only
-     * a greeting or a thanks is not an answer. */
-    if (open.length && !justGreeting(message)) {
-      const seen = new Set();
-      return open.filter((o) => !seen.has(o.worker) && seen.add(o.worker))
-        .map((o) => jobFor({ worker: o.worker, task: `The answer to what you put to ${addressWriter(p)} has come: carry on with the job, with that answer.`, resumes: true }, open, message, p));
-    }
-    const offered = lastMaker && confirmsOffer(message) ? offersIn(lastMaker.text) : [];
-    const agreed = [];
-    for (const o of offered) {
-      for (const i of route(o, { hasPlotEssential: hasPE, hasDocs: docs.length > 0, asStatement: true })) {
-        if (agreed.some((x) => x.worker === i.worker)) continue;
-        agreed.push({ ...i, about: `${o.charAt(0).toUpperCase()}${o.slice(1)} (offered just now; ${addressWriter(p)} said "${String(message).trim()}").`, why: 'agreed to what was offered' });
-      }
-    }
-    return agreed.length ? agreed : route(message, { hasPlotEssential: hasPE, hasDocs: docs.length > 0 });
-  };
-  /* WHAT THE ONE AT THE FRONT READS, one way whenever it is written: his
-   * instructions and the house's plain words; then the talk, the book as it
-   * stands, what got done, what waits on him, and what he just said. */
-  const frontSystem = openingFor(p, frontBody(p));
-  /* WHAT THE CREW ALREADY CHANGED, AND STILL STANDS. The persona used to know
-   * what earlier turns changed only from its own earlier replies — and one of
-   * those can be wrong (a thought shown as a reply, a change claimed and never
-   * made), so \u201cdid you add it?\u201d was answered from memory, either way.
-   * Now it reads the house's own record: every change card from this
-   * conversation whose change was not put back, newest first, with the words
-   * it wrote. */
+  /* what the one he talks to reads: his instructions, then his whole engine, then
+   * how this room works — nothing of it ever changes between steps */
+  const makerSystem = openingFor(p, [engine, frontBody(p, { search: Boolean(searcher) })].filter(Boolean).join('\n\n---\n\n'));
+  /* WHAT WAS ALREADY CHANGED, AND STILL STANDS — the house's own record, so
+   * "did you add it?" is answered from what is so, never from memory */
   const standing = (() => {
     const lines = [];
     for (let i = past.length - 1; i >= 0 && lines.length < 8; i--) {
@@ -650,431 +809,347 @@ export async function runTurn({
       if (!t || t.role !== 'maker' || !(t.batches || []).some((b) => !b.undone)) continue;
       for (const c of (t.cards || []).filter((x) => x.status === 'applied')) {
         if (lines.length >= 8) break;
-        const why = naturalize(c.reason || '').replace(/\s+/g, ' ').trim();
-        const words = String(c.now || '').replace(/\s+/g, ' ').trim();
-        const small = words && c.how !== 'started it' && c.how !== 'rewrote the whole thing' && c.how !== 'cleared it' && c.how !== 'deleted it';
-        lines.push(`- ${c.name}: ${c.how || 'changed'}${why ? ` (${why})` : ''}${small ? ` \u2014 now reads: \u201c${words.slice(0, 160)}${words.length > 160 ? '\u2026' : ''}\u201d` : ''}`);
+        const why = String(c.reason || '').replace(/\s+/g, ' ').trim();
+        lines.push(`- ${c.name}: ${c.how || 'changed'}${why ? ` (${why})` : ''}`);
       }
     }
     return lines.length ? `Changed earlier in this conversation, and standing now (newest first) \u2014 for reference, never to repeat as new:\n${lines.join('\n')}` : '';
   })();
-  const frontMessages = (world, said, waiting, note = '') => {
-    const n = (house.settings || {}).turnsOnScreen || 40;
-    /* its own earlier replies go back without any thought left in them: one
-     * reply that carried a thought, sent back as what it said, taught it to
-     * keep writing its thinking as its reply */
-    const earlier = past.slice(-n).map((t) => (t.role === 'writer' ? { role: 'user', content: t.text || '' } : { role: 'assistant', content: ownWords(t.text || '') }));
-    const ask = [
-      'Where the book stands right now:',
-      docBriefs(world, { message, recent: world.recentSections || [], forFront: true }),
-      standing ? `\n${standing}` : '',
-      said ? `\nWhat got done while you were talking:\n${said}` : '',
-      foundText ? `\n${foundText}` : '',
-      waiting.length ? `\n${waitingBrief(waiting, p)}` : '',
-      note ? `\n${note}` : '',
-      /* his words under his name; with no name set, never "you said:", which
-       * tells the persona it said them itself. Go on is the house's note and
-       * carries no speaker at all. */
-      forceWorker === FRONT_ONLY ? `\n${message}` : `\n${p.you ? `${p.you} said:` : 'What was just said to you:'}\n${message}`,
-    ].filter(Boolean).join('\n\n');
-    /* his note at the end rides last, after his message (persona.js noteAtTheEnd) */
-    const last = noteAtTheEnd(house, p);
-    return oneVoice(earlier.concat([{ role: 'user', content: ask }], last ? [last] : []));
-  };
-  let early = null;
-  let earlyKept = false;
-  /* AN EARLY REPLY LET GO TAKES WHAT IT SHOWED WITH IT. Its thinking is on
-   * screen from its first word (below); when the crew is sent after all, that
-   * reply is never written, so the room is told to take its thinking away — the
-   * reply written after the work thinks again, from its own first word. */
-  const letEarlyGo = () => { const showed = early.thought; early.drop(); if (showed) onLetGo(); };
-  let heardNobody = false;
-  let intents;
-  let acts = [];
-  if (forceWorker === FRONT_ONLY) intents = [];
-  else if (forceWorker) intents = [{ worker: forceWorker, about: message, why: 'asked for by name' }];
-  else if (writtenCommand(message)) intents = route(message, { hasPlotEssential: hasPE, hasDocs: docs.length > 0 });
-  else if (!open.length && justGreeting(message)) intents = [];
-  else {
-    /* THE LISTENER (listener.js): what he said, read for intent the way the
-     * craft's own 7.6 says to, with the conversation and whatever is waiting
-     * on him. On the same channel as every worker, so Stop and a change of
-     * world let it go like any other job. */
-    status('reading that');
-    /* HIS ANSWER STARTS WHILE THE LISTENER READS. Most of what he says while he
-     * talks a world through is conversation, and it used to wait on a whole
-     * model call (the listener) before the one he talks to began — ten or
-     * thirty seconds on a model that thinks. So when nothing about it looks
-     * like a job and nothing waits on him, the reply starts at the same moment,
-     * held unseen: if the listener sends nobody, it is shown the instant the
-     * listener has answered, word for word what it would have been; if the
-     * listener sends somebody, it is let go and never seen. */
-    const plainTalk = !open.length && !route(message, { hasPlotEssential: hasPE, hasDocs: docs.length > 0 }).length &&
-      !(lastMaker && confirmsOffer(message) && offersIn(lastMaker.text).length);
-    if (plainTalk) {
-      const sameWords = frontMessages(project, '', []);
-      early = heldFront((t, th, sig) => streamModel(frontConn, { system: frontSystem, messages: sameWords, onText: t, onThinking: th, signal: either(signal, sig) }), { onThinking });
-    }
-    const heard = await enqueue(project.id, LISTENER, ({ signal: s, stale }) => listen({
-      conn: connFor(LISTENER), frame: CRAFT_FRAME, sections, docs, open, message, p,
-      talk: conversationFor(past, p, LISTEN_TALK), signal: either(signal, s), stale, search: Boolean(searcher),
-    }));
-    if (stopped()) { if (early) early.drop(); return { project, reply: '', cards: [], batches: [], crew: [], edits: [], asks: [], error: 'stopped', stopped: true }; }
-    /* A DIFFERENT STORY, IN A WORLD THAT HAS ONE: nothing is done here. The room starts
-     * it in a world of its own and says it there (app.js), the way *new and a card are. */
-    if (hasPE && !open.length && (heard && heard.ok ? heard.newStory : asksNewStory(message))) {
-      if (early) letEarlyGo();
-      return { project, reply: '', cards: [], batches: [], crew: [], edits: [], asks: [], error: null, newStory: true };
-    }
-    intents = heard && heard.ok ? heard.jobs.map((j) => jobFor(j, open, message, p)) : oldReading();
-    heardNobody = Boolean(heard && heard.ok && !heard.jobs.length && !(heard.clear || []).length && !(heard.delete || []).length);
-    if (heard && heard.ok) {
-      acts = [
-        ...(heard.clear || []).map((f) => ({ house: true, clear: true, file: f, reason: 'you asked for it to be cleared' })),
-        ...(heard.delete || []).map((f) => ({ house: true, delete_file: f, reason: 'you asked for it to be deleted' })),
-      ];
-    }
-    /* SOMETHING REAL TO LOOK UP FIRST: what was started was started without it, so it
-     * is let go like a reply the crew was sent for, and everyone who works or
-     * answers this turn has what was found in front of them */
-    const toLook = searcher && heard && heard.ok ? (heard.lookUp || []) : [];
-    /* nobody to send and nothing to clear: what was started is what he gets */
-    if (early) {
-      earlyKept = !intents.length && !acts.length && !toLook.length;
-      if (!earlyKept) letEarlyGo();
-    }
-    if (toLook.length && !stopped()) {
-      foundText = findingsText(await lookUp(searcher, toLook, { signal, onStatus: status }));
-      if (stopped()) return { project, reply: '', cards: [], batches: [], crew: [], edits: [], asks: [], error: 'stopped', stopped: true };
-    }
-  }
-  /* *regress: the house keeps the entry itself, in the registry (router.js houseCommand) */
-  const kept = forceWorker ? null : houseCommand(message);
-  if (kept && kept.what === 'regress' && kept.rest) acts.push({ house: true, registry: kept.rest, file: REGISTRY, reason: 'you asked for it to be kept' });
-  const talk = conversationFor(past.concat([{ role: 'writer', text: message }]), p);
-  /* the documents as he left them before this turn: what the checks never take out */
-  const startTexts = new Map(docsOf(project).map((d) => [d.name, d.text]));
-  /* WHEN HE SAYS BUILD IT, THE BUILDER READS THE WHOLE BRAINSTORM. Nothing is
-   * written while he talks a world through, so everything he said is still
-   * only in the conversation — a builder shown the last 24,000 characters
-   * of it would build from the end of the brainstorm. */
-  const buildTalk = conversationFor(past.concat([{ role: 'writer', text: message }]), p, BUILD_TALK);
 
   const crew = [];
   const allCards = [];
-  /* the same failure, said once: a worker that sent one change four times does
-   * not make four cards (the "not done" he saw four times over) */
-  const refusedOnce = new Set();
-  allCards.push = function pushCards(...items) {
-    for (const c of items) {
-      if (c && c.status === 'refused') {
-        const k = `${c.name || ''}\u0000${c.find || ''}\u0000${c.why || ''}`;
-        if (refusedOnce.has(k)) continue;
-        refusedOnce.add(k);
-      }
-      Array.prototype.push.call(this, c);
-    }
-    return this.length;
-  };
   const batches = [];
   const asks = [];
-  /* every change the crew made this turn, in order, so another version of
-   * this answer can be put back and this one made again, exactly */
   const turnEdits = [];
   const landed = new Set();
   let working = project;
+  const startTexts = new Map(docs.map((d) => [d.name, d.text]));
+  const talk = conversationFor(past.concat([{ role: 'writer', text: message }]), p);
+  const buildTalk = conversationFor(past.concat([{ role: 'writer', text: message }]), p, BUILD_TALK);
 
-  const send = async (worker, about, label, fromHouse = false, requoting = false) => {
+  /* the house's own notes on his message, said before his words */
+  const houseNotes = [];
+  /* *regress: the house keeps the entry itself, in the registry (router.js houseCommand) */
+  const kept = goOn ? null : houseCommand(message);
+  if (kept && kept.what === 'regress' && kept.rest) {
+    const applied = commit(working, [{ house: true, registry: kept.rest, file: REGISTRY, reason: 'you asked for it to be kept' }], 'as you asked');
+    working = applied.project;
+    if (applied.batch) { batches.push(applied.batch); turnEdits.push({ label: 'as you asked', edits: [{ house: true, registry: kept.rest, file: REGISTRY, reason: 'you asked for it to be kept' }] }); }
+    const already = applied.cards.some((c) => c.status === 'refused' && /already in the document/.test(c.why || ''));
+    allCards.push(...applied.cards.filter((c) => c.status === 'applied'));
+    houseNotes.push(already ? `The house already keeps that line in ${REGISTRY}, word for word.` : `The house has kept that line in ${REGISTRY}, which every update is checked against.`);
+  }
+  /* *card is the house's own shortcut, not his engine's: what it means is said */
+  if (!goOn && isStoryCard(message)) {
+    const card = /(^|\s)\*card\b/i.exec(message);
+    houseNotes.push(`(*card is this house's own shortcut; what it asks of you:)\n${storyCardTask(message.slice(card.index + card[0].length).trim(), message.slice(0, card.index).trim())}`);
+  }
+
+  let small = false;
+  let asked = [];
+  /* the documents in his message are the world as the turn began — every step reads
+   * the same opening (and its prefix stays the same); the house's report after each
+   * step carries the documents as they stand by then */
+  let opening = null;
+  const makerMessages = (world, extra) => {
+    const n = (house.settings || {}).turnsOnScreen || 40;
+    const earlier = (small ? past.slice(-6) : past.slice(-n)).map((t) => (t.role === 'writer' ? { role: 'user', content: t.text || '' } : { role: 'assistant', content: ownWords(t.text || '') }));
+    const ask = [
+      small ? 'The documents, as they stand right now \u2014 too long for this model to read whole, so the outline and the parts in play:' : 'The documents, as they stand right now \u2014 whole, word for word:',
+      docBriefs(world, { message, recent: world.recentSections || [], asked, partial: small, limit: MAKER_WHOLE }),
+      standing ? `\n${standing}` : '',
+      houseNotes.length ? `\n${houseNotes.join('\n\n')}` : '',
+      /* his words under his name; with no name set, never "you said:" (it tells the
+       * persona it said them itself); Go on is the house's note, with no speaker */
+      goOn ? `\n${message}` : `\n${p.you ? `${p.you} said:` : 'What was just said to you:'}\n${message}`,
+    ].filter(Boolean).join('\n\n');
+    const last = noteAtTheEnd(house, p);
+    return oneVoice(earlier.concat([{ role: 'user', content: ask }], extra, last ? [last] : []));
+  };
+
+  /* ONE STEP: a reply from the one he talks to, streamed, its words on screen as
+   * they come and everything else held back; cut inside a document, a block or a
+   * helper call, it is carried on — a document half-written is never written */
+  let reply = '';
+  let thinking = '';
+  /* the words of the step in flight, as shown: kept if he stops it partway */
+  let streamed = '';
+  let quiet = false;
+  let held = '';
+  const step = async (extra) => {
+    streamed = '';
+    held = '';
+    /* WHAT STREAMS IS WHAT HE WILL READ: the space a block leaves behind is held
+     * until words follow it, a run of blank lines is one, and the step starts with
+     * no space of its own — the same words, spaced the same, as the reply kept */
+    let started = false;
+    let space = '';
+    const show = (t) => { streamed += t; if (quiet) held += t; else onText(t); };
+    const vis = makeVisibleStream((t) => {
+      if (!t) return;
+      const body = t.replace(/\s+$/, '');
+      const tail = t.slice(body.length);
+      if (!body) { if (started) space += tail; return; }
+      if (!started) {
+        started = true;
+        const lead = body.replace(/^\s+/, '');
+        show((reply ? '\n\n' : '') + lead);
+      } else {
+        const run = space + body.slice(0, body.length - body.replace(/^\s+/, '').length);
+        show((/\n[ \t]*\n/.test(run) ? '\n\n' : run.replace(/[ \t]+\n/g, '\n')) + body.replace(/^\s+/, ''));
+      }
+      space = tail;
+    }, (kind, name, body, done) => {
+      if (done) { status(''); return; }
+      const words = (String(body || '').match(/\S+/g) || []).length;
+      const label = kind === 'file' ? `writing ${name || 'a document'}` : kind === 'edits' ? 'writing the changes'
+        : kind === 'helper' ? `handing it to ${HELPER_NAMES[helperId(name)] || name || 'a helper'}` : kind === 'search' ? 'asking for a search' : '';
+      if (label) status(label, words ? `${words.toLocaleString()} words so far` : '');
+    });
+    if (!opening || small) opening = working;
+    const messages = makerMessages(opening, extra);
+    let thought = '';
+    const think = (t) => { thought += t; onThinking(t); };
+    let out = await streamModel(frontConn, { system: makerSystem, messages, onText: (t) => vis.feed(t), onThinking: think, signal, floor: MAKER_FLOOR });
+    let raw = out.text || '';
+    for (let more = 0; out.cut && out.cutBy !== 'provider' && more < MAX_CARRY_ON && openBlockAtEnd(raw); more++) {
+      if (stopped()) break;
+      const open = openBlockAtEnd(raw);
+      const rest = await streamModel(frontConn, { system: makerSystem, signal, floor: MAKER_FLOOR, onText: (t) => vis.feed(t), onThinking: think,
+        messages: messages.concat([{ role: 'assistant', content: raw }, { role: 'user', content: open.file ? fileLeftOpen(open.file) : CARRY_ON }]) });
+      if (!String(rest.text || '').trim()) break;
+      raw = joinSeam(raw, rest.text);
+      out = { ...rest, text: raw };
+    }
+    vis.end();
+    return { raw: endAtControlToken(raw), thought, cut: Boolean(out.cut), cutBy: out.cutBy || (out.cut ? 'length' : '') };
+  };
+
+  /* A HELPER, sent by the one he talks to: its own craft, the documents as they
+   * stand, the talk, and the task in full. A quote of its that missed goes back to
+   * it once (the Plot Essential Maker's v0.11.9). Its changes land like any; its
+   * words go back to the one who sent it. */
+  const sendHelper = async (worker, about, label, requoting = false) => {
     let craft = null;
-    /* a failure is said plainly to the front, and shown exactly on a card */
-    const failed = (why) => {
-      crew.push({ worker, failed: why });
-      if (!/^(?:stopped|let go)$/.test(why)) allCards.push({ status: 'refused', name: '', reason: '', failure: true, why: `${plainFailure(why)} (${String(why).slice(0, 160)})` });
-      return [];
-    };
     try { craft = await craftFor(worker, house); }
-    catch (e) { return failed((e && e.message) || String(e)); }
+    catch (e) { const why = (e && e.message) || String(e); crew.push({ worker, failed: why }); return { failed: plainFailure(why) }; }
     const res = await enqueue(project.id, worker, ({ signal: s, stale }) =>
       runWorker({ worker, sections, conn: connFor(worker), project: working, message: about,
-        /* who makes or folds a whole document out of the talk reads all of it
-         * (BUILD_TALK): “fold that in” after a long paste reached the chronicler
-         * without the paste's start (reproduced through the real turn) */
         talk: WHOLE_TALK.has(worker) ? buildTalk : talk,
         note: worker === 'worldbook' ? worldbookNote(working, p) : registryNote(working, worker),
-        fromHouse, onStatus: status, onProgress: progress, signal: either(signal, s), stale, craft, searcher }));
-    if (!res || !res.ok) return failed((res && res.error) || 'did not finish');
+        asker: p.maker || 'the one making this with the author',
+        onStatus: status, onProgress: progress, signal: either(signal, s), stale, craft, searcher }));
+    if (!res || !res.ok) { const why = (res && res.error) || 'did not finish'; crew.push({ worker, failed: why }); return { failed: /^(?:stopped|let go)$/.test(why) ? 'it was stopped' : plainFailure(why) }; }
     if (res.ask) asks.push({ worker, ask: res.ask, at: Date.now() });
-    /* a change already made this turn is not made again: a re-quote that
-     * repeats one that landed would only come back as a false "not done" */
     const fresh = (res.edits || []).map((e) => { const own = { ...e }; delete own.house; return own; }).filter((e) => !landed.has(editKey(e)));
     const applied = commit(working, fresh, label, worker);
     working = applied.project;
-    /* each change by its own outcome: applied, or nothing to do because the
-     * document already reads exactly that — either way it is done */
     fresh.forEach((e, i) => { const c = applied.perEdit ? applied.perEdit[i] : applied.cards[i]; if (c === null || (c && c.status === 'applied')) landed.add(editKey(e)); });
     if (fresh.length) turnEdits.push({ label, edits: fresh, maker: worker });
     if (applied.batch) batches.push(applied.batch);
-    /* a re-quote's own words add nothing: it is the same work, placed again */
-    crew.push({ worker, notes: requoting ? '' : res.notes, cards: applied.cards, guard: applied.guard, warn: res.warn, fromHouse });
-    if (res.warn) allCards.push({ status: 'refused', name: '', reason: '', why: res.warn });
-
-    /* A QUOTE THAT MISSED GOES BACK ONCE (the Plot Essential Maker's v0.11.9:
-     * matching stays strict, and the failure is handed to the one who wrote
-     * it). Only spacing and quote marks may differ from the document; a
-     * change that quoted anything else is sent back with exactly what it
-     * quoted and why it missed, and the worker quotes again from the
-     * documents as they now stand. */
-    const missed = applied.cards.filter((c) => c.status === 'refused' && c.find &&
-      /not in the document as written|appear \d+ times/.test(c.why || ''));
-    /* A CHANGE THAT PUT BACK THE VERY WORDS IT FOUND CHANGED NOTHING. It used to
-     * reach him as "not done: that change leaves the words exactly as they
-     * were" — four times over when a worker sent four, a failure he could do
-     * nothing about, over a document that had not moved. Either the words were
-     * already right (then there is nothing to report), or the worker meant a
-     * change and wrote the old words back (then the change he asked for never
-     * happened). So it goes back once, with the missed quotes: the worker sends
-     * the real change, or leaves it out — and he never sees it either way. */
-    const unchanged = applied.cards.filter((c) => c.status === 'refused' && c.find &&
-      /leaves the words exactly as they were/.test(c.why || ''));
-    /* WHAT IS ALREADY THERE IS DONE, NOT "NOT DONE". An addition refused because
-     * the document already holds it, and a change that would only move spacing,
-     * reached him as orange "not done" cards over a document that was right.
-     * They are dropped. A change that came with nothing saying what to do goes
-     * back once, like a missed quote, instead of being handed to him. */
-    const settled = applied.cards.filter((c) => c.status === 'refused' && /already in the document|only the spacing would change/.test(c.why || ''));
-    const shapeless = applied.cards.filter((c) => c.status === 'refused' && /did not say what to do/.test(c.why || ''));
-    /* A CHANGE THAT FOUND NOWHERE TO GO GOES BACK ONCE TOO, told what is here. The
-     * keeper, told to start a worldbook, did what its craft says — an append — into
-     * a document that did not exist, and the whole first worldbook was refused and
-     * lost without a word to the one who wrote it (reproduced through the real
-     * turn). A change for a document that is not here, or that named none, or
-     * entries with no name or nothing in them, is the worker's to put right. */
-    const unplaced = applied.cards.filter((c) => c.status === 'refused' &&
-      /there is no document by that name|did not say which document|is not a worldbook|entry came with no name|came with no content|was not an entry|carried no entries|cannot be read as data right now/.test(c.why || ''));
-    const placed = applied.cards.filter((c) => !missed.includes(c) && !unchanged.includes(c) && !settled.includes(c) && !shapeless.includes(c) && !unplaced.includes(c));
+    crew.push({ worker, notes: requoting ? '' : res.notes, cards: applied.cards, guard: applied.guard, warn: res.warn });
+    const { placed, back } = sortCards(applied.cards);
     allCards.push(...placed);
-    const back = [...missed, ...unchanged, ...shapeless, ...unplaced];
-    if (!back.length || requoting || stopped()) { allCards.push(...missed, ...shapeless, ...unplaced); return applied.cards; }
-    status(`asking the ${worker} to look at ${back.length > 1 ? 'those changes' : 'that change'} again`);
-    const seen = new Set();
-    const list = back.filter((c) => { const k = `${c.name}\u0000${c.find}\u0000${c.why}`; if (seen.has(k)) return false; seen.add(k); return true; })
-      .map((c, i) => (unchanged.includes(c)
-        ? `${i + 1}. In ${c.name}, the change put back the very words it found, so nothing changed:\n"${c.find}"`
-        : shapeless.includes(c)
-          ? `${i + 1}. In ${c.name || 'a document'}, a change came with nothing saying what to do \u2014 no "find", no "insert_after", no "append". Send it again whole, or leave it out.`
-          : unplaced.includes(c)
-            ? `${i + 1}. ${c.name ? `A change for ${c.name}` : 'A change'} could not go in: ${c.why}.`
-            : `${i + 1}. In ${c.name}, the change quoted:\n"${c.find}"\n\u2014 ${c.why}.`)).join('\n\n');
+    if (res.warn) allCards.push({ status: 'refused', name: '', reason: '', why: res.warn });
+    if (!back.length || requoting || stopped()) { allCards.push(...back); return { notes: res.notes, ask: res.ask, cards: applied.cards }; }
+    status(`asking ${HELPER_NAMES[worker]} to look at ${back.length > 1 ? 'those changes' : 'that change'} again`);
     const here = ((working && working.docs) || []).map((d) => d.name);
-    const again = await send(worker,
-      `Some of your changes could not be placed, or changed nothing:\n\n${list}\n\n` +
-      (missed.length ? 'A quote must match the document word for word \u2014 only spacing and the shape of quote marks may differ \u2014 using the shortest stretch that appears only once. ' : '') +
-      (unchanged.length ? 'A change that put back the words it found changed nothing: if you meant to change those words, send it again with the new words; if they were already right, leave it out. ' : '') +
-      (unplaced.length ? `The documents here are: ${here.length ? here.join(', ') : 'none yet'}. Name the one each change is for, exactly as it is listed; a new document is written whole between <file name="\u2026"> and </file>. ` : '') +
-      'The documents are shown as they stand now, with every change that did land. Send only these changes again. Nothing else.',
-      `${label} (looked at again)`, true, true);
-    if (!again.length) allCards.push(...missed, ...shapeless, ...unplaced);
-    return applied.cards;
+    const list = back.map((c, i) => `${i + 1}. ${c.name ? `In ${c.name}, ` : ''}${c.find ? `the change quoted:\n"${c.find}"\n\u2014 ` : ''}${c.why}.`).join('\n\n');
+    const again = await sendHelper(worker,
+      `Some of your changes could not be placed, or changed nothing:\n\n${list}\n\nA quote must match the document word for word \u2014 only spacing and the shape of quote marks may differ \u2014 using the shortest stretch that appears only once. The documents here are: ${here.length ? here.join(', ') : 'none yet'}. The documents are shown as they stand now, with every change that did land. Send only these changes again. Nothing else.`,
+      `${label} (looked at again)`, true);
+    if (!again.cards || !again.cards.some((c) => c.status === 'applied')) allCards.push(...back);
+    return { notes: res.notes, ask: res.ask, cards: applied.cards.concat(again.cards || []) };
   };
 
-  /* WHAT HE ASKED TO BE CLEARED OR DELETED, done by the house itself, first —
-   * "clear it and start again with a harbour town" clears, then builds. */
-  if (acts.length && !stopped()) {
-    const applied = commit(working, acts, 'as you asked');
-    working = applied.project;
-    turnEdits.push({ label: 'as you asked', edits: acts });
-    if (applied.batch) batches.push(applied.batch);
-    /* what is already there is done, not "not done" (as for the crew's changes):
-     * no card, and the one he talks to is told it is already kept */
-    const already = applied.cards.filter((c) => c.status === 'refused' && /already in the document/.test(c.why || ''));
-    allCards.push(...applied.cards.filter((c) => !already.includes(c)));
-    if (already.length) crew.push({ worker: 'house', notes: already.map((c) => `${c.name} already holds that, word for word.`).join(' ') });
-  }
+  const extra = [];
+  const raised = new Set();
+  let pending = [];
+  let cut = null;
+  let nudgedClaim = false;
+  let toldToSpeak = false;
+  let lookups = 0;
+  let needRounds = 0;
+  let needNudged = false;
+  const changedAny = () => allCards.some((c) => c.status === 'applied');
+  const fail = (error, isStop) => {
+    const partial = isStop && !quiet ? streamed.replace(/^\s+/, '') : '';
+    const said = partial ? (reply ? `${reply}\n\n${partial}` : partial) : reply;
+    /* a failure after words were already said is still said: on a card, exactly */
+    const told = !isStop && said ? [{ status: 'refused', name: '', reason: '', failure: true, why: `${plainFailure(error)} (${String(error).slice(0, 160)})` }] : [];
+    return { project: working, reply: said, thinking, cards: allCards.concat(pending, told), batches, crew, edits: turnEdits, asks, error: said && !isStop ? null : error, stopped: Boolean(isStop) };
+  };
 
-  for (const intent of intents) {
-    if (stopped()) break;
-    status(`the ${intent.worker} is on it`);
-    /* what was looked up for this turn goes with the job (never into its label) */
-    await send(intent.worker, (intent.about || message) + (foundText ? `\n\n${foundText}` : ''), `${intent.worker} — ${short(intent.about || message)}`);
-  }
-
-  /* THE CHECKS FOLLOW A CHANGE, NEVER A CONVERSATION. They ran on every turn, so
-   * a question — "what do you think of her?" — sent up to two heavy workers
-   * whenever the plot essential had any leftover finding (an undated event, a
-   * document grown heavy), and he waited on them before the persona said a word.
-   * They now run only when this turn changed a document. */
-  const changed = () => allCards.some((c) => c.status === 'applied');
-  const touched = () => new Set(allCards.filter((c) => c.status === 'applied' && c.name).map((c) => c.name));
-  if (!stopped() && changed()) {
-    let repairsLeft = MAX_AUTO_REPAIRS;
-    const linted = sweep(working, touched(), startTexts);
-    working = linted.project;
-    if (linted.repaired.length) crew.push({ worker: 'house', notes: linted.repaired.join(' ') });
-    /* ONE JOB PER WORKER, EVERY FINDING IN IT. One job per finding, with two jobs
-     * allowed, dropped the rest without a word: a fresh build with four findings
-     * sent the chronicler twice and never the editor (reproduced through the real
-     * turn). Each worker now gets all of its findings at once. */
-    const byWorker = new Map();
-    for (const job of linted.handOver) {
-      if (!byWorker.has(job.worker)) byWorker.set(job.worker, []);
-      byWorker.get(job.worker).push(job);
+  for (let n = 0; n < MAX_STEPS; n++) {
+    if (stopped()) return fail('stopped', true);
+    status('');
+    let got;
+    try { got = await step(extra); }
+    catch (e) {
+      if ((e && e.name === 'AbortError') || stopped()) return fail('stopped', true);
+      const why = (e && e.message) || String(e);
+      /* A MODEL TOO SMALL FOR THE WHOLE WORLD STILL GETS THE JOB DONE: the outline
+       * and the parts in play, the newest talk, and <need> for the rest */
+      if (!small && TOO_LONG.test(why)) { small = true; status("the whole world is too long for this model \u2014 reading the outline instead"); n--; continue; }
+      return fail(why, false);
     }
-    for (const [worker, jobs] of byWorker) {
-      if (stopped() || repairsLeft-- <= 0) break;
-      status(`the ${worker} is fixing ${jobs.length > 1 ? `${jobs.length} things` : jobs[0].check}`);
-      await send(worker,
-        `Something in the documents needs putting right:\n${jobs.map((j) => `- ${j.check} \u2014 ${j.said}.`).join('\n')}\n\nFix each properly, the way your craft says to, and check the rest of the documents for the same thing before you finish.`,
-        `put right: ${jobs.map((j) => j.check).join('; ')}`, true);
+    if (got.thought) thinking = thinking ? `${thinking}\n\n${got.thought}` : got.thought;
+    /* the step is done: its words are counted below, never again as words in flight */
+    streamed = '';
+    const raw = got.raw;
+    /* A DIFFERENT STORY, IN A WORLD THAT HAS ONE: nothing is done here — the room
+     * starts it in a world of its own and reads his words again there (app.js) */
+    if (n === 0 && !goOn && wantsNewWorld(raw)) {
+      if (hasPE) return { project, reply: '', thinking: '', cards: [], batches: [], crew: [], edits: [], asks: [], error: null, newStory: true };
+      extra.push({ role: 'assistant', content: raw }, { role: 'user', content: `(From the house, not ${(p && p.you) || 'the author'}.) There is no plot essential in this world yet, so this world is the one for the new story \u2014 carry on here.` });
+      continue;
     }
-  }
+    const seen = visibleText(raw);
+    const calls = readHelpers(raw);
 
-  /* THE READ-BACK FOLLOWS REAL WORK. The craft's own *edit is "one field, one
-   * character, one fact. Required scan only" (11, 7.7): a full read-back after
-   * a surgical edit is the scope creep it forbids, and doubles the wait. A
-   * clear or a delete he asked for has nothing to read back. */
-  const surgical = intents.length > 0 && intents.every((i) => i.worker === 'editor');
-  /* THE EYE READS BACK ITS OWN CRAFT'S DOCUMENTS. The eye is the Generalist's —
-   * its reading is the plot essential's laws (deliverable purity, the
-   * Named-Person Gate, the MC Exclusion …). Sent over a worldbook, a transplant or
-   * an instruction set, it held them to laws that are not theirs: an instruction
-   * set is made of instructions, which the plot essential's purity check exists to
-   * take out. Each of those has its own keeper and its own craft, and the checks
-   * by code (lint) still run on every one of them. */
-  const kindNow = new Map([...docsOf(project), ...docsOf(working)].map((d) => [d.name, d.kind || 'pe']));
-  const generalists = (c) => ['pe', 'continuity'].includes(kindNow.get(c.name) || 'pe');
-  if (!stopped() && changed() && intents.length && !surgical && allCards.some((c) => c.status === 'applied' && generalists(c))) {
-    /* THE READ-BACK CHECKS WHAT CHANGED, NOT THE WHOLE BOOK FOR TASTE. It was
-     * told to read everything front to back and "put right anything that is
-     * wrong — not only near the change": an auditor told that always finds
-     * something, so every change he asked for came back with a dozen he had
-     * not — weekdays respelled, blank lines added, a paragraph deleted as a
-     * "duplicate" with the facts only it held. Every turn found new "problems".
-     * It checks this turn's changes and what they touch; anything else it
-     * notices, it says, and changes nothing for. */
-    status('reading the whole thing back');
-    const madeNow = allCards.filter((c) => c.status === 'applied' && generalists(c));
-    const wroteWhole = madeNow.some((c) => /^(started it|rewrote the whole thing|wrote it)$/.test(c.how || ''));
-    const clip = (x) => String(x || '').replace(/\s+/g, ' ').trim().slice(0, 300);
-    const listed = madeNow.slice(0, 24).map((c) => `- ${c.name}: ${c.how || 'changed'}${c.reason ? ` (${naturalize(c.reason)})` : ''}` +
-      `${c.was && !wroteWhole ? `\n  was (gone from the document \u2014 never quote it): ${clip(c.was)}` : ''}${c.now && !wroteWhole ? `\n  now reads: ${clip(c.now)}` : ''}`).join('\n');
-    await send('eye',
-      `The documents were just changed. Check these changes, and what they touch:\n${listed}\n\n` +
-      (wroteWhole ? 'A document was written whole this turn: read that one through. ' : '') +
-      'For each change: is it right; does anything elsewhere now contradict it or lean on what it replaced \u2014 dates, ages, who knows what, what came before and after; was any fact or detail lost by it. Put right only what is wrong because of these changes. ' +
-      'Leave everything else exactly as it is \u2014 no rewording, respelling, reformatting or reorganizing of anything these changes did not touch. If you notice something else that looks wrong, say it in your notes and change nothing for it. Say what you checked and what you found.',
-      'the eye', true);
-    const after = sweep(working, touched(), startTexts);
-    working = after.project;
-    if (after.repaired.length) crew.push({ worker: 'house', notes: after.repaired.join(' ') });
-  }
+    /* ITS CHANGES. A block that landed in the thinking is still a block (Cozy Chat
+     * v5.13.1); the visible answer wins when both have one. Clear and delete are
+     * the house's acts, and the one he talks to may ask for them; nothing else it
+     * writes may claim to be the house. */
+    let parsed = parseEdits(raw);
+    if (!parsed.edits.length && !parsed.warn && got.thought && /<(?:doc)?edits>|<file\s/i.test(got.thought)) parsed = parseEdits(got.thought);
+    /* a quiet step's words are his to read only if it brought the change it was asked for */
+    const keepWords = !quiet || parsed.edits.length > 0 || calls.length > 0;
+    if (quiet && keepWords && held) onText(held);
+    quiet = false;
+    if (seen && keepWords) reply = reply ? `${reply}\n\n${seen}` : seen;
+    const own = parsed.edits.map((e) => {
+      const x = { ...e };
+      delete x.registry;
+      if (x.clear === true || typeof x.delete_file === 'string') x.house = true; else delete x.house;
+      return x;
+    }).filter((e) => !landed.has(editKey(e)));
+    const report = { p, landed: [], back: [], other: [], repaired: [], found: [], helpers: [], unknown: [] };
+    let follow = false;
+    if (own.length) {
+      status('putting the changes in');
+      const label = `${p.maker || 'your maker'} \u2014 ${short(message)}`;
+      const applied = commit(working, own, label);
+      working = applied.project;
+      own.forEach((e, i) => { const c = applied.perEdit ? applied.perEdit[i] : applied.cards[i]; if (c === null || (c && c.status === 'applied')) landed.add(editKey(e)); });
+      turnEdits.push({ label, edits: own, maker: null });
+      if (applied.batch) batches.push(applied.batch);
+      const { placed, back } = sortCards(applied.cards);
+      allCards.push(...placed.filter((c) => c.status === 'applied'));
+      const refusedHere = placed.filter((c) => c.status === 'refused');
+      const made = placed.filter((c) => c.status === 'applied');
+      if (made.length) {
+        const per = new Map();
+        for (const c of made) per.set(c.name, (per.get(c.name) || 0) + 1);
+        report.landed = [...per].map(([nm, k]) => `${nm} (${k} change${k > 1 ? 's' : ''})`);
+      }
+      /* what did not go in goes back to it — and is shown to him only if it is
+       * still not in when the turn ends */
+      pending = back.concat(refusedHere);
+      report.back = pending;
+      if (pending.length) follow = true;
+      crew.push({ worker: 'maker', cards: applied.cards, guard: applied.guard });
+    }
+    if (parsed.warn) { report.other.push(`Some of your changes could not be read: ${parsed.warn}. Send them again as valid data \u2014 a whole document goes between <file name="\u2026"> and </file>, written plainly.`); follow = true; }
 
+    /* ITS HELPERS, in the order it named them; their reports come back to it */
+    for (const h of calls.slice(0, MAX_HELPERS)) {
+      if (stopped()) return fail('stopped', true);
+      if (!h.id) { report.unknown.push(h.name || '(no name)'); follow = true; continue; }
+      status(`${HELPER_NAMES[h.id]} is on it`);
+      const res = await sendHelper(h.id, h.task || message, `${HELPER_NAMES[h.id]} \u2014 ${short(h.task || message)}`);
+      report.helpers.push({ id: h.id, name: h.name, notes: res.notes || '', cards: res.cards || [], ask: res.ask || '', failed: res.failed || '' });
+      follow = true;
+    }
+    if (calls.length > MAX_HELPERS) { report.other.push(`Only the first ${MAX_HELPERS} helper calls are run in one reply; the rest were not.`); follow = true; }
+    if (stopped()) return fail('stopped', true);
+
+    /* THE CHECKS, on the documents this step changed, and only what it brought in */
+    const touched = new Set(allCards.filter((c) => c.status === 'applied' && c.name).map((c) => c.name));
+    if (touched.size) {
+      const checked = checkChanged(working, touched, startTexts);
+      working = checked.project;
+      restamp(batches, checked.fixed);
+      report.repaired = checked.repaired;
+      if (checked.repaired.length) crew.push({ worker: 'house', notes: checked.repaired.join(' ') });
+      report.found = checked.found.filter((f) => !raised.has(f.key));
+      for (const f of report.found) raised.add(f.key);
+      if (report.found.length) follow = true;
+    }
+
+    /* SEARCHING, when his switch is on: what it asked for is looked up */
+    let foundText = '';
+    /* read outside its documents: an instruction set it writes may well say <search> */
+    const outside = stripEdits(raw);
+    const wants = searcher && lookups < MAX_SEARCHES ? readSearch(outside) : [];
+    if (wants.length) {
+      lookups += wants.length;
+      foundText = findingsText(await lookUp(searcher, wants.slice(0, MAX_SEARCHES), { signal, onStatus: status }));
+      if (stopped()) return fail('stopped', true);
+      follow = true;
+    }
+    /* PARTS IT ASKED TO READ, when the world was too long to show whole */
+    let parts = '';
+    const need = readNeed(outside);
+    if (need.length) {
+      const shownWhole = !small && docsOf(working).reduce((k, d) => k + (d.text || '').length, 0) <= MAKER_WHOLE;
+      let grew = [];
+      if (!shownWhole && needRounds < MAX_NEED_ROUNDS) {
+        needRounds++;
+        const more = [];
+        for (const d of docsOf(working)) more.push(...resolveNeed(parseDoc(d.text, d.kind), need));
+        grew = more.filter((id) => !asked.includes(id));
+        asked = asked.concat(grew);
+      }
+      /* A REPLY SPENT ONLY ON ASKING TO READ MORE (Cozy Tavern M221): when nothing more
+       * can be shown, it is told so once, and to do the job with what it has */
+      if (grew.length) { parts = `The parts you asked for are now shown in full in the documents below (${need.join(', ')}).`; follow = true; }
+      else if (!needNudged) { needNudged = true; parts = 'You have been shown everything that can be shown this time. Do the job now with what is in front of you \u2014 the documents below are all there is.'; follow = true; }
+    }
+    /* \u201cI changed it\u201d with nothing changed is sent back for the change, once */
+    let nudge = '';
+    if (!follow && !nudgedClaim && !own.length && !parsed.warn && !changedAny() && claimsAChange(seen)) {
+      nudgedClaim = true;
+      quiet = true;
+      nudge = 'You said you changed something, but no change came back \u2014 a change only happens inside a block of changes or a file. Send it now, or say plainly that nothing was changed.';
+      follow = true;
+    }
+    if (!follow) {
+      if (got.cut) cut = { cutBy: got.cutBy || 'length' };
+      /* changes made and not a word said about them: one more step to say them */
+      if (!seen && !reply && changedAny() && !toldToSpeak && n + 1 < MAX_STEPS) {
+        toldToSpeak = true;
+        extra.push({ role: 'assistant', content: raw }, { role: 'user', content: `(From the house, not ${(p && p.you) || 'the author'}.) Your changes went in. Now tell ${(p && p.you) || 'the author'}, in your own voice, what you did.` });
+        continue;
+      }
+      break;
+    }
+    const docsNow = docBriefs(working, { message, recent: working.recentSections || [], asked, partial: small, limit: MAKER_WHOLE });
+    extra.push({ role: 'assistant', content: raw }, { role: 'user', content: stepReport({ ...report, foundText, parts, nudge, docs: docsNow }) });
+  }
   status('');
-  if (stopped()) return { project: working, reply: '', cards: allCards, batches, crew, edits: turnEdits, asks, error: 'stopped', stopped: true };
+  if (stopped()) return fail('stopped', true);
+  allCards.push(...pending);
+  const out = { project: working, reply, thinking, cards: allCards, batches, crew, edits: turnEdits, asks, error: null };
+  if (cut) { out.cut = true; out.cutBy = cut.cutBy; }
+  return out;
+}
 
-  /* Now the one voice the writer hears. */
-  const said = backstageBrief(crew, allCards, p);
-  /* WHEN THE LISTENER SENT NOBODY BUT HIS WORDS READ LIKE A JOB. The listener
-   * has the last word, and it can be wrong: his "so maybe we should add that
-   * Jovan…" read as a job to the keyword reading and as talk to the listener,
-   * nobody was sent, and the persona — asked for a change — said it had made
-   * one. It is told plainly that nothing was written, so it says so and offers;
-   * his yes then sends the worker. */
-  const missed = !crew.length && !forceWorker && !writtenCommand(message) && heardNobody &&
-    route(message, { hasPlotEssential: hasPE, hasDocs: docs.length > 0 }).length > 0;
-  const note = missed ? `It may be that ${p.you || 'he'} asked for a change to the documents just now. Nothing was changed just now: nobody was sent to do it. If what ${p.you || 'he'} asked for is already in the documents \u2014 in the changes already made above, or in the book as it stands \u2014 say it is already in. If it is not, say plainly that it has not been written yet and offer to write it in. Never say you changed something just now.` : '';
-  const messages = frontMessages(working, said, asks, note);
-
-  let reply = '';
-  let frontThought = '';
-  try {
-    const out = early && earlyKept
-      ? await early.keep((t, at) => { reply += t; onText(t, at); }, onThinking,
-        () => { onLetGo(); return streamModel(frontConn, { system: frontSystem, messages, onText: (t) => { reply += t; onText(t); }, onThinking, signal }); })
-      : await streamModel(frontConn, {
-        system: frontSystem, messages,
-        onText: (t) => { reply += t; onText(t); },
-        onThinking, signal,
-      });
-    reply = endAtControlToken(out.text || reply);
-    frontThought = out.thinking || '';
-    if (out.cut) return { project: working, reply, thinking: frontThought, cards: allCards, batches, crew, edits: turnEdits, asks, error: null, cut: true, cutBy: out.cutBy || 'length' };
-  } catch (e) {
-    const aborted = (e && e.name === 'AbortError') || stopped();
-    return {
-      project: working, reply: endAtControlToken(reply), cards: allCards, batches, crew, edits: turnEdits, asks,
-      error: aborted ? 'stopped' : ((e && e.message) || String(e)), stopped: aborted,
-    };
+/* Cards that go back to whoever wrote them, and cards that stand. A missed quote,
+ * a change that put back the very words it found, one with nothing saying what to
+ * do, one with nowhere to go, and a rewrite the loss guard refused all go back;
+ * what is already there, or only spacing, is done and says nothing. */
+function sortCards(cards) {
+  const back = [];
+  const placed = [];
+  for (const c of cards || []) {
+    if (c.status !== 'refused') { placed.push(c); continue; }
+    const why = c.why || '';
+    if (/already in the document|only the spacing would change/.test(why)) continue;
+    if (/not in the document as written|appear \d+ times|leaves the words exactly as they were|did not say what to do|there is no document by that name|did not say which document|is not a worldbook|entry came with no name|came with no content|was not an entry|carried no entries|cannot be read as data right now|would have lost/.test(why)) back.push(c);
+    else placed.push(c);
   }
-  return { project: working, reply, thinking: frontThought, cards: allCards, batches, crew, edits: turnEdits, asks, error: null };
-}
-
-/* A REPLY STARTED EARLY (see the listener, in runTurn). Its WORDS are held
- * unseen until the listener has answered — if the crew is sent after all, this
- * reply is let go and he never reads a reply that was not his. Its THINKING is
- * not held: it goes to showThinking the moment it arrives, so what he watches
- * starts at the thinking, as Cozy Tavern's does, while the listener reads.
- * (Held, it reached him all at once when the listener answered — on a model
- * that thinks, a screen of nothing for the listener's whole read, then a lurch.)
- * What is held keeps the moment it arrived, so the box still says how long the
- * model really thought. keep() shows what was held, then lets the rest arrive
- * live; if the early reply failed before a word of it came, for a reason that
- * starting early could have caused — the provider busy, a limit on calls at
- * once, a dropped line — the ordinary one is asked for instead (again()), so
- * starting early can never cost him his answer. A bad key or a wrong model
- * fails the same way twice, so it is said as it is. drop() lets it go;
- * `thought` says whether any of its thinking was shown, so the caller can take
- * that away with it. With no showThinking, thinking is held like the words. */
-const PASSING = (status) => !status || status === 408 || status === 429 || status >= 500;
-export function heldFront(start, { onThinking: showThinking = null } = {}) {
-  const ctl = new AbortController();
-  const held = [];
-  let live = null;
-  let spoke = false;
-  let thought = false;
-  /* once let go, nothing more of it reaches anyone: a piece already on its way
-   * when Stop or the crew let it go must not draw a new box after the room took
-   * the old one away */
-  let dropped = false;
-  const toText = (t) => { if (dropped) return; spoke = true; if (live) live.text(t); else held.push(['text', t, Date.now()]); };
-  const toThinking = (t) => {
-    if (dropped) return;
-    if (live) return live.thinking(t);
-    if (showThinking) { thought = true; return showThinking(t, Date.now()); }
-    held.push(['thinking', t, Date.now()]);
-  };
-  const done = Promise.resolve().then(() => start(toText, toThinking, ctl.signal)).then((out) => ({ ok: true, out }), (e) => ({ ok: false, e }));
-  return {
-    get thought() { return thought; },
-    drop() { dropped = true; ctl.abort(); },
-    async keep(onText, onThinking, again) {
-      for (const [k, t, at] of held.splice(0)) (k === 'text' ? onText : onThinking)(t, at);
-      live = { text: (t) => onText(t), thinking: (t) => { thought = true; onThinking(t); } };
-      const r = await done;
-      if (r.ok) return r.out;
-      if (!spoke && !(r.e && r.e.name === 'AbortError') && PASSING(Number(r.e && r.e.status) || 0)) return again();
-      throw r.e;
-    },
-  };
-}
-
-/* A job the listener chose. When it answers something a worker put to him,
- * that worker gets back its own words, whole, and what he said to them —
- * never a retelling (the persona's retelling is in the conversation too). */
-export function jobFor(j, open, message, p) {
-  const who = (p && p.you) || 'the author';
-  const waiting = j.resumes ? (open || []).find((o) => o.worker === j.worker) : null;
-  const task = j.task || message;
-  const about = waiting
-    ? `${task}\n\nWhat you put to ${who} last time, word for word:\n${waiting.ask}\n\nWhat ${who} said back:\n${message}`
-    : task;
-  return { worker: j.worker, about, why: waiting ? 'his answer to what was put to him' : 'the listener' };
-}
-
-/* What waits on him, as the persona is told it: put all of it to him. */
-export function waitingBrief(asks, p) {
-  const who = (p && p.you) || 'the author';
-  return `Still to decide \u2014 this cannot go further until ${who} decides. Put every point of it to ${who}, in your own voice, and leave the choice there:\n` +
-    asks.map((a) => naturalize(a.ask)).join('\n\n');
+  return { placed, back };
 }
 
 /* LANDING A TURN IN THE WORLD AS IT STANDS NOW (Cozy Tavern M59: overlapping
@@ -1103,41 +1178,13 @@ export function landTurn(world, { chatId, snapshot, result, makerTurn, replaceAt
   if (already && (already.turns || []).some(hasIt)) {
     return { world, landed: true, conflicts: new Map(), already: true };
   }
-  const next = { ...world, docs: (world.docs || []).map((d) => ({ ...d })), chats: (world.chats || []).map((c) => ({ ...c })) };
-  const conflicts = new Map();
-  const live = new Map(next.docs.map((d) => [d.name, d]));
-  for (const d of (result.project && result.project.docs) || []) {
-    const start = snapshot.has(d.name) ? snapshot.get(d.name) : undefined;
-    const now = live.get(d.name);
-    if (start === undefined) {
-      if (now) { conflicts.set(d.name, 'a document with that name was started by hand meanwhile, so yours was kept'); continue; }
-      next.docs.push({ ...d });
-      continue;
-    }
-    if (d.text === start) continue;
-    if (!now) { conflicts.set(d.name, 'it was deleted while the crew worked, so it stays deleted'); continue; }
-    if (now.text !== start) { conflicts.set(d.name, 'you changed it by hand while the crew worked, so your version was kept'); continue; }
-    now.text = d.text;
-  }
-  /* A DOCUMENT DELETED THIS TURN IS DELETED WHERE IT LANDS. Only additions and
-   * changes used to be carried over, so a delete he asked for came back. If he
-   * changed it by hand while the crew worked, his version stays. */
-  const kept = new Set(((result.project && result.project.docs) || []).map((d) => d.name));
-  for (const [name, start] of snapshot) {
-    if (kept.has(name) || !(result.project && result.project.docs)) continue;
-    const now = live.get(name);
-    if (!now) continue;
-    if (now.text !== start) { conflicts.set(name, 'you changed it by hand while the crew worked, so it was kept'); continue; }
-    next.docs = next.docs.filter((d) => d.name !== name);
-  }
+  const { next, conflicts } = mergeDocs(world, snapshot, result);
   const cards = (makerTurn.cards || []).map((c) =>
     c.status === 'applied' && conflicts.has(c.name) ? { ...c, status: 'refused', why: conflicts.get(c.name) } : c);
   const batches = (makerTurn.batches || [])
     .map((b) => ({ ...b, items: (b.items || []).filter((it) => !conflicts.has(it.name)) }))
     .filter((b) => b.items.length);
   const chat = next.chats.find((c) => c.id === chatId);
-  if (result.project && result.project.recentSections) next.recentSections = result.project.recentSections;
-  nameWorld(next);
   if (!chat) return { world: next, landed: false, conflicts };
   const fresh = { ...makerTurn, cards, batches };
   const old = replaceAt !== null ? (chat.turns || [])[replaceAt] : null;
@@ -1153,6 +1200,69 @@ export function landTurn(world, { chatId, snapshot, result, makerTurn, replaceAt
   } else {
     chat.turns = [...(chat.turns || []), fresh];
   }
+  chat.updated = Date.now();
+  return { world: next, landed: true, conflicts };
+}
+
+/* The documents a turn changed, put into the world as it stands NOW: his hand
+ * edits made meanwhile win, a document he deleted stays deleted. One way for a
+ * turn and for the rest of a cut reply. */
+function mergeDocs(world, snapshot, result) {
+  const next = { ...world, docs: (world.docs || []).map((d) => ({ ...d })), chats: (world.chats || []).map((c) => ({ ...c })) };
+  const conflicts = new Map();
+  const live = new Map(next.docs.map((d) => [d.name, d]));
+  for (const d of (result.project && result.project.docs) || []) {
+    const start = snapshot.has(d.name) ? snapshot.get(d.name) : undefined;
+    const now = live.get(d.name);
+    if (start === undefined) {
+      if (now) { conflicts.set(d.name, 'a document with that name was started by hand meanwhile, so yours was kept'); continue; }
+      next.docs.push({ ...d });
+      continue;
+    }
+    if (d.text === start) continue;
+    if (!now) { conflicts.set(d.name, 'it was deleted while the work went on, so it stays deleted'); continue; }
+    if (now.text !== start) { conflicts.set(d.name, 'you changed it by hand while the work went on, so your version was kept'); continue; }
+    now.text = d.text;
+  }
+  /* A DOCUMENT DELETED THIS TURN IS DELETED WHERE IT LANDS. Only additions and
+   * changes used to be carried over, so a delete he asked for came back. If he
+   * changed it by hand while the crew worked, his version stays. */
+  const kept = new Set(((result.project && result.project.docs) || []).map((d) => d.name));
+  for (const [name, start] of snapshot) {
+    if (kept.has(name) || !(result.project && result.project.docs)) continue;
+    const now = live.get(name);
+    if (!now) continue;
+    if (now.text !== start) { conflicts.set(name, 'you changed it by hand while the work went on, so it was kept'); continue; }
+    next.docs = next.docs.filter((d) => d.name !== name);
+  }
+  if (result.project && result.project.recentSections) next.recentSections = result.project.recentSections;
+  nameWorld(next);
+  return { next, conflicts };
+}
+
+/* GO ON LANDS LIKE ANY TURN. The rest of a cut reply used to be words only, because
+ * the one he talks to never changed a document; now it does, so what the rest
+ * changed lands the same way a turn's changes do, its cards and changes join the
+ * reply it finishes, and its words join that reply's words. */
+export function landContinuation(world, { chatId, snapshot, result, at, words, makerTurn }) {
+  const { next, conflicts } = mergeDocs(world, snapshot, result);
+  const chat = next.chats.find((c) => c.id === chatId);
+  const t = chat && (chat.turns || [])[at];
+  if (!t) return { world: next, landed: false, conflicts };
+  const cards = (makerTurn.cards || []).map((c) =>
+    c.status === 'applied' && conflicts.has(c.name) ? { ...c, status: 'refused', why: conflicts.get(c.name) } : c);
+  const batches = (makerTurn.batches || [])
+    .map((b) => ({ ...b, items: (b.items || []).filter((it) => !conflicts.has(it.name)) }))
+    .filter((b) => b.items.length);
+  const joined = words ? t.text + (/\s$/.test(t.text) || /^\s/.test(words) ? '' : ' ') + words : t.text;
+  const turn = {
+    ...t, text: joined, cut: makerTurn.cut, cutBy: makerTurn.cutBy,
+    thinking: [t.thinking, makerTurn.thinking].filter(Boolean).join('\n\n'),
+    thinkingMs: ((t.thinkingMs || 0) + (makerTurn.thinkingMs || 0)) || undefined,
+    cards: (t.cards || []).concat(cards), batches: (t.batches || []).concat(batches), edits: (t.edits || []).concat(makerTurn.edits || []),
+  };
+  if (t.versions) turn.versions = t.versions.map((v, j) => (j === t.shown ? { ...v, text: joined, cut: makerTurn.cut, cutBy: makerTurn.cutBy } : v));
+  chat.turns = chat.turns.map((x, i) => (i === at ? turn : x));
   chat.updated = Date.now();
   return { world: next, landed: true, conflicts };
 }
@@ -1228,25 +1338,6 @@ function recentFrom(project, touchedNames, prior) {
   return [...new Set(ids.concat(prior))].slice(0, 12);
 }
 
-/* The checks that need no model. Repairs land straight away; anything that
- * needs a person is handed to the worker whose job it is. */
-export function sweep(project, only = null, before = null) {
-  const next = { ...project, docs: (project.docs || []).map((d) => ({ ...d })) };
-  const repaired = [];
-  const handOver = [];
-  for (const d of next.docs) {
-    /* only the documents this turn changed: a document nobody touched is not
-     * rewritten because another one was */
-    if (only && !only.has(d.name)) continue;
-    const r = lint(d.text, { kind: d.kind || 'pe', deliverable: (d.kind || 'pe') !== 'notes', keep: before ? before.get(d.name) : null });
-    if (r.changed) d.text = r.text;
-    for (const f of r.found) {
-      if (f.repaired) repaired.push(`In ${d.name}, ${f.said}.`);
-      else if (f.worker) handOver.push({ worker: f.worker, check: f.check, said: `${f.said} (in ${d.name})` });
-    }
-  }
-  return { project: next, repaired, handOver };
-}
 
 export const UNDO_KEPT = 20;
 
@@ -1276,8 +1367,6 @@ export function capUndo(project, keep = UNDO_KEPT) {
   return trimmed;
 }
 
-/* What the front of the house is told about the backstage work — plain
- * sentences, markers already stripped out. */
 /* A failure, in words the front can say as itself: no role names, no status
  * codes, no provider's text. The exact reason goes on a card for him. */
 export function plainFailure(error) {
@@ -1291,38 +1380,4 @@ export function plainFailure(error) {
   if (/\b5\d\d\b|server error|internal error|bad gateway|unavailable/i.test(e)) return 'the provider had a fault on its side';
   if (/craft file/i.test(e)) return 'its instructions could not be read';
   return 'the provider would not do it';
-}
-
-export function backstageBrief(crew, cards, p) {
-  const who = (p && p.you) || 'the author';
-  const lines = [];
-  /* WHAT HE ASKED FOR IS THE ANSWER; WHAT THE HOUSE READ BACK ON ITS OWN IS
-   * ASIDE. A check, an audit, a diagnosis he asked for is what he wants to
-   * hear, all of it that matters; notes are shown nowhere else, so a report
-   * cut to one sentence here is a report lost. */
-  const asked = [], aside = [], other = [];
-  for (const c of crew) {
-    if (c.failed) { other.push(`Something could not be done this time: ${plainFailure(c.failed)}.`); continue; }
-    if (c.notes) {
-      const said = naturalize(c.notes);
-      const into = c.fromHouse ? aside : asked;
-      if (said && !into.includes(said)) into.push(said);
-    }
-    if (c.guard) other.push(c.guard + '.');
-    if (c.warn) other.push(`Some changes did not come through: ${c.warn}.`);
-  }
-  if (asked.length) lines.push(`What came back on what ${who} asked for (the answer to give ${who}, all of it that matters):\n${asked.join('\n')}`);
-  if (aside.length) lines.push(`Read back afterwards, without being asked (mention it only if it matters):\n${aside.join('\n')}`);
-  lines.push(...other);
-  const applied = cards.filter((c) => c.status === 'applied');
-  const refused = cards.filter((c) => c.status === 'refused' && !c.failure);
-  if (applied.length) {
-    const byDoc = new Map();
-    for (const c of applied) byDoc.set(c.name, (byDoc.get(c.name) || 0) + 1);
-    lines.push('Changed: ' + [...byDoc].map(([n, k]) => `${n} (${k} change${k > 1 ? 's' : ''})`).join(', ') + '.');
-  }
-  if (refused.length) {
-    lines.push('Not done: ' + refused.map((c) => `${c.name || 'a change'} — ${c.why}`).join('; ') + '.');
-  }
-  return lines.filter(Boolean).join('\n');
 }

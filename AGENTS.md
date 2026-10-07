@@ -18,54 +18,53 @@ here; copy an idea across if it helps, never an edit.
 
 ## The three laws
 
-### 1. The whole craft lives in one file
+### 1. The whole craft lives in one file, and the one he talks to reads all of it
 
 `engine/generalist.md` — the Generalist engine, verbatim, 1,526 lines. **No law
 from it is ever restated in code.** A law written twice is a law that will
-disagree with itself.
+disagree with itself. The one he talks to reads it whole, every turn, under his
+own instructions — which is how the engine is written to be used ("You are also
+Generalist … whatever persona is defined above these instructions stays in
+force"). `js/engine/slices.js` still cuts it at its own headings, for the one
+helper that works on it (the eye, which reads only what its read-back needs).
 
-`js/engine/slices.js` cuts it at its own headings (75 sections, no duplicate
-numbers, 122,336 of 122,410 characters captured) and hands each worker only the
-sections its job needs. Measured, in `tests/units.mjs`:
+To change the craft, edit `engine/generalist.md`. Nothing else.
 
-```
-scribe           60,631      showrunner     47,652      chronicler  42,757
-compressor       59,768      eye            45,610      editor      40,155
-builder          49,500      novelist       43,895      diagnostician 34,140
-the whole craft 122,410 — nobody carries half of it
-```
+### 2. The one he talks to does the work (v2.0, the harness)
 
-The biggest slice is 49.5% of the monolith. That is the argument for several
-workers instead of one: a worker reading only its own laws applies them; a
-worker reading all of them skims. **But its own laws include every check its
-workflow orders it to run** (v1.2.4): the spine carries the Core Mandates
-(1.1), which the craft says override all other rules and every workflow cites
-by name, and a worker is given every section its reading names — or the reason
-it need not is written in `tests/units.mjs` ("is given every check its reading
-orders it to run"). A worker told to use something it never receives invents
-it.
+Until v2.0 this law was a firewall: the one he talks to read his instructions, a
+few sentences and an outline of the documents, had no craft and no way to change
+anything, and a listener and nine slice-reading workers did the work behind it.
+**He found that confusing and worse than his own engine pasted into one model**
+(Oct 7 2026): the one he talked to could not read the plot essential it was
+talking about and could not say what the crew had done; and the crew's automatic
+repairs and read-backs churned the document. So it is a harness now, the way a
+coding agent is one:
 
-To change the craft, edit `engine/generalist.md`. To change who reads what,
-edit `SLICES` in `js/engine/slices.js`. Nothing else.
-
-### 2. The persona firewall is structural, not hopeful
-
-The writer talks to **one** intelligence. Its reading is:
-
-1. the writer's own instructions, first and untouched
-2. a greeting in his own names ("Hey Eni, this is Bruce.")
-3. about 1,400 characters of plain English
-
-It has **no craft, no bracketed markers, no section numbers, and no way to edit
-a document**. Every change comes from a worker backstage, and markers are
-stripped from anything a worker says before the front ever sees it
-(`naturalize()` in `js/agents/run.js`).
-
-The front cannot break character over machinery it was never given. Six tests
-in `units.mjs` and five in `browser.py` assert this against the prompt that
-actually went over the wire. **Do not put the craft, an edit block, or a
-command word into `FRONT_BODY`.** If the front needs to do something, give the
-job to a worker.
+1. **It reads everything.** His instructions first and untouched, the greeting in
+   his names, his whole engine, then `frontBody` (how this room works); every
+   document whole, word for word, in his message (`MAKER_WHOLE`, 400,000
+   characters; a model too small for it is given the outline and `<need>`).
+2. **It changes the documents itself**, in its reply: `<edits>` for part of a
+   document, `<file name="…">` for a whole one, `clear` / `delete_file` only when
+   he asks. The house's proven parser and its laws (exact quotes, the last block,
+   the loss guard, put it back) are unchanged.
+3. **It hears back.** The house applies a step's changes, runs the checks on what
+   this turn brought in (`checkChanged` — never what was already there), and only
+   when something needs it (a change that did not go in, a finding, a helper's
+   report, a search, parts it asked to read) sends a report — "(From the house,
+   not Bruce …)", with the documents as they stand — and asks it to carry on.
+   When everything went in cleanly, its reply stands: one call. `MAX_STEPS` (6)
+   ends any turn.
+4. **Its helpers are its own**: `<helper name="the eye">task</helper>`. The eye,
+   the worldbook keeper, the memory auditor, the instructions writer — each with
+   its own craft, each on its own connection if he gives it one. What a helper
+   changes lands like any change; what it says goes back to the one who sent it,
+   never past it. A helper can never clear or delete a document.
+5. **He reads only its words.** `makeVisibleStream` holds back every block,
+   document, helper call, search and `<new_world/>` while the reply streams, and
+   the status line says what is being written instead ("writing Plot Essential.md
+   · 1,240 words so far"); `visibleText` is what the turn keeps.
 
 ### 3. If the app can see a problem, the app fixes it
 
@@ -92,10 +91,9 @@ js/engine/slices.js    cuts the craft; SLICES decides who reads what
 js/agents/persona.js   the writer's names, first or second person, natural words
 js/agents/roster.js    who does what; which connection each of them rides
 js/agents/call.js      the one way anything speaks to a model + the work channel
-js/agents/listener.js  what he said -> the right workers, read for intent as the craft's 7.6 says
-js/agents/router.js    written commands, exactly; the old keyword reading, now only the fallback
+js/agents/router.js    the house's own commands (*regress, *show_full_file, *next, the spoiler pair) and a new story typed as one
 js/agents/shortcuts.js every shortcut, what it does here, who does it, and the craft's own words for it (v1.4.2)
-js/agents/run.js       the turn: workers backstage, one voice at the front
+js/agents/run.js       the turn (v2.0): the one he talks to, its steps, its helpers, the room it reads
 js/doc/index.js        the whole shape always, full text only where it matters
 js/doc/edits.js        find, apply, undo, with a drift guard
 js/doc/lint.js         the checks that need no model
@@ -1288,36 +1286,75 @@ refusal learned and the next turn straight), the browser (the box, both settings
 why: `browser.py` found the frame's box as the only plain box in The house; there are two now, so it is found by its
 name.
 
+### The harness (v2.0)
+
+He said the house was confusing and cluttered, that it was easier to paste his ~40k engine
+into one model, and that the one he talks to should read the plot essential and know what
+the sub-agents do — "like a harness on code". What was found, and what changed:
+
+- **The one he talks to could not read the plot essential.** By design (the firewall) it got
+  an outline — each section's title and ~74 characters — and the full text only of sections
+  his message named, plus SCENE, STATE, CALENDAR, WORLD and RULES. It now reads every
+  document whole, and his whole engine.
+- **The churn.** Every message ran a listener call first; every change ran the checks over
+  the whole touched document and sent up to four repair jobs to other workers for every
+  finding in it — including ones that were there before the turn — and then an automatic
+  read-back by the eye. A one-line change could start five writers who never saw each other.
+  Now: no listener (a plain question is one call), no automatic repairs (findings go to the one
+  he talks to, and only what this turn brought in), no automatic read-back (the eye is a
+  helper it calls when it judges it worth it).
+- **Put it back refused for ever after the checks repaired a change** (older than v2.0,
+  reproduced on 1.8.0: a change carrying `[EPISTEMIC_VIOLATION]`, taken out by the checks in
+  the same turn, then "has changed since then"). The undo record held the text from before the
+  repair. `restamp` gives the newest record of each repaired document the text the documents
+  really hold; a chain of steps still puts back newest first, all the way.
+- **Go on landed only words.** The rest of a cut reply now lands its changes too
+  (`landContinuation`, sharing `mergeDocs` with `landTurn`: his hand edits still win).
+- **His co-writer stance** (v1.5.0) is kept word for word in the room, in all four voices.
+- **Removed**, each with its tests: `listener.js`, the keyword router (`route`, the bare yes,
+  the plain-words new story), `heldFront` (the early reply), `jobFor`, `waitingBrief`,
+  `backstageBrief`, `naturalize`, `sweep`, and the eight Generalist slice-workers. The tests
+  that encoded them were removed with them; `tests/harness.mjs` holds the new turn whole.
+- **Kept**, unchanged: storage and the save line, the thinking layer, streaming and Smooth
+  streaming, swipes and versions, branch, edit and send again, put it back, Go on, story cards
+  and a new world for a new story (now `<new_world/>` from the one he talks to; `*new` and
+  `*card` still caught by the room before anyone is asked), `*regress`, search, the note at the
+  end, every document job button (they now send their words to the one he talks to).
+
 ## Testing
 
 ```
 bash tests/all.sh           every suite, exit code intact
 ```
 
-    node tests/units.mjs         989 checks — the real modules on a real document, and what the persona hears
+    node tests/units.mjs         594 checks — the real modules on a real document
+    node tests/harness.mjs       120 checks — the whole turn (v2.0): what the one he talks to reads, the
+                                              changes it makes, the steps, its helpers, the checks on
+                                              what a turn brought in, put it back after a repair, Go on,
+                                              Stop, a new world, search, the note at the end, too long
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       57 checks — the real serve.py, real files on disk, streams timed
-    python3 tests/browser.py      89 checks — real Chromium at 390x844, end to end
-    python3 tests/walk_worlds.py 227 checks — the drawer, conversations, swipes and versions, edit and
+    python3 tests/browser.py      82 checks — real Chromium at 390x844, end to end: what it was sent, read off
+                                              the wire, and the change on the device
+    python3 tests/walk_worlds.py 226 checks — the drawer, conversations, swipes and versions, edit and
                                               send again, delete, branch, go on, re-quoting, crafts,
                                               the thinking box live, backup and restore, a model too
                                               small for the world, a real server killed mid-edit,
                                               a worldbook chosen, asked for, made and exported
     python3 tests/perf_stream.py  12 checks — the live stream at a phone's speed (CPU 6x): the first thought
-                                              on screen before the listener answers, the box open with
-                                              no tap, frames, even arrival, everything kept
+                                              on screen within a second of the model sending it, the box
+                                              open with no tap, frames, even arrival, everything kept
     SMOOTH=off python3 tests/perf_stream.py
-                                  12 checks — the same with Smooth streaming off: the switch reaches the
-                                              live path (a clump lands the frame it arrives)
-    python3 tests/stream_flows.py 29 checks — talk that becomes a job (the early thinking let go, the reply
-                                              after the work thinking from its own first word), the
-                                              ember in the quiet before a reply, and Stop, Go on and
-                                              Another answer with a model that thinks
+                                  12 checks — the same with Smooth streaming off
+    python3 tests/stream_flows.py 29 checks — a reply that writes its own change live (the block never on
+                                              screen, the line saying what is being written), the ember
+                                              in the quiet before a reply, and Stop, Go on and Another
+                                              answer with a model that thinks
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-1,469 checks. Every suite must be green before a push. `tests/fixtures/` holds answers recorded from the
+1,186 checks. Every suite must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

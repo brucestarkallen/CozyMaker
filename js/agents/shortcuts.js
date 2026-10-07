@@ -2,7 +2,9 @@
  *
  * EVERY SHORTCUT, AND WHAT IT DOES HERE — so he can look one up instead of
  * remembering it. Nothing in the house listed them: a written command worked if
- * he already knew it, and a thing he cannot find does not exist.
+ * he already knew it, and a thing he cannot find does not exist. Since v2.0 every
+ * one his engine names goes to the one he talks to, which reads his whole engine;
+ * the house answers its own (houseCommand) before anyone is asked.
  *
  * What each line says is what happens IN THIS HOUSE — who does it, what comes
  * back, what changes — never a law of the craft: the craft's own words for each
@@ -13,49 +15,49 @@
 
 export const SHORTCUTS = [
   { group: 'Making one', items: [
-    { cmd: '*new', who: 'builder', example: '*new a drowned harbour city ruled by a tide-cult',
+    { cmd: '*new', who: 'maker', example: '*new a drowned harbour city ruled by a tide-cult',
       does: 'Builds a new plot essential with you. If what you have said so far is not enough to build from, it asks you a few questions first; then it writes the whole plot essential from everything you said. The same as tapping Start a plot essential, or saying \u201cbuild it\u201d.' },
-    { cmd: '*source_new', who: 'builder', example: '*source_new Bleach, just after the Soul Society arc',
+    { cmd: '*source_new', who: 'maker', example: '*source_new Bleach, just after the Soul Society arc',
       does: 'Builds a plot essential from an existing story \u2014 an anime, a book, a game \u2014 with its canon as the truth it starts from.' },
-    { cmd: '*hybrid_new', who: 'builder', example: '*hybrid_new my own captain, inside Bleach',
+    { cmd: '*hybrid_new', who: 'maker', example: '*hybrid_new my own captain, inside Bleach',
       does: 'Your own characters inside an existing story: the source\u2019s rules hold for its own people and places, yours for yours, and any clash between them is said.' },
-    { cmd: '*card', who: 'builder', example: '*card \u2014 then paste the story card',
+    { cmd: '*card', who: 'maker', example: '*card \u2014 then paste the story card',
       does: 'A story card from Isekai Zero, AI Dungeon and the like becomes a plot essential ready to play, in a world of its own, with what makes it more immersive added. The same as Build from a story card. (CozyMaker\u2019s own; your engine does not have it.)' },
-    { cmd: '*import', who: 'builder', example: '*import \u2014 then paste the old story',
+    { cmd: '*import', who: 'maker', example: '*import \u2014 then paste the old story',
       does: 'Brings in an old story or document whole: its world, people and rules become the plot essential in full, and its long story log becomes continuation files. Nothing is summarized away.' },
   ] },
   { group: 'Keeping it up to date', items: [
-    { cmd: '*p', who: 'chronicler', example: '*p \u2014 then paste what the storyteller wrote',
+    { cmd: '*p', who: 'maker', example: '*p \u2014 then paste what the storyteller wrote',
       does: 'Folds the latest story into the plot essential: what happened, whom it changed, and where the scene stands now.' },
-    { cmd: '#q', who: 'chronicler', example: '#q \u2014 then paste the pages or notes',
+    { cmd: '#q', who: 'maker', example: '#q \u2014 then paste the pages or notes',
       does: 'The full fold: everything you paste \u2014 story pages, notes, bullet points \u2014 goes into the plot essential, with nothing left out. For a story played in Cozy Tavern, paste its exported story here.' },
-    { cmd: '*continuity', who: 'scribe', example: '*continuity \u2014 then paste notes, a summary or a Summaryception export',
+    { cmd: '*continuity', who: 'maker', example: '*continuity \u2014 then paste notes, a summary or a Summaryception export',
       does: 'Writes a continuation file in full detail, numbered after the ones already here.' },
-    { cmd: '*summarize brief', who: 'scribe', example: '*summarize brief \u2014 then paste the notes',
+    { cmd: '*summarize brief', who: 'maker', example: '*summarize brief \u2014 then paste the notes',
       does: 'The same as *continuity, written shorter.' },
   ] },
   { group: 'Changing one thing', items: [
-    { cmd: '*edit', who: 'editor', example: '*edit Rukia is a lieutenant',
+    { cmd: '*edit', who: 'maker', example: '*edit Rukia is a lieutenant',
       does: 'Changes that one thing and leaves everything else alone.' },
-    { cmd: '*retcon', who: 'editor', example: '*retcon Jovan joined the division a year earlier',
+    { cmd: '*retcon', who: 'maker', example: '*retcon Jovan joined the division a year earlier',
       does: 'Changes a past fact, and puts right everything that leaned on the old one.' },
-    { cmd: '*delete', who: 'editor', example: '*delete Aldric',
+    { cmd: '*delete', who: 'maker', example: '*delete Aldric',
       does: 'Removes a character. Characters are only ever removed when you say so like this.' },
   ] },
   { group: 'Tidying and checking', items: [
-    { cmd: '*cleanup', who: 'showrunner', example: '*cleanup the middle arc feels tangled',
+    { cmd: '*cleanup', who: 'maker', example: '*cleanup the middle arc feels tangled',
       does: 'Reads the whole story like a director and brings you a plan to untangle it. Nothing is cut until you say yes. The same as Tidy it up.' },
-    { cmd: '#prune', who: 'showrunner', example: '#prune the old side threads',
+    { cmd: '#prune', who: 'maker', example: '#prune the old side threads',
       does: 'A list of exactly what would be cut. Nothing goes until you say yes.' },
-    { cmd: '*optimize', who: 'compressor', example: '*optimize',
+    { cmd: '*optimize', who: 'maker', example: '*optimize',
       does: 'Makes a document shorter without losing anything that matters. The same as Make it shorter.' },
-    { cmd: '*ooc', who: 'diagnostician', example: '*ooc \u2014 then paste the exchange that went wrong',
+    { cmd: '*ooc', who: 'maker', example: '*ooc \u2014 then paste the exchange that went wrong',
       does: 'Works out why the storyteller went wrong: the fault, what caused it, and the fix.' },
     { cmd: '*regress', who: 'house', example: '*regress Rukia keeps being called an unseated officer',
       does: 'Keeps that line in the Anti-regression registry, a notes document every update reads beside the plot essential. It never goes into the plot essential itself.' },
   ] },
   { group: 'Where the story goes', items: [
-    { cmd: '#skip', who: 'novelist', example: '#skip to the night of the siege',
+    { cmd: '#skip', who: 'maker', example: '#skip to the night of the siege',
       does: 'Works out whether the story can get there from where it stands. If it can, it writes the bridge as events, never as prose.' },
   ] },
   { group: 'On the screen', items: [
@@ -80,9 +82,9 @@ export const SHORTCUTS = [
 
 /* The house's own name for each one who does the work. */
 export const WHO = {
-  builder: 'the builder', chronicler: 'the chronicler', scribe: 'the scribe', editor: 'the editor', showrunner: 'the showrunner',
-  compressor: 'the compressor', diagnostician: 'the diagnostician', novelist: 'the novelist', auditor: 'the memory auditor',
-  house: 'the house itself \u2014 no one is sent',
+  maker: 'the one you talk to, with your whole engine',
+  auditor: 'the one you talk to, who hands it to the memory auditor',
+  house: 'the house itself \u2014 nobody is asked',
 };
 
 export function allShortcuts() { return SHORTCUTS.flatMap((g) => g.items); }

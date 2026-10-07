@@ -53,6 +53,12 @@ WORKER_REPLY = """I changed the rule and had a look at the rest while I was in t
 
 EYE_REPLY = "Read the world, the cast and the timeline. Nothing else needed changing."
 
+MAKER_EDIT = """<edits>
+[
+  {"file": "Plot Essential.md", "find": "- Majority is sixteen.", "replace": "- Majority is fifteen.", "reason": "the world got younger"}
+]
+</edits>"""
+
 
 class Model(http.server.BaseHTTPRequestHandler):
     def log_message(self, *a):
@@ -69,15 +75,17 @@ class Model(http.server.BaseHTTPRequestHandler):
         for m in sent.get("messages", []):
             if m.get("role") == "user":
                 user = m.get("content", "")
-        crew = "This is craft work on a piece of fiction" in system or "You are the one who listens." in system
-        seen_prompts.append({"system": system, "user": user, "stream": bool(sent.get("stream")), "crew": crew})
+        crew = "This is craft work on a piece of fiction" in system
+        seen_prompts.append({"system": system, "user": user, "stream": bool(sent.get("stream")), "crew": crew, "body": sent})
 
         if sent.get("stream") and not crew:
-            # the one the writer hears
+            # the one the writer talks to (v2.0): it makes the change itself, in its reply, the
+            # block cut into pieces the way a provider streams it
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.end_headers()
-            for piece in ["Done — ", "majority is fifteen now."]:
+            reply = "Done — majority is fifteen now." + ("\n\n" + MAKER_EDIT if "majority" in user.split("said:")[-1].lower() else "")
+            for piece in [reply[i:i + 9] for i in range(0, len(reply), 9)]:
                 self.wfile.write(("data: " + json.dumps({"choices": [{"delta": {"content": piece}}]}) + "\n\n").encode())
                 self.wfile.flush()
             self.wfile.write(b"data: [DONE]\n\n")
@@ -237,37 +245,20 @@ def main():
             ok("a card shows what changed", page.locator(".card").count() >= 1)
             ok("the card names the document", "Plot Essential.md" in page.locator(".cards").last.inner_text())
 
-            # -- the right people were sent, with the right reading ------------
+            # -- the one he talks to did the work, reading everything ------------
             workers = [p for p in seen_prompts if p["crew"]]
             fronts = [p for p in seen_prompts if not p["crew"]]
-            ok("the crew's calls stream, like the front's", workers and all(p["stream"] for p in workers), [p["stream"] for p in workers])
-            ok("a worker was sent", len(workers) >= 1, f"{len(workers)} worker calls")
-            ok("the one at the front spoke once", len(fronts) == 1, f"{len(fronts)} front calls")
-            ok("a one-field edit is not followed by a full read-back (the craft's *edit: required scan only)",
-               not any("Evidenced CLEAN vs False CLEAN" in w["system"] for w in workers), [w["system"][:40] for w in workers])
-
+            ok("the one he talks to was asked once, and nobody else was sent", len(fronts) == 1 and not workers, f"{len(fronts)} / {len(workers)}")
             front = fronts[0]
-            ok("the front was given the writer's own instructions first",
-               front["system"].startswith("You are Eni. You are warm"), front["system"][:80])
-            ok("the front was greeted like a person", "Hey Eni, this is Bruce." in front["system"])
-            ok("the front was given no bracketed markers", not re.search(r"\[[A-Z][A-Z0-9_]{4,}\]", front["system"]))
-            ok("the front was given no way to edit", "<edits>" not in front["system"])
-            ok("the front was given no craft", "Anti-Parrot" not in front["system"] and "CBPA" not in front["system"])
-            ok("the front was told what got done", "Plot Essential.md" in front["user"])
-
-            editor = [w for w in workers if "Edit Mode Discipline" in w["system"]]
-            ok("the editor was the one sent", len(editor) >= 1)
-            if editor:
-                ok("the editor was given its own craft", "Anti-Scope-Creep" in editor[0]["system"])
-                ok("the editor was NOT given the whole craft",
-                   "THE CLEANUP WORKFLOW" not in editor[0]["system"] and "SKIP WORKFLOW" not in editor[0]["system"])
-                ok("the editor was shown the whole shape of the document",
-                   "Claire (student | core | 16)" in editor[0]["user"])
-                ok("the editor was shown the part it needed in full",
-                   "- Majority is sixteen." in editor[0]["user"])
-                biggest = len(editor[0]["system"])
-                whole = len((ROOT / "engine" / "generalist.md").read_text())
-                ok("the editor read a fraction of the craft", biggest < whole * 0.5, f"{biggest} of {whole}")
+            engine = (ROOT / "engine" / "generalist.md").read_text()
+            ok("it was given his own instructions first", front["system"].startswith("You are Eni. You are warm"), front["system"][:80])
+            ok("it was greeted like a person", "Hey Eni, this is Bruce." in front["system"])
+            ok("it read his whole engine, word for word", engine in front["system"], f"{len(front['system'])} chars")
+            ok("it was told how to change a document itself", "<edits>" in front["system"] and "How this room works" in front["system"])
+            ok("it read the plot essential whole, word for word", PE_SEED.strip() in front["user"])
+            ok("his words came after it, under his name", front["user"].rfind("Bruce said:") > front["user"].find("## SCENE"))
+            ok("it streamed, with room to write a document", front["stream"] and (front["body"].get("max_tokens") or 0) >= 8000, front["body"].get("max_tokens"))
+            ok("the block of changes never reached the screen", "<edits>" not in said and "find" not in said, said)
 
             # -- it survives a reload, because the device holds it --------------
             page.reload(wait_until="networkidle")
@@ -510,7 +501,8 @@ def main():
             page.locator("#houseBody .fold-head", has_text="what each of them reads").click()
             page.wait_for_timeout(1200)
             slices = page.locator("#houseBody .fold", has_text="what each of them reads").inner_text()
-            ok("the house shows what each worker reads", "the whole craft" in slices, slices[:120])
+            engine_len = len((ROOT / "engine" / "generalist.md").read_text())
+            ok("the house shows what each of them reads: the one you talk to, his whole engine", f"{engine_len} chars  your whole engine" in slices and "the one you talk to" in slices, slices[:160])
             ok("including the three with a craft of their own",
                all(w in slices for w in ("worldbook", "auditor", "instructions")) and slices.count("its own craft") == 3, slices[-260:])
             ok("no native <details> is left anywhere in the house", page.locator("#houseBody details").count() == 0)

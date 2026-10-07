@@ -2,7 +2,7 @@
  * The room: the conversation that is open, and the way into everything else. */
 
 import * as store from '../store.js';
-import { runTurn, capUndo, landTurn, commit, versionOf, FRONT_ONLY, GO_ON } from '../agents/run.js';
+import { runTurn, capUndo, landTurn, landContinuation, commit, versionOf, FRONT_ONLY, GO_ON } from '../agents/run.js';
 import { isNewStory, houseCommand } from '../agents/router.js';
 import { stopWork, onLearn, onKey } from '../agents/call.js';
 import { undoBatch } from '../doc/edits.js';
@@ -209,13 +209,13 @@ function drawComposer() {
     sendBtn.classList.add('stop');
     sendBtn.setAttribute('aria-label', 'Stop'); sendBtn.title = 'Stop';
     say.disabled = false; sendBtn.disabled = false;
-    say.placeholder = 'The crew is working…';
+    say.placeholder = 'Working on it…';
   } else {
     sendBtn.innerHTML = SEND_ICON;
     sendBtn.classList.remove('stop');
-    sendBtn.setAttribute('aria-label', 'Send'); sendBtn.title = 'The crew is busy elsewhere';
+    sendBtn.setAttribute('aria-label', 'Send'); sendBtn.title = 'Busy in another conversation';
     say.disabled = true; sendBtn.disabled = true;
-    say.placeholder = `The crew is working in “${running.chatTitle}” — back in a moment`;
+    say.placeholder = `Working in “${running.chatTitle}” — back in a moment`;
   }
 }
 
@@ -530,7 +530,7 @@ async function tryAgain(index) {
   /* Checked BEFORE anything is taken off: if a turn started between the
    * button being drawn and the tap, taking his words off and then being
    * refused would lose them. */
-  if (running) { toast('The crew is still working — try again when they are done.'); return; }
+  if (running) { toast('Still working — try again when it is done.'); return; }
   const p = store.getProject();
   const chat = store.openChat();
   const writer = chat.turns[index - 1];
@@ -804,7 +804,7 @@ function atOnce(text) {
  * message sent again from where it stands (from), another answer to it
  * (from + replaceAt), or the rest of a reply that was cut off (continueAt). */
 async function send(text, forceWorker, opts = {}) {
-  if (running) { toast('The crew is still working \u2014 this can go when they are done.'); return; }
+  if (running) { toast('Still working \u2014 this can go when it is done.'); return; }
   const house = store.getHouse();
   if (!house.connections.length) { openHouse(); toast('Set up a connection first \u2014 in the house, under Connections.'); return; }
   closeDrawer();
@@ -928,19 +928,15 @@ async function send(text, forceWorker, opts = {}) {
   let where = { ok: false };
   const land = (w) => {
     if (opts.continueAt !== undefined) {
-      /* the rest of a cut-off reply joins it; nothing else changes */
-      const c = w.chats.find((x) => x.id === chatId);
-      const t = c && c.turns[opts.continueAt];
-      if (!t || !words) return null;
-      const joined = t.text + (/\s$/.test(t.text) || /^\s/.test(words) ? '' : ' ') + words;
-      c.turns = c.turns.map((x, i) => (i !== opts.continueAt ? x : {
-        ...x, text: joined, cut: makerTurn.cut, cutBy: makerTurn.cutBy, thinking: [x.thinking, thinking].filter(Boolean).join('\n\n'),
-        thinkingMs: ((x.thinkingMs || 0) + (makerTurn.thinkingMs || 0)) || undefined,
-        versions: x.versions ? x.versions.map((v, j) => (j === x.shown ? { ...v, text: joined, cut: makerTurn.cut, cutBy: makerTurn.cutBy } : v)) : undefined,
-      }));
-      c.updated = Date.now();
-      landed = { landed: true };
-      return w;
+      /* the rest of a cut-off reply joins it, and whatever it changed lands like a turn's changes */
+      if (!words && !(result.batches || []).length) return null;
+      const got = landContinuation(w, { chatId, snapshot, result, at: opts.continueAt, words, makerTurn: { ...makerTurn, thinking } });
+      /* the reply it finishes was deleted meanwhile: its changes still land, and he is told so;
+       * with no changes there is nothing to land and nothing to tell */
+      if (!got.landed && !(result.batches || []).length) return null;
+      landed = got;
+      capUndo(got.world);
+      return got.world;
     }
     landed = landTurn(w, { chatId, snapshot, result, makerTurn, replaceAt: opts.replaceAt === undefined ? null : opts.replaceAt });
     capUndo(landed.world);
@@ -969,8 +965,8 @@ async function send(text, forceWorker, opts = {}) {
     toast(result.error ? `That did not go through \u2014 ${result.error}` : stoppedByHim ? 'Stopped.' : 'Nothing more came back.');
   }
   if (where.error) toast(`The reply could not be put away: ${where.error}`);
-  if (!where.ok && where.gone) toast('That world was deleted while the crew worked, so what they did was let go.');
-  else if (landed && !landed.landed) toast('That conversation was deleted while the crew worked \u2014 the documents still got the changes.');
+  if (!where.ok && where.gone) toast('That world was deleted while the work went on, so what was done was let go.');
+  else if (landed && !landed.landed) toast('That conversation was deleted while the work went on \u2014 the documents still got the changes.');
   draw();
   if (drawerIsOpen()) drawDrawer();
 }

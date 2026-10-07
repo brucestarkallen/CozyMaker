@@ -4,7 +4,11 @@ A comfortable place to build a world.
 
 CozyMaker makes the guide a storyteller later reads as the whole truth of your
 world — the plot essential, the continuation files, the worldbook. You talk to
-one person about it. A crew works behind them and you never hear from the crew.
+one person about it, and they do the work: they read your whole engine and every
+document, word for word, and change the documents themselves — the way your own
+engine ran in one model. When they want a second pair of eyes or a keeper with a
+craft of its own, they call one of their helpers by name, and what the helper
+says comes back to them before they answer you.
 
 ## Getting it running
 
@@ -53,9 +57,9 @@ temperature, your top-p, your thinking. What you leave alone is not sent at
 all, so the provider does whatever it normally does. "Try it" makes a real call
 and tells you what came back.
 
-**Who does what.** The one at the front is the only one you talk to. Any of the
-crew can have their own connection: careful backstage work can ride a cheap
-model while the front keeps the good one.
+**Who does what.** The one you talk to does the work. Their helpers can each
+have their own connection: careful work can ride a cheaper model while the one
+you talk to keeps the good one.
 
 ## Using it
 
@@ -171,19 +175,27 @@ provider sends words in clumps; with it on, each clump flows in over the next
 moment instead of landing all at once, and the words keep pace with the model —
 never more than a moment behind it. Off, each piece shows the moment it arrives.
 
-## The crew
+## How it works
+
+The one you talk to reads, every time you speak: your instructions for them,
+your whole engine (`engine/generalist.md`, word for word), how this room works,
+and every document in the world, whole. They answer you, and when you ask for a
+change they make it themselves, inside their reply — part of a document by
+quoting it exactly, or a whole document written out plainly. You see their
+words; the changes appear as cards underneath, each with **put it back**.
+
+After every reply the house puts the changes in and runs its checks. If
+something needs them — a change whose quote did not match, something the checks
+found that this reply brought in, a helper's report — the house tells them, with
+the documents as they now stand, and they carry on in the same reply. Problems
+that were already in a document before this turn are never raised again, so a
+small change never sets off a rewrite of everything around it.
+
+Their helpers, each called by name, each reporting back to them:
 
 | | |
 |---|---|
-| **the builder** | starts a new world, or rebuilds an old story without losing a word |
-| **the chronicler** | folds what happened into the plot essential |
-| **the scribe** | turns notes, a summary or pasted prose into a clean continuation file |
-| **the editor** | changes one exact thing and leaves the rest alone |
-| **the eye** | reads the whole thing back and catches what slipped past |
-| **the showrunner** | untangles a story that has grown knotted |
-| **the compressor** | says the same thing in fewer words, losing nothing |
-| **the novelist** | works out whether the story can reach where you want it |
-| **the diagnostician** | works out why the storyteller went wrong |
+| **the eye** | reads the documents back with fresh eyes against your engine, and puts right what slipped past |
 | **the worldbook keeper** | builds and keeps a SillyTavern worldbook, every field chosen per entry |
 | **the memory auditor** | audits and repairs a Summaryception transplant, markers intact |
 | **the instructions writer** | writes and keeps AI instruction sets and presets |
@@ -191,16 +203,14 @@ never more than a moment behind it. Off, each piece shows the moment it arrives.
 The last three work from the Plot Essential and Instructions Maker's own crafts
 (its Worldbook Maker and Summaryception Auditor, word for word) and your own for
 instructions; each can be changed from its document, with the original one tap
-away. The craft the rest work from lives in one file, `engine/generalist.md`. Each of them
-is handed only the parts of it their job needs — the biggest share is about half
-of the whole. The cog, under the floor, shows exactly who reads what.
+away. The cog, under the floor, shows exactly who reads what.
 
 ## For anyone working on the code
 
 Read `AGENTS.md` first.
 
 ```
-bash tests/all.sh    seven suites, 1,313 checks
+bash tests/all.sh    eleven runs, 1,186 checks
 ```
 
 `docs/lineage.md` lists every version of Cozy Tavern and Cozy Chat and what

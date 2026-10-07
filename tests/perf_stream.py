@@ -4,8 +4,7 @@
 The live stream, measured in a real browser (Cozy Tavern's tests/perf_housekeeper.py,
 M269/M279, carried over). A headless Chromium on a phone's viewport, its CPU slowed 6x,
 against the real serve.py and a stand-in model that streams the way a thinking model
-does: the listener thinks before it answers (it rides the model he talks to), and the
-reply thinks long and then writes, its pieces arriving in bursts the way a provider's
+does: the reply thinks long and then writes, its pieces arriving in bursts the way a provider's
 do over a network.
 
 While it streams, every animation frame and every long task on the main thread is
@@ -17,8 +16,9 @@ stand-in's time.time().
     THINK=3000 ANSWER=600 THROTTLE=6 python3 tests/perf_stream.py
 
 The laws (each one fails on the code before 1.6.0):
-  - the first thought is on screen before the listener has answered, and within a
-    second of the model sending it — the stream starts at the thinking
+  - nobody is waited on before the one he talks to (v2.0): the first thought is on screen
+    within a second and a half of the press, and within a second of the model sending
+    it — the stream starts at the thinking
   - the thinking box is open while it thinks, with no tap, and its first words are
     still there once it is long
   - it folds shut once the reply's words are on screen
@@ -71,7 +71,6 @@ class Fake(http.server.BaseHTTPRequestHandler):
         n = int(self.headers.get("Content-Length") or 0)
         sent = json.loads(self.rfile.read(n).decode() or "{}")
         system = next((m.get("content", "") for m in sent.get("messages", []) if m.get("role") == "system"), "")
-        listener = "You are the one who listens." in system
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Cache-Control", "no-cache")
@@ -82,20 +81,6 @@ class Fake(http.server.BaseHTTPRequestHandler):
             self.wfile.write(("data: " + json.dumps({"choices": [{"index": 0, "delta": delta, "finish_reason": fin}]}) + "\n\n").encode())
 
         try:
-            if listener:
-                # it rides the model he talks to, so it thinks before it answers
-                end = time.time() + LISTEN_SECONDS
-                i = 0
-                while time.time() < end:
-                    send({"reasoning_content": "is this a job? %d " % i})
-                    self.wfile.flush()
-                    i += 1
-                    time.sleep(0.05)
-                send({"content": '{"jobs": []}'}, "stop")
-                self.wfile.write(b"data: [DONE]\n\n")
-                self.wfile.flush()
-                mark("listener_answered")
-                return
             mark("front_asked")
             for i in range(THINK):
                 send({"reasoning_content": "thinking step %05d, weighing it. " % i})
@@ -255,8 +240,6 @@ def main():
             "throttle": THROTTLE, "think_pieces": THINK, "answer_pieces": ANSWER, "smooth": SMOOTH or "default",
             "press_to_first_thought_on_screen_ms": rel("first_thought_on_screen", pressed),
             "model_first_thought_to_screen_ms": rel("first_thought_on_screen", srv.get("front_first_thought_sent")),
-            "listener_answered_after_press_ms": round(srv["listener_answered"] - pressed) if pressed and "listener_answered" in srv else None,
-            "first_thought_shown_before_listener_answered": ("first_thought_on_screen" in m and "listener_answered" in srv and m["first_thought_on_screen"] < srv["listener_answered"]),
             "model_first_word_to_screen_ms": rel("first_word_on_screen", srv.get("front_first_word_sent")),
             "model_last_word_sent_to_all_on_screen_ms": round(stats["marks_all"] - srv["front_done"]) if stats.get("marks_all") and "front_done" in srv else None,
             **stats,
@@ -273,7 +256,7 @@ def main():
         shutil.rmtree(home, ignore_errors=True)
     print(json.dumps(result, indent=1))
     laws = {
-        "the first thought is on screen before the listener has answered": result.get("first_thought_shown_before_listener_answered") is True,
+        "nobody is waited on: the first thought is on screen within 1.5s of the press": (result.get("press_to_first_thought_on_screen_ms") is not None and result["press_to_first_thought_on_screen_ms"] <= 1500),
         "and within a second of the model sending it": (result.get("model_first_thought_to_screen_ms") is not None and result["model_first_thought_to_screen_ms"] <= BUDGET["first_thought_lag_ms"]),
         "the box is open while it thinks, with no tap": result.get("open_while_thinking") is True,
         "its first words are still there once it is long": result.get("first_words_while_streaming") is True or THINK < 1500,

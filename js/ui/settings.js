@@ -9,7 +9,7 @@ import { personaOf, unfilledMacros } from '../agents/persona.js';
 import { testConnection, listModels } from '../agents/call.js';
 import { spokenAs, learnedFacts, alwaysThinks, cannotStopThinking, hermesLike } from '../providers.js';
 import { SEARCHER, searcherFor } from '../agents/search.js';
-import { loadEngine, sliceReport } from '../engine/slices.js';
+import { loadEngine, loadEngineText, sliceReport } from '../engine/slices.js';
 import { craftFor } from '../engine/crafts.js';
 import { SHORTCUTS, WHO, engineLines } from '../agents/shortcuts.js';
 
@@ -371,9 +371,9 @@ function setNumberOrDrop(obj, key, raw) {
 
 function crewSection(house) {
   const g = group('Who does what',
-    'The one at the front is the only one you ever talk to. Everyone else works behind them and you never see their words. Any of them can have their own connection — quick careful work can ride a cheap model while the front keeps the good one.');
+    'The one you talk to does the work: it reads your whole engine and every document, and changes them itself. Its helpers are its own \u2014 it hands one a job by name and reads what it says before it answers you. Any helper can have its own connection, so careful work can ride a cheaper model while the one you talk to keeps the good one.');
 
-  const options = [['', 'the same as the front']].concat(house.connections.map((c) => [c.id, c.name || c.model]));
+  const options = [['', 'the same as the one you talk to']].concat(house.connections.map((c) => [c.id, c.name || c.model]));
   const frontOptions = house.connections.map((c) => [c.id, c.name || c.model]);
 
   const front = select(frontOptions.length ? frontOptions : [['', 'no connection yet']], house.agentConnections[FRONT] || '');
@@ -389,16 +389,14 @@ function crewSection(house) {
     else delete house.agentConnections._general;
     await store.saveHouse(house);
   });
-  g.append(field('Everyone behind them, unless said otherwise', general));
+  g.append(field('Its helpers, unless said otherwise', general));
 
   const detailsInner = el('div', '');
-  const details = fold('give someone their own connection', detailsInner, { className: 'fold thinking' });
+  const details = fold('give a helper its own connection', detailsInner, { className: 'fold thinking' });
   details.style.maxHeight = 'none';
-  /* what an empty pick means, said truly: the listener rides the one he talks
-   * to; everyone else, whatever "Everyone behind them" is set to (it used to
-   * say "the same as the front" for everyone, and was wrong once that was set) */
+  /* what an empty pick means, said truly: whatever the helpers' pick above is */
   for (const [id, what] of WORKERS) {
-    const own = [['', id === 'listener' ? 'the same as the one you talk to' : 'the same as everyone behind them']].concat(house.connections.map((c) => [c.id, c.name || c.model]));
+    const own = [['', 'the same as the other helpers']].concat(house.connections.map((c) => [c.id, c.name || c.model]));
     const s = select(own, house.agentConnections[id] || '');
     s.addEventListener('change', async () => {
       if (s.value) house.agentConnections[id] = s.value;
@@ -517,7 +515,7 @@ function lookSection(house) {
 
 function underTheFloorSection() {
   const g = group('Under the floor',
-    'The whole craft lives in one file, engine/generalist.md. Nothing here restates it — each worker is handed only the parts of it their job needs.');
+    'Your engine lives in one file, engine/generalist.md, and the one you talk to reads all of it, word for word, every time you speak. The eye reads the parts its read-back needs; the three keepers read their own crafts.');
   const detailsInner = el('div', '');
   const details = fold('what each of them reads', detailsInner, { className: 'fold thinking' });
   details.style.maxHeight = 'none';
@@ -525,18 +523,15 @@ function underTheFloorSection() {
   pre.style.whiteSpace = 'pre';
   pre.className = 'scrollx';
   detailsInner.append(pre);
-  loadEngine().then((sections) => {
+  Promise.all([loadEngine(), loadEngineText()]).then(([sections, engine]) => {
     const rows = sliceReport(sections);
-    let whole = 0;
-    for (const s of sections.values()) whole += s.text.length;
-    pre.textContent = rows
-      .sort((a, b) => b.chars - a.chars)
-      .map((r) => `${r.worker.padEnd(14)} ${String(r.chars).padStart(7)} chars  ${String(r.sections).padStart(3)} parts${r.missing.length ? '  MISSING ' + r.missing.join(',') : ''}`)
-      .join('\n') + `\n\nthe whole craft ${whole} chars — nobody carries all of it`;
+    pre.textContent = `${'the one you talk to'.padEnd(20)} ${String(engine.length).padStart(7)} chars  your whole engine\n` + rows
+      .map((r) => `${r.worker.padEnd(20)} ${String(r.chars).padStart(7)} chars  ${String(r.sections).padStart(3)} parts of it${r.missing.length ? '  MISSING ' + r.missing.join(',') : ''}`)
+      .join('\n');
     /* the three with a craft of their own, carried over from the Plot Essential Maker or set by him */
     return Promise.all(['worldbook', 'auditor', 'instructions'].map((w) => craftFor(w, store.getHouse())
-      .then((t) => `${w.padEnd(14)} ${String(t.length).padStart(7)} chars  its own craft`)
-      .catch((e) => `${w.padEnd(14)} could not be read: ${e.message}`)))
+      .then((t) => `${w.padEnd(20)} ${String(t.length).padStart(7)} chars  its own craft`)
+      .catch((e) => `${w.padEnd(20)} could not be read: ${e.message}`)))
       .then((lines) => { pre.textContent += '\n\n' + lines.join('\n'); });
   }).catch((e) => { pre.textContent = 'could not read the craft file: ' + e.message; });
   g.append(details);

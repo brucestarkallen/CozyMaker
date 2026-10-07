@@ -19,7 +19,6 @@ import { cutSections, sliceFor, sliceReport, SLICES, SPINE, setEngineForTests } 
 import { parseDoc, indexLines, inPlay, brief, readNeed, stripNeed, resolveNeed, estimateTokens } from '../js/doc/index.js';
 import { parseEdits, stripEdits, tolerantJson, locate, applyEdit, applyRun, undoBatch, hash, salvageEdits, stripTrailingCommasOutsideStrings, escapeRawControlsInStrings, stripThinking } from '../js/doc/edits.js';
 import { lint, countOf, lostSomething, readEvents, namedPersonGate } from '../js/doc/lint.js';
-import { route } from '../js/agents/router.js';
 import { buildRequest, readAnswer, readChunk, houseOf, alwaysThinks, thinkingFields, thinkingStyle, withoutThinking } from '../js/providers.js';
 import { personaOf, greeting, openingFor, voiceMacros, unfilledMacros, framePerson } from '../js/agents/persona.js';
 import { upgradeWorld } from '../js/store.js';
@@ -28,7 +27,7 @@ import { guessKind, kindFor } from '../js/doc/kind.js';
 import { when } from '../js/ui/kit.js';
 import { callModel } from '../js/agents/call.js';
 import { pickConnection } from '../js/agents/roster.js';
-import { naturalize, commit, sweep, backstageBrief, capUndo, UNDO_KEPT, frontBody, landTurn, oneVoice, conversationFor, claimsAChange, endAtControlToken, docBriefs, either, WHOLE_LIMIT } from '../js/agents/run.js';
+import { commit, capUndo, UNDO_KEPT, frontBody, landTurn, oneVoice, conversationFor, claimsAChange, endAtControlToken, docBriefs, either, WHOLE_LIMIT, checkChanged, visibleText } from '../js/agents/run.js';
 
 let pass = 0, fail = 0;
 const failures = [];
@@ -42,22 +41,7 @@ function eq(name, got, want) {
   ok(name, a === b, `got ${a} want ${b}`);
 }
 
-/* THE STAND-IN MODEL, AS THE WIRE CARRIES IT. Every call streams now — the
- * crew's as well as the front's — so a stand-in tells them apart by who is
- * asking: the crew's and the listener's instructions open with the house's own
- * frame. A stand-in that answers a worker with one whole JSON body is a
- * provider that ignored "stream", which the house reads too. */
-const CREW_MARK = /This is craft work on a piece of fiction|You are the one who listens\./;
-function forFront(req) {
-  const b = req.body || {};
-  const sys = typeof b.system === 'string' ? b.system : ((b.messages || []).find((m) => m.role === 'system') || {}).content || '';
-  return Boolean(req.stream) && !CREW_MARK.test(sys);
-}
 function wholeAnswer(obj) { return new Response(JSON.stringify(obj), { status: 200 }); }
-function sseAnswer(lines) {
-  const text = lines.map((l) => 'data: ' + (typeof l === 'string' ? l : JSON.stringify(l)) + '\n\n').join('');
-  return new Response(new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(text)); c.close(); } }), { status: 200 });
-}
 
 /* =================================================== the craft, cut up */
 
@@ -84,15 +68,10 @@ for (const w of Object.keys(SLICES)) {
   ok(`${w} carries less than the whole craft`, s.text.length < ENGINE.length * 0.5,
     `${s.text.length} vs ${ENGINE.length}`);
 }
-ok('the scribe is handed the auto-fix mandate', sliceFor(SECTIONS, 'scribe').text.includes('The Auto-Fix Mandate'));
-ok('the scribe is NOT handed the cleanup workflow', !sliceFor(SECTIONS, 'scribe').text.includes('THE CLEANUP WORKFLOW'));
-ok('the compressor is handed the compression techniques', sliceFor(SECTIONS, 'compressor').text.includes('Sequential Aggregation'));
-ok('the compressor is NOT handed the skip workflow', !sliceFor(SECTIONS, 'compressor').text.includes('THE SKIP WORKFLOW'));
 /* the alert list is known by its own heading and words, not by one alert's name
  * (that name is also used in 1.2, 2.3, 2.7, 7.7 and 13.6, which others read) */
 const ALERTS = SECTIONS.get('12').text;
 ok('the eye is handed the alert list', sliceFor(SECTIONS, 'eye').text.includes(ALERTS));
-ok('the builder is NOT handed the alert list', !sliceFor(SECTIONS, 'builder').text.includes(ALERTS));
 
 /* NO WORKER IS ORDERED TO RUN A CHECK IT WAS NEVER GIVEN. Every named check in
  * the craft, and the section that defines it; a worker whose reading names one
@@ -147,14 +126,11 @@ ok('the builder is NOT handed the alert list', !sliceFor(SECTIONS, 'builder').te
     for (const mm of text.matchAll(/(?:Section|\u00a7|\()\s*(\d{1,2}(?:\.\d+){1,2})\)?/g)) need(mm[1], `(${mm[1]})`);
     ok(`${w} is given every check its reading orders it to run`, gaps.size === 0, [...gaps].join('; '));
   }
-  const b = sliceFor(SECTIONS, 'builder').text;
-  ok('the builder holds its own pre-delivery gate: the Verification Engine, Tier A, the CBPA, the Core Mandates',
-    b.includes(SECTIONS.get('7.3').text) && b.includes(SECTIONS.get('2.4').text) && b.includes(SECTIONS.get('7.2').text) && b.includes(SECTIONS.get('1.1').text));
 }
 
 const REPORT = sliceReport(SECTIONS);
 const biggest = Math.max(...REPORT.map((r) => r.chars));
-ok('nobody carries the whole craft', biggest < ENGINE.length * 0.5, `biggest slice ${biggest} of ${ENGINE.length}`);
+ok('the eye carries only its part of the craft (the one he talks to reads all of it)', biggest < ENGINE.length * 0.5, `biggest slice ${biggest} of ${ENGINE.length}`);
 
 /* ====================================================== a real document */
 
@@ -405,27 +381,6 @@ const twiceLinted = lint(L.text, { kind: 'pe' });
 ok('running the checks again changes nothing more',
   twiceLinted.text === L.text, 'the second pass moved the text');
 
-/* ============================================================ the router */
-
-eq('a written command is obeyed', route('*optimize 3').map((r) => r.worker), ['compressor']);
-eq('describing a world is brainstorming, not a build', route('here is my world: a drowned city of guild-houses').map((r) => r.worker), []);
-eq('asking for the plot essential builds it', route('okay, make the plot essential from all that').map((r) => r.worker), ['builder']);
-eq('plain words find the chronicler', route('fold all of that into the plot essential please').map((r) => r.worker), ['chronicler']);
-eq('plain words find the editor', route('change Claire\'s age to 15').map((r) => r.worker), ['editor']);
-eq('plain words find the showrunner', route('this has got convoluted, can you untangle it').map((r) => r.worker), ['showrunner']);
-eq('plain words find the eye', route('are there any contradictions in this').map((r) => r.worker), ['eye']);
-eq('plain words find the novelist', route('I want the siege to happen before the wedding').map((r) => r.worker), ['novelist']);
-eq('plain words find the diagnostician', route('why did the storyteller say Claire already knew').map((r) => r.worker), ['diagnostician']);
-eq('two asks in one sentence go to two workers',
-  route('add dual affinity to Ivar and audit the ception').map((r) => r.worker), ['editor', 'scribe']);
-eq('just talking sends nobody', route('hey'), []);
-eq('a thank you sends nobody', route('thanks, that is lovely'), []);
-eq('an opinion question sends nobody', route('what do you think of that name?'), []);
-eq('a long message with nothing built yet is still only talk',
-  route('x'.repeat(200), { hasPlotEssential: false }).map((r) => r.worker), []);
-eq('a long description with something already built sends nobody',
-  route('x'.repeat(200), { hasPlotEssential: true }), []);
-
 /* =========================================================== the wire */
 
 const conn = { id: 'c1', name: 'd', url: 'https://api.deepseek.com', model: 'deepseek-chat', key: 'k' };
@@ -491,18 +446,15 @@ ok('the greeting follows them', opening.includes('Hey Eni, this is Bruce.'));
 /* This test once checked that openingFor swapped "you" for "I" in the body. The swapping is gone: it
  * wrote "talks to I" and "I and Bruce". The body is written in each voice (see "both voices" below). */
 ok('first person: the text sent reads in the first person', openingFor(personaOf({ settings: { makerName: 'Eni', yourName: 'Bruce', person: 'first' } }),
-  frontBody(personaOf({ settings: { makerName: 'Eni', yourName: 'Bruce', person: 'first' } }))).includes('Bruce only ever talks to me.'));
+  frontBody(personaOf({ settings: { makerName: 'Eni', yourName: 'Bruce', person: 'first' } }))).includes('Bruce only ever talks to me'));
 
-/* THE FIREWALL: nothing the front reads may carry the craft's machinery. */
+/* THE ROOM (v2.0): the one he talks to does the work, so it is told how. It used to be a
+ * firewall that kept every way of changing a document out of its reading; he found the
+ * house confusing for it, and worse than his own engine pasted into one model. */
 const FRONT_TEXT = openingFor(p, frontBody(p));
-ok('the front of the house is given no bracketed markers', !/\[[A-Z][A-Z0-9_]{4,}\]/.test(FRONT_TEXT));
-ok('the front of the house is given no section numbers', !/§|\bsection \d/i.test(FRONT_TEXT));
-ok('the front of the house is given no way to edit', !FRONT_TEXT.includes('<edits>'));
-ok('the front of the house is given no command words', !/\*new|\*continuity|#q\b/.test(FRONT_TEXT));
-ok('the front of the house is small', FRONT_TEXT.length < 2500, `${FRONT_TEXT.length} chars`);
-
-eq('a marker never reaches the front', naturalize('Fixed it [PARROT_FIX] per M5 section 8.3'), 'Fixed it per');
-ok('plain words survive untouched', naturalize('Claire is sixteen now.') === 'Claire is sixteen now.');
+ok('the room tells it how to change a document, part or whole', FRONT_TEXT.includes('<edits>') && FRONT_TEXT.includes('<file name='));
+ok('the room tells it how to hand a job to a helper, and names them', FRONT_TEXT.includes('<helper name="the eye">') && /the worldbook keeper/.test(FRONT_TEXT) && /the memory auditor/.test(FRONT_TEXT));
+ok('the room adds no bracketed alerts of its own', !/\[[A-Z][A-Z0-9_]{4,}\]/.test(frontBody(p)));
 
 /* ============================================================ the crew */
 
@@ -547,19 +499,16 @@ ok('putting it back restores every document it touched',
   undone.changes.find((c) => c.name === 'Notes.md').remove === true,
   JSON.stringify(undone.changes.map((c) => c.name)));
 
-const swept = sweep(project);
-ok('the sweep repairs what it can', !swept.project.docs[0].text.includes('[EPISTEMIC_VIOLATION]'));
-ok('the sweep reports what it repaired', swept.repaired.length > 0);
-ok('the sweep hands the rest to a worker', swept.handOver.some((h) => h.worker === 'chronicler'));
-ok('what is handed over names the document', swept.handOver.every((h) => /Plot Essential\.md/.test(h.said)));
-
-const told = backstageBrief(
-  [{ worker: 'editor', notes: 'Changed her age [PARROT_FIX] per M5.' }],
-  [{ status: 'applied', name: 'Plot Essential.md', reason: 'her age' },
-   { status: 'refused', name: 'Plot Essential.md', why: 'those words appear twice' }], p);
-ok('the front is told in plain words', !/\[[A-Z_]+\]/.test(told), told);
-ok('the front is told what changed', told.includes('Plot Essential.md (1 change)'));
-ok('the front is told what did not', /Not done/.test(told));
+/* THE CHECKS (v2.0): certain repairs made, what needs judgment found — only what the turn
+ * brought in, never what was there before it (the old sweep handed every finding in a
+ * touched document to a worker on every change: the churn). */
+const checked = checkChanged(project, new Set(['Plot Essential.md']), new Map());
+ok('the checks repair what they can', !checked.project.docs[0].text.includes('[EPISTEMIC_VIOLATION]'));
+ok('the checks say what they repaired', checked.repaired.length > 0);
+ok('what needs judgment is found, by its document', checked.found.length > 0 && checked.found.every((f) => f.name === 'Plot Essential.md'), checked.found);
+const before0 = checkChanged(project, new Set(['Plot Essential.md']), new Map([['Plot Essential.md', project.docs[0].text]]));
+eq('what was in the document before the turn is never found again', before0.found, []);
+ok('a document the turn did not change is not looked at', checkChanged(project, new Set(['Other.md']), new Map()).repaired.length === 0);
 
 ok('a token count is roughly right', Math.abs(estimateTokens('a'.repeat(400)) - 100) <= 1);
 
@@ -567,26 +516,6 @@ ok('a token count is roughly right', Math.abs(estimateTokens('a'.repeat(400)) - 
 
 /* A question is somebody thinking out loud. Answering it is the front of the
  * house's work, not a worker's. */
-for (const talk of [
-  'does that make her too similar to Aldric?',
-  'do you think the world is too big',
-  'is she too similar to the other one?',
-  'should we cut some of the subplots?',
-  'what would you call a city like that?',
-  'how many characters do we have now?',
-  'why is the timeline like that',
-  'that makes sense to me',
-  'can you explain why you did it that way',
-]) eq(`asking, not telling: ${talk}`, route(talk).map((r) => r.worker), []);
-
-/* …but manners are not a question. */
-eq('manners do not hide an instruction', route("can you change Claire's age to 15").map((r) => r.worker), ['editor']);
-eq('politeness at the front is stripped', route('could you please fold all that into the plot essential').map((r) => r.worker), ['chronicler']);
-/* …and some jobs ARE questions by nature. */
-eq('a question that is its own job still lands', route('why did the storyteller say Claire already knew').map((r) => r.worker), ['diagnostician']);
-eq('asking for a check still lands', route('are there any contradictions in this').map((r) => r.worker), ['eye']);
-eq('asking whether it holds up still lands', route('does this make sense').map((r) => r.worker), ['eye']);
-
 /* What a worker has not been shown, it may not rewrite. */
 const partial = brief(bigDoc, 'Plot Essential.md', { message: 'TIMELINE' });
 ok('a partly-shown document says so in as many words', /do not rewrite the whole of it/i.test(partial));
@@ -603,7 +532,7 @@ ok('ordinary prose naming the word survives whole',
   stripEdits('I would use an <edits> block.') === 'I would use an <edits> block.');
 
 /* No machinery tag reaches the voice the writer hears. */
-ok('a stray tag never reaches the front', !/<edits|<need/.test(naturalize('done <edits> [ half a block')));
+ok('a stray tag never reaches him', !/<edits|<need/.test(visibleText('done <edits> [ half a block')), visibleText('done <edits> [ half a block'));
 
 /* The undo net is a net, not an archive. */
 const netProject = { turns: [] };
@@ -797,48 +726,6 @@ eq('an unescaped quote inside a change is read, not lost', salvageEdits('[{"find
   eq('a whole rebuild that would lose a person is refused, and the document is kept', [(loses.cards[0] || {}).status, /would have lost 1 dossiers/.test((loses.cards[0] || {}).why), loses.project.docs[0].text === PE], ['refused', true, true]);
 }
 
-/* --- A BUILD, THROUGH THE REAL TURN: the plain form lands, and one left open is carried on --- */
-{
-  const { runTurn, fileLeftOpen } = await import('../js/agents/run.js');
-  const PE = '# PLOT ESSENTIAL — The Leviathan Quarter — V1.0\n\n## WORLD\n### Rules\n- The city lives inside a dormant leviathan.\n\n## SCENE\nWHERE: the Ribway / LAST: "Hold the rope," Mira said.';
-  const house = { connections: [{ id: 'c1', url: 'https://relay.example/v1', model: 'm', key: 'k' }], agentConnections: {}, settings: { yourName: 'Bruce' }, personaFrame: '' };
-  const empty = () => ({ id: 'pb', docs: [], chats: [], recentSections: [] });
-  let builder = () => '';
-  const asked = [];
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = async (url, init) => {
-    const req = JSON.parse(init.body);
-    if (forFront(req)) {
-      const sse = 'data: ' + JSON.stringify({ choices: [{ delta: { content: 'Built.' } }] }) + '\n\ndata: [DONE]\n\n';
-      return new Response(new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(sse)); c.close(); } }), { status: 200 });
-    }
-    const sys = (req.body.messages.find((m) => m.role === 'system') || {}).content || '';
-    const msgs = req.body.messages.filter((m) => m.role !== 'system');
-    asked.push(msgs[msgs.length - 1].content);
-    const out = /PROACTIVE CO-WRITER/.test(sys) ? builder(msgs) : 'Read it all back; nothing else needed changing.';
-    return new Response(JSON.stringify({ choices: [{ message: { content: out }, finish_reason: 'stop' }] }), { status: 200 });
-  };
-  try {
-    builder = () => 'I built it from everything you said.\n\n<file name="Plot Essential.md">\n' + PE + '\n</file>';
-    let r = await runTurn({ house, project: empty(), message: 'Build the plot essential now.', forceWorker: 'builder' });
-    const doc = r.project.docs.find((d) => d.name === 'Plot Essential.md');
-    eq('a build written plainly lands whole, bare quotes and all', [doc && doc.text, doc && doc.kind], [PE, 'pe']);
-    ok('the build is a change he can put back', r.batches.length >= 1 && r.cards.some((c) => c.status === 'applied' && c.how === 'started it'));
-
-    asked.length = 0;
-    builder = (msgs) => (msgs.length === 1 ? 'Here it is.\n\n<file name="Plot Essential.md">\n' + PE.slice(0, 60) : PE.slice(60) + '\n</file>');
-    r = await runTurn({ house, project: empty(), message: 'Build the plot essential now.', forceWorker: 'builder' });
-    const doc2 = r.project.docs.find((d) => d.name === 'Plot Essential.md');
-    ok('a document left open is carried on, not asked for again from nothing', asked.includes(fileLeftOpen('Plot Essential.md')), JSON.stringify(asked.slice(0, 3)).slice(0, 300));
-    eq('and it lands whole once finished', doc2 && doc2.text, PE);
-
-    builder = (msgs) => (msgs.length === 1 ? 'I wrote it all.\n<file name="Plot Essential.md">\n' + PE + '\n' : '');
-    r = await runTurn({ house, project: empty(), message: 'Build the plot essential now.', forceWorker: 'builder' });
-    ok('a document never finished is never written', !r.project.docs.length, JSON.stringify(r.project.docs.map((d) => d.name)));
-    ok('and he is told plainly, on a card', r.cards.some((c) => c.status === 'refused' && /cut off before it finished/.test(c.why || '')), JSON.stringify(r.cards));
-  } catch (e) { ok('the whole-turn build tests ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
-}
-
 /* --- A NEW WORLD TAKES THE NAME ITS PLOT ESSENTIAL GIVES IT --- */
 {
   const { nameWorld, plotEssentialTitle, DEFAULT_WORLD_TITLE } = await import('../js/doc/index.js');
@@ -871,7 +758,7 @@ eq('an unescaped quote inside a change is read, not lost', salvageEdits('[{"find
   const HIS = 'You are Eni.\n\n## Rules\nTBD: the tone for battles\n\n## Voice\n';
   const made = commit({ id: 'p', docs: [], chats: [] }, [{ file: 'Eni.md', whole: true, replace: HIS }], 'test', 'instructions');
   eq('a document the instructions writer starts is kept as instructions', made.project.docs[0].kind, 'instructions');
-  const swept = sweep(made.project, new Set(['Eni.md']), new Map());
+  const swept = checkChanged(made.project, new Set(['Eni.md']), new Map());
   eq('and the plot essential checks never touch it (its TBD line and its empty heading stay)', swept.project.docs[0].text, HIS);
 }
 
@@ -966,29 +853,6 @@ ok('a block in the thinking channel is still a block', (() => {
   ok('an edit that breaks a transplant marker is a loss', /could no longer read/.test(lostSomething(sound, sound.replace('<!-- SC-PIN -->', '<!-- sc-pin -->'), 'transplant') || ''));
   ok('removing a whole block cleanly is not', lostSomething(sound, sound.replace('<!-- SC-PIN -->\nThe promise at the lighthouse.\n<!-- /SC-PIN -->', ''), 'transplant') === null);
   ok('instructions and notes have nothing code can count', lostSomething('a\nb', '', 'instructions') === null && lostSomething('a', '', 'notes') === null);
-}
-
-/* --- each document goes to the one who knows it --- */
-{
-  const pick = (m) => route(m).map((r) => r.worker).join(',');
-  eq('*audit is the memory auditor', pick('*audit'), 'auditor');
-  eq('*cleanup aimed at the transplant is the auditor, not the showrunner', pick('*cleanup the transplant'), 'auditor');
-  eq('*cleanup aimed at the worldbook is the worldbook keeper', pick('*cleanup the worldbook'), 'worldbook');
-  eq('*cleanup on its own is still the showrunner', pick('*cleanup'), 'showrunner');
-  eq('asking for a worldbook entry sends the worldbook keeper', pick('add an entry for Aldric to the worldbook'), 'worldbook');
-  eq('a question about the worldbook is talk', pick('what is in the worldbook?'), '');
-  const { craftFor, DEFAULT_INSTRUCTIONS_CRAFT, setCraftForTests } = await import('../js/engine/crafts.js');
-  eq('the instructions writer works his way when he has set one', await craftFor('instructions', { instructionsCraft: 'Mine.' }), 'Mine.');
-  eq('and by the default when he has not', await craftFor('instructions', {}), DEFAULT_INSTRUCTIONS_CRAFT);
-  const fetched = [];
-  const fakeFetch = async (u) => { fetched.push(u); return { ok: true, text: async () => 'WORLDBOOK CRAFT' }; };
-  eq('the worldbook keeper reads its craft file', await craftFor('worldbook', {}, fakeFetch), 'WORLDBOOK CRAFT');
-  eq('from the engine folder', fetched[0], '/engine/worldbook-maker.md');
-  eq('a worker with no craft of its own reads its slice', await craftFor('editor', {}), null);
-  const wb = (await import('node:fs')).readFileSync(new URL('../engine/worldbook-maker.md', import.meta.url), 'utf8');
-  ok('the worldbook craft is the extension\'s, with its block called by this house\'s name', wb.includes('YOU OWN EVERY FIELD') && wb.includes('edits block') && !wb.includes('docedits'));
-  const d = parseEdits('<docedits>[{"find":"a","replace":"b"}]</docedits>');
-  ok('a block written in the extension\'s name is read all the same', d.edits.length === 1, JSON.stringify(d));
 }
 
 /* --- another answer lands as a version; landing it twice is once --- */
@@ -1098,27 +962,16 @@ ok('a block in the thinking channel is still a block', (() => {
   eq('an empty document is still said to be empty', brief(parseDoc('', 'notes'), 'N.md', { whole: true }), 'N.md — it is empty so far.');
 }
 
-/* --- a bare yes runs what was just offered --- */
-{
-  const { confirmsOffer, offersIn } = await import('../js/agents/router.js');
-  for (const y of ['yes', 'Yes please', 'do it', 'go ahead', 'sure, go ahead!', 'yep. do it']) ok(`"${y}" is a yes`, confirmsOffer(y));
-  for (const n of ['no', 'yes, and make her older', 'yes but not the timeline', 'what do you think?']) ok(`"${n}" is not a bare yes`, !confirmsOffer(n));
-  eq('the offer in a reply is found', offersIn("That's a lovely thought. Want me to fold that into the plot essential?").join('|'), 'fold that into the plot essential');
-  eq('"should I" is an offer too', offersIn('Should I move the scene to the Quay?').join('|'), 'move the scene to the Quay');
-  eq('"I can\'t" is not', offersIn("I can't see a timeline yet.").join('|'), '');
-  eq('an offer phrased as a question still names its job', route('move the scene to the Quay', { asStatement: true }).map((r) => r.worker).join(), 'editor');
-}
-
 /* --- the front's text in each voice is grammar, not pronoun swaps --- */
 {
   const first = openingFor(personaOf({ settings: { makerName: 'Eni', yourName: 'Bruce', person: 'first' }, personaFrame: 'I am {{char}}.' }),
     frontBody(personaOf({ settings: { makerName: 'Eni', yourName: 'Bruce', person: 'first' } })));
-  ok('first person: "Bruce and I", "talks to me", "as myself"', first.includes('Bruce and I are building') && first.includes('Bruce only ever talks to me.') && first.includes('as myself'), first.slice(0, 300));
+  ok('first person: "Bruce and I", "talks to me", "as myself"', first.includes('Bruce and I are building') && first.includes('Bruce only ever talks to me') && first.includes('I am the one who does the work'), first.slice(0, 300));
   ok('first person: no "talks to I", no "I and", no you or yourself anywhere', !/talks to I\b|\bI and |\byou\b|\byour(self)?\b/i.test(first.replace(/^I am Eni\.\s*/, '')), (first.match(/talks to I\b|\bI and |\byou\b|\byour(self)?\b/i) || [''])[0]);
   const second = frontBody(personaOf({ settings: { yourName: 'Bruce' } }));
-  ok('second person reads as it always did', second.includes('You and Bruce are building') && second.includes('Bruce only ever talks to you.'));
+  ok('second person reads as it always did', second.includes('You and Bruce are building') && second.includes('Bruce only ever talks to you'));
   const nobody = frontBody(personaOf({ settings: { person: 'first' } }));
-  ok('first person with no names still reads as sentences', nobody.startsWith('The two of us are building') && nobody.includes('The person I am making this with only ever talks to me.') && !/undefined|null/.test(nobody), nobody.slice(0, 120));
+  ok('first person with no names still reads as sentences', nobody.includes('The author and I are building') && nobody.includes('The author only ever talks to me') && !/undefined|null/.test(nobody), nobody.slice(0, 120));
 }
 
 /* --- every voice, named and not, reads as grammar a person would write --- */
@@ -1129,7 +982,7 @@ ok('a block in the thinking channel is still a block', (() => {
     const text = openingFor(pp, frontBody(pp));
     const bad = BROKEN.exec(text);
     ok(`${person}, ${maker || 'no maker'}, ${you || 'no name'}: no broken grammar`, !bad, bad && text.slice(Math.max(0, bad.index - 50), bad.index + 50));
-    ok(`${person}, ${maker || 'no maker'}, ${you || 'no name'}: says a decision waits on him`, /cannot go further until/.test(text));
+    ok(`${person}, ${maker || 'no maker'}, ${you || 'no name'}: says how to hand a job to a helper`, text.includes('<helper name="the eye">'));
     if (person === 'first') ok(`${person}, ${maker || 'no maker'}, ${you || 'no name'}: nothing left in the second person`, !/\byou\b|\byour(?:self)?\b/i.test(text), text.slice(0, 80));
   }
 }
@@ -1148,104 +1001,6 @@ eq('"I" overrules a second-person frame', personaOf({ settings: { person: 'first
   ok('a first-person frame left alone gets the first-person house', text.startsWith("I am Eni. I keep Bruce's worlds.") && text.includes('Bruce and I are building') && !/\bYou and Bruce\b/.test(text), text.slice(0, 160));
 }
 
-/* --- what the persona is told about who said what: the whole turn, on the wire --- */
-{
-  const { runTurn, GO_ON, FRONT_ONLY } = await import('../js/agents/run.js');
-  const sent = [];
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = async (url, init) => {
-    const req = JSON.parse(init.body);
-    if (forFront(req)) {
-      sent.push(req.body);
-      const sse = 'data: ' + JSON.stringify({ choices: [{ delta: { content: 'Mm.' } }] }) + '\n\ndata: [DONE]\n\n';
-      return new Response(new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(sse)); c.close(); } }), { status: 200 });
-    }
-    return wholeAnswer({ choices: [{ message: { content: 'fine' }, finish_reason: 'stop' }] });
-  };
-  const world = { id: 'pn', docs: [{ id: 'd1', name: 'Plot Essential.md', kind: 'pe', text: '# PE\n\n## SCENE\nWHERE: the Ribway\n' }], chats: [], recentSections: [] };
-  const conn = [{ id: 'c1', url: 'https://relay.example/v1', model: 'm', key: 'k' }];
-  const last = () => { const b = sent[sent.length - 1]; return b.messages[b.messages.length - 1].content; };
-  try {
-    await runTurn({ house: { connections: conn, agentConnections: {}, settings: {}, personaFrame: 'You are a quiet archivist.' }, project: world, message: 'hi there, lovely evening' });
-    ok('with no name set, his words are never labelled "you said"', !/\byou said:/i.test(last()) && /What was just said to you:\nhi there, lovely evening$/.test(last()), last().slice(-120));
-    await runTurn({ house: { connections: conn, agentConnections: {}, settings: { yourName: 'Bruce' }, personaFrame: '' }, project: world, message: 'hi there, lovely evening' });
-    ok('with his name set, his words are under his name', /Bruce said:\nhi there, lovely evening$/.test(last()), last().slice(-80));
-    const history = [{ role: 'writer', text: 'tell me about the harbour', at: 1 }, { role: 'maker', text: 'The harbour wall was built by the', at: 2, cut: true }];
-    await runTurn({ house: { connections: conn, agentConnections: {}, settings: { yourName: 'Bruce' }, personaFrame: '' }, project: world, history, message: GO_ON, forceWorker: FRONT_ONLY });
-    ok('Go on is the house\'s note, never put in his mouth', last().endsWith(GO_ON) && !/Bruce said:/.test(last()), last().slice(-200));
-    ok('Go on carries on from the reply that was cut, which comes just before it', sent[sent.length - 1].messages.some((m) => m.role === 'assistant' && /built by the$/.test(m.content)));
-  } finally { globalThis.fetch = realFetch; }
-}
-
-/* --- A STORY CARD (*card): the whole paste is one job for the builder, framed as *new --- */
-{
-  const { isStoryCard, storyCardTask } = await import('../js/agents/router.js');
-  const { writtenCommand } = await import('../js/agents/router.js');
-  const CARD = 'Her Highness Needs A Minute\n\nIn public: flawless. In private: a disaster. You saw. You\'re hired.\n\nYou are hereby appointed Special Liaison to the Crown. Your job: clean up her messes before the court sees them.\n\nOpening: The door slams. "Close it," she hisses. "Now."';
-  const r = route('*card\n\n' + CARD, { hasPlotEssential: false, hasDocs: false });
-  eq('a story card is one job, for the builder — never a worker per paragraph', r.map((x) => x.worker), ['builder']);
-  eq('even in a world with documents, where "clean up her messes" once sent the showrunner too',
-    route('*card\n\n' + CARD, { hasPlotEssential: true, hasDocs: true }).map((x) => x.worker), ['builder']);
-  ok('and the builder is given the whole card, every paragraph', r[0] && r[0].about.includes('clean up her messes') && r[0].about.endsWith('"Close it," she hisses. "Now."'), r[0] && r[0].about.slice(-80));
-  ok('framed as the craft\'s *new, reading the card as a blueprint', r[0] && /the craft's \*new, reading the card as a blueprint \(the Blueprint Ingestion Protocol in 7\.1\)/.test(r[0].about));
-  ok('with his leave to add what makes it more immersive, and never to stop and ask', r[0] && /add whatever makes it more immersive/.test(r[0].about) && /do not stop to ask/.test(r[0].about));
-  const said = route('I play Jovan, 24, a disgraced knight.\n*card\n' + CARD, { hasPlotEssential: true, hasDocs: true });
-  ok('what he says before the card travels with it', said.length === 1 && /What he said with it:\nI play Jovan, 24, a disgraced knight\./.test(said[0].about));
-  eq('it is a written command: the listener is not asked', [writtenCommand('*card ' + CARD), isStoryCard('*CARD x'), isStoryCard('a card game')], [true, true, false]);
-  ok('a bare *card still reaches the builder, which asks for the card', /ask him to paste the story card/.test(storyCardTask('')));
-}
-
-/* --- a story card, through the real turn --- */
-{
-  const { runTurn } = await import('../js/agents/run.js');
-  const { LISTENER_MARK } = await import('../js/agents/listener.js');
-  const seen = [];
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = async (url, init) => {
-    const req = JSON.parse(init.body);
-    const sys = (req.body.messages.find((m) => m.role === 'system') || {}).content || '';
-    const user = (req.body.messages.filter((m) => m.role === 'user').pop() || {}).content || '';
-    if (forFront(req)) { seen.push(['front', user]); return sseAnswer([{ choices: [{ delta: { content: 'It is built.' }, finish_reason: 'stop' }] }, '[DONE]']); }
-    const who = sys.includes(LISTENER_MARK) ? 'listener' : /PROACTIVE CO-WRITER/.test(sys) ? 'builder' : 'worker';
-    seen.push([who, user]);
-    const out = who === 'builder'
-      ? 'Built it from the card. I added a calendar, the palace, and named the steward.\n<file name="Plot Essential.md">\n# PLOT ESSENTIAL — Her Highness Needs A Minute — V1.0\n\n## SCENE\nWHERE: the Rose Antechamber\nLAST: "Close it," she hisses. "Now."\n</file>'
-      : 'Read it all back.';
-    return wholeAnswer({ choices: [{ message: { content: out }, finish_reason: 'stop' }] });
-  };
-  try {
-    const house = { connections: [{ id: 'c1', url: 'https://relay.example/v1', model: 'm', key: 'k' }], agentConnections: {}, settings: { yourName: 'Bruce' }, personaFrame: '' };
-    const r = await runTurn({ house, project: { id: 'pcard', title: 'A new world', docs: [], chats: [], recentSections: [] },
-      message: '*card\nHer Highness Needs A Minute\n\nIn public: flawless. In private: a disaster.\n\nYour job: clean up her messes.\n\nOpening: "Close it," she hisses. "Now."' });
-    const builder = seen.find(([w]) => w === 'builder');
-    eq('a story card goes straight to the builder: no listener, no other worker', seen.filter(([w]) => w !== 'front' && w !== 'worker').map(([w]) => w), ['builder']);
-    ok('the builder is told what the job is, and given the whole card as he pasted it',
-      builder && /What the author just asked for:\nBuild a plot essential from a story card/.test(builder[1]) && /The card, as he pasted it:\nHer Highness Needs A Minute/.test(builder[1]) && /Your job: clean up her messes\./.test(builder[1]));
-    ok('and the plot essential lands, ready', r.project.docs.some((d) => d.name === 'Plot Essential.md' && /Rose Antechamber/.test(d.text)));
-  } catch (e) { ok('the story-card turn ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
-}
-
-/* --- his everyday phrases reach the right one --- */
-{
-  const pick = (m) => route(m).map((r) => r.worker).join(',');
-  eq('"Claire is 17 now, not 16" is a correction', pick('Claire is 17 now, not 16'), 'editor');
-  eq('"her age should be 17, not 16" too', pick('her age should be 17, not 16'), 'editor');
-  eq('"Claire is sad now" with no correction is talk', pick('Claire is sad now'), '');
-  eq('a what-if about a change is a question, not a change', pick('would that move Claire to the city?'), '');
-  eq('"can you" is still a request', pick("can you change Claire's age to fifteen"), 'editor');
-  eq('"could we" is too', pick('could we move the scene to the Quay?'), 'editor');
-  eq('whether the story can reach somewhere goes to the novelist', pick('can the story realistically reach a war by chapter ten?'), 'novelist');
-  /* "build it", with no plot essential yet, is the ask to build one */
-  const fresh = (m) => route(m, { hasPlotEssential: false, hasDocs: false }).map((r) => r.worker).join(',');
-  for (const m of ['ok build it', "let's build it!", 'go ahead and build it', 'build the world from what we said', 'write it up', 'can you build it?', 'yes, build it', 'create the world now'])
-    eq(`"${m}" in a new world builds it`, fresh(m), 'builder');
-  for (const m of ['the guild would build it into the tides', 'make it darker', 'build it around the lighthouse', 'how would you build it?', 'maybe build it later', 'write it in first person'])
-    eq(`"${m}" in a new world is still talk`, fresh(m), '');
-  eq('with a plot essential already there, "build it" is left to the listener', route('ok build it', { hasPlotEssential: true, hasDocs: true }).length, 0);
-  eq('"turn this into a plot essential" builds, whatever is there', pick('turn this into a plot essential'), 'builder');
-  eq('and so does "how do we get to the wedding"', pick('how do we get to the wedding without rushing it?'), 'novelist');
-}
-
 /* --- a failure, said the way the persona can say it --- */
 {
   const { plainFailure } = await import('../js/agents/run.js');
@@ -1253,116 +1008,6 @@ eq('"I" overrules a second-person frame', personaOf({ settings: { person: 'first
   eq('a busy provider', plainFailure('429 Too Many Requests'), 'the provider is too busy right now');
   eq('no answer', plainFailure('transport: timed out'), 'the provider did not answer');
   eq('too long', plainFailure("This model's maximum context length is 8192 tokens"), "the documents were too long for this connection's model");
-}
-
-/* --- THE PERSONA HEARS ONLY THE STORY: every kind of turn, through the real pipeline --- */
-{
-  const { runTurn } = await import('../js/agents/run.js');
-  const { setCraftForTests } = await import('../js/engine/crafts.js');
-  setCraftForTests('auditor', 'AUDITOR CRAFT');
-  const persona = 'You are {{char}}, a quiet archivist who loves old maps. {{user}} is your oldest friend.';
-  const house = { connections: [{ id: 'c1', url: 'https://relay.example/v1', model: 'm', key: 'k' }], agentConnections: {},
-    settings: { makerName: 'Eni', yourName: 'Bruce', person: 'second' }, personaFrame: persona };
-  const PE = '# PLOT ESSENTIAL — Harbour — V1.0\n\n## WORLD\n### Rules\n- The city lives inside a dormant leviathan.\n\n## SCENE\nWHERE: the Ribway\n';
-  const world = () => ({ id: 'pw', docs: [{ id: 'd1', name: 'Plot Essential.md', kind: 'pe', text: PE }], chats: [], recentSections: [] });
-  const edit = (find, to) => 'Moved it.\n\n<edits>\n' + JSON.stringify([{ file: 'Plot Essential.md', find, replace: to, reason: 'moved the scene' }]) + '\n</edits>';
-  let answer = () => 'Read it all back; nothing else needed changing.';
-  const fronts = [];
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = async (url, init) => {
-    const req = JSON.parse(init.body);
-    if (forFront(req)) {
-      fronts.push(req.body);
-      const sse = 'data: ' + JSON.stringify({ choices: [{ delta: { content: 'All right.' } }] }) + '\n\ndata: [DONE]\n\n';
-      return new Response(new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(sse)); c.close(); } }), { status: 200 });
-    }
-    const user = (req.body.messages.find((m) => m.role === 'user') || {}).content || '';
-    const out = answer(user);
-    return wholeAnswer(typeof out === 'string' ? { choices: [{ message: { content: out }, finish_reason: 'stop' }] } : out);
-  };
-  const MACHINERY = /\bTiers? [ABC]\b|\bProtocol \d+\b|\bCBPA\b|Named-Person Gate|Disease Scan|Stale-Assumption|Mechanical Audit|Verification Engine|Anti-Parrot|Auto-Fix Mandate|Deliverable Purity|RELS Gate|MC Exclusion|<\/?(?:edits|docedits|need)>|replace_all|\bthe (?:builder|chronicler|scribe|editor|eye|showrunner|compressor|novelist|diagnostician|worldbook keeper|memory auditor|instructions writer)\b|\bworkers?\b|\bcrew\b|backstage|people working behind|\bslice\b|§|\bM-[A-Z]{3,}\b|\bapi\b|\b40[13]\b|sk-abc|set aside as a draft|\bdraft\b|\bJSON\b|\bcraft\b|could not finish/i;
-  const heard = () => { const b = fronts[fronts.length - 1]; return [b.messages.map((m) => m.content).join('\n')].join('\n'); };
-  const check = (name) => {
-    const b = fronts[fronts.length - 1];
-    const sys = (b.messages.find((m) => m.role === 'system') || {}).content || '';
-    const all = b.messages.map((m) => m.content).join('\n');
-    ok(`${name}: the persona leads, word for word, names filled in`, sys.startsWith('You are Eni, a quiet archivist who loves old maps. Bruce is your oldest friend.'), sys.slice(0, 90));
-    const leak = MACHINERY.exec(all);
-    ok(`${name}: nothing the persona hears names the machinery`, !leak, leak && all.slice(Math.max(0, leak.index - 60), leak.index + 60));
-  };
-  try {
-    fronts.length = 0;
-    await runTurn({ house, project: world(), message: 'what do you think of the harbour so far?' });
-    check('talk');
-    ok('talk: nothing is said to have changed', !/What got done/.test(heard()));
-
-    answer = (user) => (/What the author just asked for/.test(user) ? edit('WHERE: the Ribway', 'WHERE: the Quay') : 'Read it all back; nothing else needed changing.');
-    let r = await runTurn({ house, project: world(), message: '*edit move the scene to the Quay' });
-    check('a change');
-    ok('a change: the persona is told what changed, by document', /Changed: Plot Essential\.md \(1 change\)/.test(heard()) && /WHERE: the Quay/.test(r.project.docs[0].text));
-
-    answer = (user) => (/What the author just asked for/.test(user) ? { error: 'provider', status: 401, detail: 'Incorrect API key provided: sk-abc' } : 'fine');
-    r = await runTurn({ house, project: world(), message: '*edit move the scene to the Quay' });
-    check('a failure');
-    ok('a failure: said plainly to the persona', /Something could not be done this time: the connection turned the key away\./.test(heard()));
-    ok('a failure: the exact reason is on a card for him', r.cards.some((c) => c.failure && /401|API key/i.test(c.why)));
-
-    answer = (user) => (/What the author just asked for|could not be placed/.test(user) ? edit('WHERE: the Ribwayy', 'WHERE: the Quay') : 'fine');
-    r = await runTurn({ house, project: world(), message: '*edit move the scene to the Quay' });
-    check('a quote that never fit');
-    ok('a quote that never fit: said plainly as not done', /Not done: Plot Essential\.md — those words are not in the document as written/.test(heard()));
-
-    answer = (user) => (/What the author just asked for/.test(user)
-      ? 'Plan:\n<edits>[{"file":"Plot Essential.md","find":"WHERE: the Ribway","replace":"WHERE: the Quay"}]</edits>\nFinal:\n' + edit('WHERE: the Ribway', 'WHERE: the Quay') : 'fine');
-    r = await runTurn({ house, project: world(), message: '*edit move the scene to the Quay' });
-    check('a draft on the page');
-    ok('a draft on the page: no card says something went wrong', !r.cards.some((c) => c.status === 'refused'), JSON.stringify(r.cards.map((c) => c.why)));
-
-    /* a worker that reports in the craft's own names for its checks, which every worker now reads (v1.2.4) */
-    answer = (user) => (/What the author just asked for/.test(user)
-      ? 'Moved it, per Protocol 20. Tier A passed; Named-Person Gate clean; Disease Scan on ages clean; CBPA on the request; Anti-Parrot pass done; RELS Gate held; Verification Engine run.\n\n<edits>\n' + JSON.stringify([{ file: 'Plot Essential.md', find: 'WHERE: the Ribway', replace: 'WHERE: the Quay', reason: 'moved the scene' }]) + '\n</edits>'
-      : 'Read it all back. Tier A/B checks clean; Mechanical Audit clean; Deliverable Purity Test passed.');
-    await runTurn({ house, project: world(), message: '*edit move the scene to the Quay' });
-    check('a worker who names its checks');
-
-    answer = () => 'M-SCAN read every block. M-RECORD holds. The ledger for Claire is sound.';
-    const sc = { id: 'pw', docs: [{ id: 'd2', name: 'Harbour transplant.md', kind: 'transplant', text: '<!-- SC-TRANSPLANT {"v":1} -->' }], chats: [], recentSections: [] };
-    await runTurn({ house, project: sc, message: '*audit Harbour transplant.md', forceWorker: 'auditor' });
-    check('an audit');
-
-    answer = (user) => (/What the author just asked for/.test(user) ? edit('WHERE: the Ribway', 'WHERE: the Quay') : 'fine');
-    const history = [{ role: 'writer', text: 'the Ribway feels wrong for this scene', at: 1 },
-      { role: 'maker', text: "It does feel cramped. Want me to move the scene to the Quay?", at: 2 }];
-    r = await runTurn({ house, project: world(), history, message: 'yes' });
-    check('a yes');
-    ok('a yes: runs what was offered, and the change lands', /WHERE: the Quay/.test(r.project.docs[0].text), r.project.docs[0].text.slice(-30));
-    ok('a yes: the persona is told it changed', /Changed: Plot Essential\.md/.test(heard()));
-    const moved = [{ role: 'maker', text: 'Want me to move the scene to the Quay?', at: 2 }, { role: 'writer', text: 'hmm, let me think', at: 3 }];
-    r = await runTurn({ house, project: world(), history: moved, message: 'yes' });
-    ok('a yes after he has moved on does not reach back to an older offer', /WHERE: the Ribway/.test(r.project.docs[0].text), r.project.docs[0].text.slice(-30));
-
-    /* a report he asked for is the answer; a read-back he did not ask for is aside */
-    answer = () => 'Claire is 16 in one event and 17 in the next. The harbour wall is built twice.';
-    await runTurn({ house, project: world(), message: 'Check Plot Essential.md for anything wrong', forceWorker: 'eye' });
-    check('a check he asked for');
-    ok('a check he asked for: its findings reach the persona as the answer to give',
-      /What came back on what Bruce asked for \(the answer to give Bruce, all of it that matters\):\nClaire is 16 in one event and 17 in the next\. The harbour wall is built twice\./.test(heard()), heard().slice(-400));
-    answer = (user) => (/What the author just asked for/.test(user) ? edit('WHERE: the Ribway', 'WHERE: the Quay') : 'Read every line back: the harbour wall is built twice.');
-    /* real work (not a one-field edit, which the craft reads with its required scan only) is read back afterwards */
-    await runTurn({ house, project: world(), message: 'Tidy up Plot Essential.md.', forceWorker: 'showrunner' });
-    ok('a read-back he did not ask for is set aside, to mention only if it matters',
-      /Read back afterwards, without being asked \(mention it only if it matters\):\nRead every line back: the harbour wall is built twice\./.test(heard()), heard().slice(-400));
-
-    /* a re-quote that repeats a change which already landed: one honest "not done", and no repeated note */
-    answer = (user) => (/What the author just asked for|could not be placed/.test(user)
-      ? 'Moved it.\n<edits>' + JSON.stringify([{ file: 'Plot Essential.md', find: 'WHERE: the Ribway', replace: 'WHERE: the Quay' },
-        { file: 'Plot Essential.md', find: 'a line that is not there', replace: 'x' }]) + '</edits>' : 'fine');
-    r = await runTurn({ house, project: world(), message: '*edit move the scene to the Quay' });
-    check('a re-quote that repeats itself');
-    ok('a re-quote that repeats a landed change: that change is not refused afterwards',
-      r.cards.filter((c) => c.status === 'refused').length === 1 && r.cards.filter((c) => c.status === 'applied').length === 1, JSON.stringify(r.cards.map((c) => [c.status, c.why])));
-    ok('and its words reach the persona once', (heard().match(/Moved it\./g) || []).length === 1, heard().slice(-300));
-  } finally { globalThis.fetch = realFetch; }
 }
 
 /* --- the words houses use for "too long" --- */
@@ -1382,12 +1027,6 @@ eq('"I" overrules a second-person frame', personaOf({ settings: { person: 'first
 
 /* --- the persona's frame, in both voices; what it reads of a document --- */
 {
-  for (const person of ['second', 'first']) {
-    const body = frontBody({ you: 'Bruce', maker: 'Eni', person });
-    ok(`${person} person: a report he asked for is the answer to give`, /what came back is the answer/.test(body) && /all of it that matters/.test(body), body);
-    ok(`${person} person: no rule left that cuts his report to one or two things`, !/one or two things/.test(body), body);
-  }
-  eq('the engine\'s command words reach the persona as plain words', naturalize('Ran *cleanup, then #q and (*audit) — see *optimize.'), 'Ran cleanup, then q and (audit) — see optimize.');
   const pe = '# PLOT ESSENTIAL — Harbour — V1.0\n\n## WORLD\n- The city lives inside a dormant leviathan.\n\n## SCENE\nWHERE: the Ribway\n';
   const w = { docs: [{ name: 'Plot Essential.md', kind: 'pe', text: pe }] };
   ok('the persona reads the outline without character counts', !/characters/.test(docBriefs(w, { forFront: true })), docBriefs(w, { forFront: true }));
@@ -1639,185 +1278,16 @@ eq('a plot essential is the default', guessKind('Plot Essential.md', '# PLOT ESS
 eq('a note that opens with a bracket is words, not a worldbook', guessKind('Scratch.md', '[OOC: remember the siege]\nmore'), 'pe');
 eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries":{"0":{"comment":"a"}}}'), 'worldbook');
 
-/* ================================================ the listener (v1.1.5) */
-
-{
-  const { readJobs, listenerPrompt, listenerReading, LISTENER_MARK } = await import('../js/agents/listener.js');
-  const { runTurn, versionOf, readAsk, jobFor } = await import('../js/agents/run.js');
-
-  /* --- reading its answer --- */
-  eq('a plain answer is read', readJobs('{"jobs":[{"worker":"editor","task":"Make Mira twenty."}]}').jobs, [{ worker: 'editor', task: 'Make Mira twenty.', resumes: false }]);
-  eq('fenced and with a trailing comma, still read', readJobs('```json\n{"jobs":[{"worker":"the Editor","task":"x",},]}\n```').jobs.map((j) => j.worker), ['editor']);
-  eq('nothing to do is an answer too', readJobs('{"jobs": []}'), { ok: true, jobs: [], clear: [], delete: [] });
-  eq('a document to clear and one to delete are read by name', readJobs('{"jobs": [], "clear": ["Plot Essential.md"], "delete": "Notes.md"}'), { ok: true, jobs: [], clear: ['Plot Essential.md'], delete: ['Notes.md'] });
-  ok('prose is not an answer', !readJobs('I think the editor should do it.').ok);
-  ok('someone who is not on the crew is not an answer', !readJobs('{"jobs":[{"worker":"storyteller","task":"x"}]}').ok);
-  ok('the listener cannot send itself', !readJobs('{"jobs":[{"worker":"listener","task":"x"}]}').ok);
-  eq('two jobs for one worker become one job, both parts kept', readJobs('{"jobs":[{"worker":"editor","task":"a"},{"worker":"editor","task":"b"}]}').jobs, [{ worker: 'editor', task: 'a\n\nAnd: b', resumes: false }]);
-  eq('an answer written after its thinking is still read', readJobs('<think>hmm</think>{"jobs":[{"worker":"eye","task":"check"}]}').jobs.map((j) => j.worker), ['eye']);
-
-  /* --- what it reads --- */
-  const reading = listenerReading(SECTIONS);
-  ok('it reads the craft\'s own law on reading a request (7.6), and only that: a short reading answers fast', /Command Parsing \(Free-Form Input\)/.test(reading) && !/11 · COMMANDS/.test(reading) && reading.length < 4000, String(reading.length));
-  const pr = listenerPrompt({ frame: 'FRAME', reading, docs: [{ name: 'Plot Essential.md', kind: 'pe', text: PE }], talk: 'Bruce: hello', open: [{ worker: 'showrunner', ask: 'Cut the north arc? Yes or no.' }], message: 'yes', p: { you: 'Bruce', maker: 'Eni' } });
-  ok('it is told who does what, with the craft\'s commands that are theirs', /- showrunner: .*\*cleanup, #prune/.test(pr.system) && /- editor: .*\*edit/.test(pr.system), pr.system.slice(-900));
-  ok('it sees what is waiting on him, word for word', pr.user.includes('The showrunner put this to him and is waiting for his answer:\nCut the north arc? Yes or no.'));
-  ok('it sees the documents by name and section, never their text', pr.user.includes('Plot Essential.md — the plot essential: ') && !pr.user.includes('Majority is sixteen.'), pr.user.slice(0, 200));
-  ok('what he just said comes last', pr.user.endsWith('What Bruce just said:\nyes'));
-
-  /* --- the ask a worker leaves, and the craft's own marker --- */
-  eq('an ask is taken out of the notes', readAsk('I read it all.\n<ask>Cut the north arc?</ask>'), { ask: 'Cut the north arc?', rest: 'I read it all.' });
-  eq('an ask cut off at the end is still an ask', readAsk('Notes.\n<ask>Cut the north arc? Or keep').ask, 'Cut the north arc? Or keep');
-  const back = jobFor({ worker: 'showrunner', task: 'He approved only the safe cuts.', resumes: true }, [{ worker: 'showrunner', ask: 'MANIFEST: cut A, reshape B.' }], 'only the safe ones', { you: 'Bruce' });
-  ok('his answer goes back with what was asked, word for word, and his own words', back.about === 'He approved only the safe cuts.\n\nWhat you put to Bruce last time, word for word:\nMANIFEST: cut A, reshape B.\n\nWhat Bruce said back:\nonly the safe ones', back.about);
-  ok('a job that answers nothing gets its task alone', jobFor({ worker: 'editor', task: 'Make Mira twenty.', resumes: false }, [{ worker: 'showrunner', ask: 'x' }], 'y', {}).about === 'Make Mira twenty.');
-  eq('a kept version keeps what it asked', versionOf({ text: 't', asks: [{ worker: 'showrunner', ask: 'x' }] }).asks, [{ worker: 'showrunner', ask: 'x' }]);
-
-  /* --- whole turns, on the wire --- */
-  const calls = [];
-  let listenerSays = () => 'not sure';
-  let workerSays = () => 'Read it all back; nothing else needed changing.';
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = async (url, init) => {
-    const req = JSON.parse(init.body);
-    if (forFront(req)) {
-      calls.push({ who: 'front', url: req.url, body: req.body });
-      const sse = 'data: ' + JSON.stringify({ choices: [{ delta: { content: 'Mm.' } }] }) + '\n\ndata: [DONE]\n\n';
-      return new Response(new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(sse)); c.close(); } }), { status: 200 });
-    }
-    const sys = (req.body.messages.find((m) => m.role === 'system') || {}).content || '';
-    const user = (req.body.messages.find((m) => m.role === 'user') || {}).content || '';
-    const who = sys.includes(LISTENER_MARK) ? 'listener' : 'worker';
-    calls.push({ who, url: req.url, sys, user });
-    const out = who === 'listener' ? listenerSays(user) : workerSays(user, sys);
-    return wholeAnswer({ choices: [{ message: { content: out }, finish_reason: 'stop' }] });
-  };
-  const house = { connections: [{ id: 'c1', url: 'https://one.example/v1', model: 'm', key: 'k' }, { id: 'c2', url: 'https://two.example/v1', model: 'm2', key: 'k' }],
-    agentConnections: {}, settings: { makerName: 'Eni', yourName: 'Bruce' }, personaFrame: 'You are Eni.' };
-  const PE1 = '# PLOT ESSENTIAL — Harbour — V1.0\n\n## WORLD\n### Rules\n- The city lives inside a dormant leviathan.\n\n## SCENE\nWHERE: the Ribway\n';
-  const world = () => ({ id: 'pl', docs: [{ id: 'd1', name: 'Plot Essential.md', kind: 'pe', text: PE1 }], chats: [], recentSections: [] });
-  const heard = () => { const f = calls.filter((c) => c.who === 'front').pop(); return f.body.messages[f.body.messages.length - 1].content; };
-  const listened = () => calls.filter((c) => c.who === 'listener');
-  const edit = (find, to) => 'Done.\n<edits>' + JSON.stringify([{ file: 'Plot Essential.md', find, replace: to, reason: 'x' }]) + '</edits>';
-  try {
-    /* words no keyword table knows */
-    const plain = 'the kingdom deserves a second moon, pale and slow';
-    ok('the old keyword reading sends nobody for it (why the listener exists)', route(plain).length === 0);
-    listenerSays = () => '{"jobs":[{"worker":"editor","task":"Add to the world\'s rules: the kingdom has a second moon, pale and slow."}]}';
-    workerSays = (user) => (/What the author just asked for:\nAdd to the world's rules/.test(user) ? 'Added.\n<edits>' + JSON.stringify([{ file: 'Plot Essential.md', insert_after: '- The city lives inside a dormant leviathan.', replace: '- A second moon, pale and slow, crosses the sky.', reason: 'his world' }]) + '</edits>' : 'Read it all back.');
-    let r = await runTurn({ house, project: world(), message: plain });
-    ok('the listener sends the right one, and the change lands', /A second moon, pale and slow/.test(r.project.docs[0].text), r.project.docs[0].text);
-    ok('the persona is told it changed', /Changed: Plot Essential\.md/.test(heard()), heard().slice(-300));
-    ok('the listener heard the conversation and the craft, not the documents\' text', listened().length === 1 && /Command Parsing/.test(listened()[0].sys) && !listened()[0].user.includes('dormant leviathan'), listened()[0].user.slice(0, 200));
-
-    /* nothing readable from the listener: the old reading, so a turn never fails because of it */
-    calls.length = 0;
-    listenerSays = () => 'hm, hard to say';
-    workerSays = (user) => (/What the author just asked for/.test(user) ? edit('WHERE: the Ribway', 'WHERE: the Quay') : 'fine');
-    r = await runTurn({ house, project: world(), message: 'move the scene to the Quay' });
-    ok('an unreadable listener falls back to the old reading, and the change still lands', /WHERE: the Quay/.test(r.project.docs[0].text), r.project.docs[0].text.slice(-40));
-
-    /* a listener that decides it is talk: nothing runs, and the persona is told nothing changed */
-    calls.length = 0;
-    listenerSays = () => '{"jobs": []}';
-    r = await runTurn({ house, project: world(), message: 'move the scene to the Quay, maybe? not sure yet' });
-    ok('talk sends nobody', calls.filter((c) => c.who === 'worker').length === 0 && r.project.docs[0].text === PE1);
-    ok('and the persona hears of no change', !/Changed:/.test(heard()));
-
-    /* written commands and greetings never wait on the listener */
-    calls.length = 0;
-    workerSays = (user) => (/What the author just asked for/.test(user) ? edit('WHERE: the Ribway', 'WHERE: the Quay') : 'fine');
-    await runTurn({ house, project: world(), message: '*edit move the scene to the Quay' });
-    ok('a written command goes straight to its worker', listened().length === 0 && calls.some((c) => c.who === 'worker'));
-    calls.length = 0;
-    await runTurn({ house, project: world(), message: 'thanks!' });
-    ok('a thank-you with nothing waiting asks nobody', listened().length === 0 && calls.filter((c) => c.who === 'worker').length === 0);
-    calls.length = 0;
-    listenerSays = () => '{"jobs": []}';
-    await runTurn({ house, project: world(), message: 'sure' });
-    ok('"sure" is heard by the listener: after an offer it is the answer', listened().length === 1);
-
-    /* the listener rides its own connection when he gives it one */
-    calls.length = 0;
-    await runTurn({ house: { ...house, agentConnections: { listener: 'c2' } }, project: world(), message: 'what a lovely harbour' });
-    ok('the listener rides its own connection', listened().length === 1 && listened()[0].url.startsWith('https://two.example'), listened()[0] && listened()[0].url);
-    ok('and the front keeps the front\'s', calls.filter((c) => c.who === 'front').every((c) => c.url.startsWith('https://one.example')));
-
-    /* THE ROUND TRIP: a worker that needs his say, his answer, the same worker again */
-    calls.length = 0;
-    const MANIFEST = 'Cleanup plan: cut the duplicated harbour rule; reshape nothing else. Approve all, or only the safe cuts?';
-    /* only the showrunner asks; the eye that reads back afterwards just reads */
-    workerSays = (user, sys) => (!/THE CLEANUP WORKFLOW/.test(sys) ? 'Read it all back.'
-      : /What you put to Bruce last time, word for word:/.test(user)
-        ? edit('- The city lives inside a dormant leviathan.', '- The city lives inside a leviathan that is dormant, not dead.')
-        : `I read the whole plot essential.\n<ask>${MANIFEST}</ask>`);
-    r = await runTurn({ house, project: world(), message: 'Tidy up Plot Essential.md.', forceWorker: 'showrunner' });
-    ok('a worker that waits on him is kept on the turn, word for word', r.asks.length === 1 && r.asks[0].worker === 'showrunner' && r.asks[0].ask === MANIFEST, JSON.stringify(r.asks));
-    ok('nothing changed while it waits', r.project.docs[0].text === PE1);
-    ok('the persona is told to put all of it to him', heard().includes('Still to decide') && heard().includes(MANIFEST) && heard().includes('cannot go further until Bruce decides'), heard().slice(-400));
-    const history = [{ role: 'writer', text: 'Tidy up Plot Essential.md.', at: 1 }, { role: 'maker', text: 'Here is the plan — all of it, or only the safe cuts?', at: 2, asks: r.asks }];
-    calls.length = 0;
-    listenerSays = (user) => (user.includes(MANIFEST) ? '{"jobs":[{"worker":"showrunner","task":"Bruce approved only the safe cuts.","resumes":true}]}' : '{"jobs":[]}');
-    r = await runTurn({ house, project: world(), history, message: 'only the safe cuts, go' });
-    const sr = calls.find((c) => c.who === 'worker' && /THE CLEANUP WORKFLOW/.test(c.sys));
-    ok('his answer reaches the same worker with its own plan, word for word, and his words', sr && sr.user.includes(`What you put to Bruce last time, word for word:\n${MANIFEST}`) && sr.user.includes('What Bruce said back:\nonly the safe cuts, go'), sr && sr.user.slice(-400));
-    ok('and the approved change lands', /dormant, not dead/.test(r.project.docs[0].text), r.project.docs[0].text);
-    ok('once answered, nothing is waiting any more', r.asks.length === 0);
-
-    /* a worker that follows the craft's own marker instead of the tag */
-    calls.length = 0;
-    workerSays = () => 'CLEANUP MANIFEST\nNOISE — REMOVE (1): the duplicated rule. [PERMISSION_REQUEST]';
-    r = await runTurn({ house, project: world(), message: 'Tidy up Plot Essential.md.', forceWorker: 'showrunner' });
-    ok('the craft\'s own permission marker is read as waiting on him', r.asks.length === 1 && /NOISE — REMOVE/.test(r.asks[0].ask));
-
-    /* the craft's #prune has a home */
-    eq('#prune goes to the showrunner', route('#prune the minor characters').map((x) => x.worker), ['showrunner']);
-  } finally { globalThis.fetch = realFetch; }
-}
-
 /* ============================ long work: a hang guard, and cut answers (v1.1.6) */
 
 {
-  const { joinSeam, CARRY_ON, runTurn, plainFailure } = await import('../js/agents/run.js');
+  const { joinSeam, plainFailure } = await import('../js/agents/run.js');
   const call = await import('../js/agents/call.js');
 
   eq('a seam where the carry-on starts a little way back is joined once', joinSeam('the harbour wall was built by the guild', 'built by the guild in the flood year'), 'the harbour wall was built by the guild in the flood year');
   eq('a clean seam is joined as it is', joinSeam('{"find":"WHERE: the Rib', 'way"}'), '{"find":"WHERE: the Ribway"}');
   eq('a tiny accidental overlap is not taken for a restart', joinSeam('abc the', 'the end'), 'abc thethe end');
 
-  /* a worker's answer cut at its limit is carried on, and the change lands whole */
-  const bodies = [];
-  const realFetch = globalThis.fetch;
-  let n = 0;
-  globalThis.fetch = async (url, init) => {
-    const req = JSON.parse(init.body);
-    if (forFront(req)) {
-      const sse = 'data: ' + JSON.stringify({ choices: [{ delta: { content: 'Mm.' } }] }) + '\n\ndata: [DONE]\n\n';
-      return new Response(new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(sse)); c.close(); } }), { status: 200 });
-    }
-    const sys = (req.body.messages.find((m) => m.role === 'system') || {}).content || '';
-    let content = 'Read it all back.';
-    let finish = 'stop';
-    if (/Edit Mode Discipline/.test(sys)) {
-      bodies.push(req.body);
-      n++;
-      if (n === 1) { content = 'Moved it.\n<edits>[{"file":"Plot Essential.md","find":"WHERE: the Rib'; finish = 'length'; }
-      else content = 'way","replace":"WHERE: the Quay","reason":"he asked"}]</edits>';
-    }
-    /* the way a provider streams it: the words in pieces, the reason it stopped on the last */
-    const half = Math.ceil(content.length / 2);
-    return sseAnswer([{ choices: [{ delta: { content: content.slice(0, half) } }] }, { choices: [{ delta: { content: content.slice(half) }, finish_reason: finish }] }, '[DONE]']);
-  };
-  try {
-    const house = { connections: [{ id: 'c1', url: 'https://one.example/v1', model: 'm', key: 'k' }], agentConnections: {}, settings: { yourName: 'Bruce' }, personaFrame: '' };
-    const world = { id: 'pc', docs: [{ id: 'd1', name: 'Plot Essential.md', kind: 'pe', text: '# PE\n\n## SCENE\nWHERE: the Ribway\n' }], chats: [], recentSections: [] };
-    const r = await runTurn({ house, project: world, message: '*edit move the scene to the Quay' });
-    ok('an answer cut at its limit is carried on, and the change lands whole', /WHERE: the Quay/.test(r.project.docs[0].text) && !r.cards.some((c) => c.status === 'refused'), r.project.docs[0].text + JSON.stringify(r.cards));
-    const second = bodies[1] && bodies[1].messages.filter((m) => m.role !== 'system');
-    ok('the worker is shown what it wrote and asked only for the rest', second && second.length === 3 && second[1].role === 'assistant' &&
-      second[1].content.endsWith('WHERE: the Rib') && second[2].content === CARRY_ON, JSON.stringify(second && second.map((m) => m.role)));
-    ok('the same job is not asked for again from the start', bodies.length === 2, `${bodies.length} calls`);
-  } finally { globalThis.fetch = realFetch; }
 
   /* the ceiling is a hang guard, and says it was one */
   ok('the ceiling is no longer three minutes', call.CALL_TIMEOUT_MS >= 20 * 60 * 1000, String(call.CALL_TIMEOUT_MS));
@@ -1833,165 +1303,6 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
   } finally { call.setCallTimeoutForTests(30 * 60 * 1000); }
 }
 
-/* ============================ THE CREW'S CALLS STREAM, AND EVERY SHAPE OF ANSWER IS READ */
-{
-  const call = await import('../js/agents/call.js');
-  const { runTurn } = await import('../js/agents/run.js');
-  const conn = { url: 'https://api.deepseek.com', model: 'deepseek-chat', key: 'k' };
-  const realFetch = globalThis.fetch;
-  let script = [];
-  const specs = [];
-  globalThis.fetch = async (url, init) => { specs.push(JSON.parse(init.body)); const next = script.shift(); return typeof next === 'function' ? next() : next; };
-  try {
-    /* a worker's call is streamed, words and thinking each on their own channel */
-    const seen = [];
-    script = [() => sseAnswer([{ choices: [{ delta: { reasoning_content: 'Let me see. ' } }] }, { choices: [{ delta: { content: 'I built ' } }] },
-      { choices: [{ delta: { content: 'it whole.' }, finish_reason: 'stop' }] }, '[DONE]'])];
-    let r = await call.callModel(conn, { user: 'x', onProgress: (p) => seen.push(p.text) });
-    eq('a worker\'s call goes out streamed', [specs[0].stream, specs[0].body.stream], [true, true]);
-    eq('its words and its thinking come back apart', [r.ok, r.text, r.thinking, r.finish], [true, 'I built it whole.', 'Let me see. ', 'stop']);
-    ok('how far along it is was told as it arrived', seen.length >= 1 && seen[seen.length - 1] === 'I built it whole.', JSON.stringify(seen));
-
-    script = [() => sseAnswer([{ choices: [{ delta: { content: 'half a docu' }, finish_reason: 'length' }] }, '[DONE]'])];
-    r = await call.callModel(conn, { user: 'x' });
-    eq('an answer cut at its limit says so', [r.text, r.finish], ['half a docu', 'length']);
-
-    /* the device's word that the provider refused comes as one JSON object, not a stream */
-    script = [wholeAnswer({ error: 'provider', status: 401, detail: 'Incorrect API key provided' })];
-    let t0 = Date.now();
-    r = await call.callModel(conn, { user: 'x' });
-    ok('a refusal is read from a streamed call, and a bad key is not waited on', !r.ok && /Incorrect API key/.test(r.error) && Date.now() - t0 < 1500, JSON.stringify(r));
-
-    /* a provider that ignored "stream" and answered in one piece */
-    script = [wholeAnswer({ choices: [{ message: { content: 'all at once', reasoning_content: 'thought' }, finish_reason: 'stop' }] })];
-    r = await call.callModel(conn, { user: 'x' });
-    eq('a provider that answered in one piece is read too', [r.ok, r.text, r.thinking], [true, 'all at once', 'thought']);
-
-    /* an error in the middle of a stream is an error, and a passing one is tried again */
-    script = [() => sseAnswer([{ choices: [{ delta: { content: 'I bu' } }] }, { error: { message: 'Overloaded, try again', type: 'overloaded_error' } }]),
-      () => sseAnswer([{ choices: [{ delta: { content: 'I built it.' }, finish_reason: 'stop' }] }, '[DONE]'])];
-    t0 = Date.now();
-    r = await call.callModel(conn, { user: 'x' });
-    eq('an error mid-stream is never taken for a finished answer: it is asked again whole', [r.ok, r.text], [true, 'I built it.']);
-    script = [() => sseAnswer([{ choices: [{ delta: { content: 'I bu' } }] }, { error: { message: 'content policy', code: 400 } }])];
-    r = await call.callModel(conn, { user: 'x' });
-    ok('a mid-stream refusal that waiting cannot fix is said, not retried', !r.ok && /content policy/.test(r.error), JSON.stringify(r));
-    script = [() => sseAnswer([{ choices: [{ delta: { content: 'I bu' } }] }, { error: { message: 'the reasoning went wrong in the middle' } }])];
-    t0 = Date.now();
-    const thinker = { url: 'https://api.deepseek.com', model: 'deepseek-chat', key: 'k', thinking: 'high' };
-    r = await call.callModel(thinker, { user: 'x' });
-    ok('an uncoded error mid-answer is said once, at once — not retried as a lost connection', !r.ok && Date.now() - t0 < 1500 && script.length === 0, `${Date.now() - t0}ms`);
-    ok('and it teaches the house nothing about thinking: the request itself was taken', !thinker.learned, JSON.stringify(thinker.learned));
-
-    /* a stream that ended having said nothing, and never said it was done */
-    script = [() => new Response(new ReadableStream({ start(c) { c.close(); } }), { status: 200 }),
-      () => sseAnswer([{ choices: [{ delta: { content: 'there now' }, finish_reason: 'stop' }] }, '[DONE]'])];
-    r = await call.callModel(conn, { user: 'x' });
-    eq('a stream that ended before anything came is asked again', [r.ok, r.text], [true, 'there now']);
-    script = [() => sseAnswer([{ choices: [{ delta: { role: 'assistant' } }] }]),
-      () => sseAnswer([{ choices: [{ delta: { content: 'there now' }, finish_reason: 'stop' }] }, '[DONE]'])];
-    r = await call.callModel(conn, { user: 'x' });
-    eq('a stream that opened, said nothing and dropped is asked again', [r.ok, r.text], [true, 'there now']);
-    script = [() => sseAnswer([{ choices: [{ delta: { role: 'assistant' }, finish_reason: 'stop' }] }, '[DONE]'])];
-    r = await call.callModel(conn, { user: 'x' });
-    eq('but one that said it was done with nothing is an empty answer, for the worker to judge', [r.ok, r.text], [true, '']);
-
-    /* Claude's own stream shape */
-    script = [() => sseAnswer([{ type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: 'hm' } },
-      { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Claude ' } }, { type: 'content_block_delta', delta: { type: 'text_delta', text: 'wrote this' } },
-      { type: 'message_delta', delta: { stop_reason: 'max_tokens' } }, { type: 'message_stop' }])];
-    r = await call.callModel({ url: 'https://api.anthropic.com', model: 'claude-x', key: 'k' }, { user: 'x' });
-    eq('Claude\'s stream is read the same way, its cut included', [r.text, r.thinking, r.finish], ['Claude wrote this', 'hm', 'length']);
-
-    /* "Try it" asks all at once: only a whole answer reports its thinking tokens */
-    specs.length = 0;
-    script = [wholeAnswer({ choices: [{ message: { content: 'ready' }, finish_reason: 'stop' }], usage: { completion_tokens_details: { reasoning_tokens: 120 } } })];
-    const tried = await call.testConnection({ id: 'x', url: 'https://api.openai.com/v1', model: 'o3', key: 'k', thinking: 'high' });
-    ok('"Try it" asks all at once, and still hears thinking the address keeps to itself', specs[0] && !specs[0].stream && !specs[0].body.stream && tried.thinks && tried.hidden, JSON.stringify([specs[0] && specs[0].stream, tried]));
-
-    /* the front: a provider that ignored "stream" used to reach him as an empty reply */
-    script = [wholeAnswer({ choices: [{ message: { content: 'The harbour wall was paid for by the guild.' }, finish_reason: 'stop' }] })];
-    const said = [];
-    const front = await call.streamModel(conn, { system: 's', messages: [{ role: 'user', content: 'q' }], onText: (t) => said.push(t) });
-    eq('the front reads a whole answer too, and shows it', [front.text, said.join('')], ['The harbour wall was paid for by the guild.', 'The harbour wall was paid for by the guild.']);
-
-    /* a reply the provider breaks off partway is kept as cut — never passed off as finished */
-    script = [() => sseAnswer([{ choices: [{ delta: { content: 'The harbour wall was paid for by' } }] }, { error: { message: 'upstream went away', code: 502 } }])];
-    const broken = await call.streamModel(conn, { system: 's', messages: [{ role: 'user', content: 'q' }] });
-    eq('a reply the provider breaks off partway is kept as cut, by the provider', [broken.text, broken.cut, broken.cutBy], ['The harbour wall was paid for by', true, 'provider']);
-    script = [() => sseAnswer([{ choices: [{ delta: { content: 'Whole.' }, finish_reason: 'length' }] }, '[DONE]'])];
-    const long = await call.streamModel(conn, { system: 's', messages: [{ role: 'user', content: 'q' }] });
-    eq('one cut at its limit is still cut, and not blamed on the provider', [long.cut, long.cutBy], [true, undefined]);
-    globalThis.fetch = async (url, init) => {
-      const req = JSON.parse(init.body);
-      if (forFront(req)) return sseAnswer([{ choices: [{ delta: { content: 'It was paid for by the' } }] }, { error: { message: 'upstream went away', code: 502 } }]);
-      return wholeAnswer({ choices: [{ message: { content: '{"jobs":[]}' }, finish_reason: 'stop' }] });
-    };
-    const turn = await runTurn({ house: { connections: [{ id: 'c1', url: 'https://relay.example/v1', model: 'm', key: 'k' }], agentConnections: {}, settings: {}, personaFrame: '' },
-      project: { id: 'pc2', docs: [], chats: [], recentSections: [] }, message: 'who paid for the harbour wall?' });
-    eq('through the real turn: the reply is kept, cut, with the reason, and no failure', [turn.reply, turn.cut, turn.cutBy, turn.error], ['It was paid for by the', true, 'provider', null]);
-
-    /* the status line: who is on what, and how far along, through the real turn */
-    const statuses = [];
-    globalThis.fetch = async (url, init) => {
-      const req = JSON.parse(init.body);
-      if (forFront(req)) return sseAnswer([{ choices: [{ delta: { content: 'Built.' } }] }, '[DONE]']);
-      const sys = (req.body.messages.find((m) => m.role === 'system') || {}).content || '';
-      if (/PROACTIVE CO-WRITER/.test(sys)) {
-        const words = '<file name="Plot Essential.md">\n# PLOT ESSENTIAL — Tide — V1.0\n\n## SCENE\nWHERE: the salt flats, where the tide decides who rules\n</file>';
-        return sseAnswer([{ choices: [{ delta: { content: 'I built it. ' } }] }, { choices: [{ delta: { content: words }, finish_reason: 'stop' }] }, '[DONE]']);
-      }
-      return sseAnswer([{ choices: [{ delta: { content: 'Read it all back.' }, finish_reason: 'stop' }] }, '[DONE]']);
-    };
-    const out = await runTurn({ house: { connections: [{ id: 'c1', url: 'https://relay.example/v1', model: 'm', key: 'k' }], agentConnections: {}, settings: {}, personaFrame: '' },
-      project: { id: 'ps', docs: [], chats: [], recentSections: [] }, message: 'build it', forceWorker: 'builder', onStatus: (label, detail) => statuses.push([label, detail || '']) });
-    ok('the build still lands, streamed', out.project.docs.some((d) => /the tide decides who rules/.test(d.text)), JSON.stringify(out.project.docs.map((d) => d.name)));
-    ok('the status says who is on it, with how far along beside it', statuses.some(([l, d]) => l === 'the builder is on it' && /^\d[\d,]* words so far$/.test(d)), JSON.stringify(statuses));
-    ok('and the words-so-far never replaces the label', !statuses.some(([l]) => /words so far/.test(l)));
-  } catch (e) { ok('the streaming tests ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
-}
-
-/* ============================ THE READ-BACK CHECKS WHAT CHANGED; THE MODEL HE TALKS TO DECIDES WHO WORKS */
-{
-  const { runTurn } = await import('../js/agents/run.js');
-  const { LISTENER_MARK } = await import('../js/agents/listener.js');
-  const realFetch = globalThis.fetch;
-  const sent = [];
-  let chronicler = '';
-  globalThis.fetch = async (url, init) => {
-    const req = JSON.parse(init.body);
-    const sys = (req.body.messages.find((m) => m.role === 'system') || {}).content || '';
-    const user = (req.body.messages.filter((m) => m.role === 'user').pop() || {}).content || '';
-    const who = forFront(req) ? 'front' : sys.includes(LISTENER_MARK) ? 'listener' : /Evidenced CLEAN vs False CLEAN/.test(sys) ? 'eye' : /PROACTIVE CO-WRITER/.test(sys) ? 'builder' : 'worker';
-    sent.push({ who, url: req.url, user, sys });
-    if (who === 'front') return sseAnswer([{ choices: [{ delta: { content: 'Done.' }, finish_reason: 'stop' }] }, '[DONE]']);
-    if (who === 'listener') return wholeAnswer({ choices: [{ message: { content: '{"jobs":[{"worker":"chronicler","task":"Add that the courier packet is still in transit."}]}' }, finish_reason: 'stop' }] });
-    if (who === 'builder') return wholeAnswer({ choices: [{ message: { content: 'Built.\n<file name="Plot Essential.md">\n# PLOT ESSENTIAL — Soul Society — V1.0\n\n## SCENE\nWHERE: the 1st Division\n</file>' }, finish_reason: 'stop' }] });
-    if (who === 'eye') return wholeAnswer({ choices: [{ message: { content: 'Checked it; it holds.' }, finish_reason: 'stop' }] });
-    return wholeAnswer({ choices: [{ message: { content: chronicler }, finish_reason: 'stop' }] });
-  };
-  try {
-    const house = { connections: [{ id: 'c1', url: 'https://front.example/v1', model: 'the-smart-one', key: 'k' }, { id: 'c2', url: 'https://crew.example/v1', model: 'the-cheap-one', key: 'k' }],
-      agentConnections: { keeper: 'c1', _general: 'c2' }, settings: { yourName: 'Bruce' }, personaFrame: '' };
-    const world = () => ({ id: 'prb', docs: [{ id: 'd1', name: 'Plot Essential.md', kind: 'pe', text: '# PLOT ESSENTIAL — Soul Society — V1.0\n\n## TIMELINE\ne005 [Fri 3rd of Hanami] [setup]: Shunsui appointed Jovan.\n\n## SCENE\nWHERE: the 1st Division\n' }], chats: [], recentSections: [] });
-    chronicler = 'Added the packet.\n<edits>[{"file":"Plot Essential.md","insert_after":"e005 [Fri 3rd of Hanami] [setup]: Shunsui appointed Jovan.","replace":"e006 [Sun 5th of Hanami] [setup]: The courier packet had not reached the 13th or 2nd Division desks.","reason":"the packet in transit"}]</edits>';
-    await runTurn({ house, project: world(), message: 'so maybe we should add that the documents are still with the courier' });
-    const listener = sent.find((s) => s.who === 'listener');
-    const worker = sent.find((s) => s.who === 'worker');
-    eq('the one who decides who works rides the model he talks to, not the crew\'s', [listener && new URL(listener.url).host, worker && new URL(worker.url).host], ['front.example', 'crew.example']);
-    const eye = sent.find((s) => s.who === 'eye');
-    ok('the read-back is handed this turn\'s changes, as they now read', eye && /Check these changes, and what they touch:\n- Plot Essential\.md: put it under/.test(eye.user) && /now reads: e006 \[Sun 5th of Hanami\] \[setup\]: The courier packet had not reached/.test(eye.user), eye && eye.user.slice(0, 400));
-    ok('and told to leave everything else exactly as it is — never the whole book, front to back', eye && /Leave everything else exactly as it is/.test(eye.user) && /change nothing for it/.test(eye.user) && !/front to back/.test(eye.user));
-    ok('the words a change replaced are marked as gone, never to be quoted', eye && /was \(gone from the document \u2014 never quote it\)/.test(eye.user) || !/was:/.test(eye.user));
-    ok('the crew is told never to drop a fact by removing a "repeat"', worker && /Never remove a passage as a repeat of another unless every fact in it is stated in the one that stays/.test(worker.sys));
-    const front = sent.filter((s) => s.who === 'front').pop();
-    ok('the persona has a place to think that he never sees', front && /think inside <think> and <\/think> before you answer/.test(front.sys));
-    sent.length = 0;
-    await runTurn({ house, project: { id: 'pnew', docs: [], chats: [], recentSections: [] }, message: '*new build it', forceWorker: 'builder' });
-    const eye2 = sent.find((s) => s.who === 'eye');
-    ok('after a build the read-back reads the new document through', eye2 && /A document was written whole this turn: read that one through\./.test(eye2.user));
-  } catch (e) { ok('the read-back tests ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
-}
 
 /* ============================ NO INVENTED DATES, NO NOISE CARDS */
 {
@@ -2025,37 +1336,6 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
     [lint(heavy, { kind: 'continuity', deliverable: true }).found.some((y) => y.check === 'the document has grown heavy'), lint(heavy, { kind: 'pe', deliverable: true }).found.some((y) => y.check === 'the document has grown heavy')], [true, false]);
   eq('a change that only moves spacing is no change', applyEdit('WHERE: the  Ribway\nLAST: x', { find: 'WHERE: the  Ribway', replace: 'WHERE: the Ribway' }).why, 'only the spacing would change');
 
-  const { runTurn } = await import('../js/agents/run.js');
-  const { LISTENER_MARK } = await import('../js/agents/listener.js');
-  const realFetch = globalThis.fetch;
-  const asked = [];
-  let round = 0;
-  globalThis.fetch = async (url, init) => {
-    const req = JSON.parse(init.body);
-    const sys = (req.body.messages.find((m) => m.role === 'system') || {}).content || '';
-    const user = (req.body.messages.filter((m) => m.role === 'user').pop() || {}).content || '';
-    if (forFront(req)) return sseAnswer([{ choices: [{ delta: { content: 'Done.' }, finish_reason: 'stop' }] }, '[DONE]']);
-    if (sys.includes(LISTENER_MARK)) return wholeAnswer({ choices: [{ message: { content: '{"jobs":[{"worker":"editor","task":"Add the packet."}]}' }, finish_reason: 'stop' }] });
-    asked.push({ user, sys });
-    round++;
-    const out = round === 1
-      ? 'Done.\n<edits>' + JSON.stringify([
-        { file: 'Plot Essential.md', append: true, replace: 'e005 [Friday 3rd of Hanami, 1001 AG, 09:00] [POLITICAL]: Shunsui appointed Jovan.', reason: 'already there' },
-        { file: 'Plot Essential.md', find: 'WHERE: the 1st  Division', replace: 'WHERE: the 1st Division', reason: 'no change' },
-        { file: 'Plot Essential.md', replace: 'something with no instruction', reason: 'shapeless' },
-      ]) + '</edits>'
-      : 'Left it out.';
-    return wholeAnswer({ choices: [{ message: { content: out }, finish_reason: 'stop' }] });
-  };
-  try {
-    const house = { connections: [{ id: 'c1', url: 'https://relay.example/v1', model: 'm', key: 'k' }], agentConnections: {}, settings: { yourName: 'Bruce' }, personaFrame: '' };
-    const doc = '# PLOT ESSENTIAL — Soul Society — V1.0\n\n## TIMELINE\ne005 [Friday 3rd of Hanami, 1001 AG, 09:00] [POLITICAL]: Shunsui appointed Jovan.\n\n## SCENE\nWHERE: the 1st  Division\n';
-    const r = await runTurn({ house, project: { id: 'pn', docs: [{ id: 'd1', name: 'Plot Essential.md', kind: 'pe', text: doc }], chats: [], recentSections: [] }, message: 'add that Shunsui appointed Jovan' });
-    eq('what is already there, and a spacing-only change, reach him as no card at all', r.cards.filter((c) => /already in the document|only the spacing/.test(c.why || '')).length, 0);
-    ok('a change with nothing saying what to do goes back to the worker once, not to him', asked.length === 2 && /a change came with nothing saying what to do/.test(asked[1].user), asked.map((a) => a.user.slice(0, 80)).join(' | '));
-    ok('and the document is exactly as it was', r.project.docs[0].text === doc);
-    ok('the crew is told: one fact in one place, nothing invented, and a missing date-time assigned as its craft says', /Write each fact once, in the place the document keeps it/.test(asked[0].sys) && /Never invent a fact the documents do not hold or plainly imply \u2014 unless making it is the job itself: a build, or something he asked you to add or develop/.test(asked[0].sys) && /A missing date-time is the one your craft always assigns/.test(asked[0].sys));
-  } catch (e) { ok('the noise-card tests ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
 }
 
 /* ============================ BRANCH HERE: THE DOCUMENTS AS THEY STOOD, ON A COPY */
@@ -2094,309 +1374,6 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
   ok('a change whose words were changed since cannot be put back: it says so, rather than roll half', !refused.ok && refused.why, JSON.stringify(refused).slice(0, 200));
 }
 
-/* ============================ A THOUGHT WRITTEN INTO THE REPLY IS THINKING, NOT THE REPLY */
-{
-  const call = await import('../js/agents/call.js');
-  const { runTurn } = await import('../js/agents/run.js');
-  const { LISTENER_MARK } = await import('../js/agents/listener.js');
-  const conn = { url: 'https://neuralwatt.example/v1', model: 'glm', key: 'k' };
-  const realFetch = globalThis.fetch;
-  let next = null;
-  globalThis.fetch = async () => next();
-  try {
-    /* the leading span, its tags cut in two across chunks, as a server sends it */
-    const shown = [];
-    next = () => sseAnswer(['<thi', 'nk>He is asking for the paperwork to ', 'move. So my response, in my voice:</th', 'ink>\n\nThe packet is still in the courier\'s bag.'].map((c, i, all) => ({ choices: [{ delta: { content: c }, finish_reason: i === all.length - 1 ? 'stop' : null }] })).concat(['[DONE]']));
-    let r = await call.streamModel(conn, { system: 's', messages: [{ role: 'user', content: 'q' }], onText: (t) => shown.push(t) });
-    eq('a thought sent inside the words is moved to the thinking, even with its tags cut across chunks',
-      [r.text, r.thinking, shown.join('')], ["The packet is still in the courier's bag.", 'He is asking for the paperwork to move. So my response, in my voice:', "The packet is still in the courier's bag."]);
-    /* no opening tag at all — the model's template opened it */
-    next = () => sseAnswer([{ choices: [{ delta: { content: 'He is looking at his own book. So my response, short and warm:\n</think>\n\nAdded — the packet is in transit.' }, finish_reason: 'stop' }] }, '[DONE]']);
-    r = await call.streamModel(conn, { system: 's', messages: [{ role: 'user', content: 'q' }] });
-    eq('a lone closing tag: everything before it was the thought', [r.text, r.thinking], ['Added — the packet is in transit.', 'He is looking at his own book. So my response, short and warm:']);
-    /* a whole answer, not streamed */
-    next = () => wholeAnswer({ choices: [{ message: { content: '<think>weighing it</think>Here it is.' }, finish_reason: 'stop' }] });
-    r = await call.callModel(conn, { user: 'x' });
-    eq('and in a whole answer', [r.text, r.thinking], ['Here it is.', 'weighing it']);
-    next = () => sseAnswer([{ choices: [{ delta: { content: 'A < B, and the tide > the moon.' }, finish_reason: 'stop' }] }, '[DONE]']);
-    r = await call.streamModel(conn, { system: 's', messages: [{ role: 'user', content: 'q' }] });
-    eq('words with no thought in them are untouched', [r.text, r.thinking], ['A < B, and the tide > the moon.', '']);
-    eq('the crew\'s answers lose a thought with no opening tag too', stripThinking('I will add the line.\n</think>\nDone.\n<edits>[]</edits>'), 'Done.\n<edits>[]</edits>');
-
-    /* through the real turn: the reply is the answer, the thought is kept, and the persona's past replies go back clean */
-    const fronts = [];
-    let listenerSays = '{"jobs":[]}';
-    globalThis.fetch = async (url, init) => {
-      const req = JSON.parse(init.body);
-      const sys = (req.body.messages.find((m) => m.role === 'system') || {}).content || '';
-      if (forFront(req)) { fronts.push(req.body); return sseAnswer([{ choices: [{ delta: { content: '<think>plan it</think>Of course.' }, finish_reason: 'stop' }] }, '[DONE]']); }
-      if (sys.includes(LISTENER_MARK)) { fronts.push({ listener: sys }); return wholeAnswer({ choices: [{ message: { content: listenerSays }, finish_reason: 'stop' }] }); }
-      return wholeAnswer({ choices: [{ message: { content: 'Added it.\n<edits>[{"file":"Plot Essential.md","append":true,"replace":"e006 [Sun] [setup]: The packet was still in transit."}]</edits>' }, finish_reason: 'stop' }] });
-    };
-    const house = { connections: [{ id: 'c1', url: 'https://relay.example/v1', model: 'm', key: 'k' }], agentConnections: {}, settings: { yourName: 'Bruce' }, personaFrame: '' };
-    const world = () => ({ id: 'pt', docs: [{ id: 'd1', name: 'Plot Essential.md', kind: 'pe', text: '# PLOT ESSENTIAL — Soul Society — V1.0\n\n## TIMELINE\ne005 [Fri] [setup]: Shunsui appointed Jovan.\n' }], chats: [], recentSections: [] });
-    const history = [{ role: 'writer', text: 'hi', at: 1 }, { role: 'maker', text: 'He is looking at his own book. So my response:\n</think>\nHello!', at: 2 }];
-    const turn = await runTurn({ house, project: world(), history, message: 'the tide should feel like a character' });
-    eq('through the real turn: the reply is the answer, and its thought is kept with it', [turn.reply, turn.thinking], ['Of course.', 'plan it']);
-    const sent = fronts.find((f) => f.messages);
-    ok('the persona\'s earlier reply goes back without the thought that was in it', sent && JSON.stringify(sent.messages).includes('"Hello!"') && !JSON.stringify(sent.messages).includes('looking at his own book'), sent && JSON.stringify(sent.messages).slice(0, 300));
-    ok('and it is told to answer directly, never its notes on how to answer', sent && /never your notes to yourself about how to answer/.test(sent.messages[0].content));
-
-    /* his own words: a soft "maybe we should add that…" to a book that exists */
-    fronts.length = 0;
-    const HIS = 'So maybe we should add that Jovan just got accepted to seiretei and actually have been assigned to Thirteen division last week and the documents is on the move to Thirteenth Division desk and the second division but rukia and sui feng doesn\'t know since it\'s still moving. And idk how Jovan just got accepted without academy probably the bankai case and who approved logically shunsui?';
-    eq('his message, read by the keyword reading with a plot essential there: an ask to write it', route(HIS, { hasPlotEssential: true, hasDocs: true }).map((j) => j.worker), ['editor']);
-    eq('an idea floated with no ask to write it stays talk', route('maybe the guild owns a dragon?', { hasPlotEssential: true, hasDocs: true }).length, 0);
-    /* the listener hears it as talk and sends nobody (what happened): the persona is told nothing was written */
-    listenerSays = '{"jobs":[]}';
-    const told = await runTurn({ house, project: world(), message: HIS });
-    const frontSaw = fronts.filter((f) => f.messages).pop();
-    ok('when the listener sends nobody for words that read like a job, the persona is told plainly nothing was written',
-      told.project.docs[0].text === world().docs[0].text && frontSaw && /Nothing was changed just now: nobody was sent to do it\. If what Bruce asked for is already in the documents/.test(frontSaw.messages[frontSaw.messages.length - 1].content)
-      && /Never say you changed something just now\./.test(frontSaw.messages[frontSaw.messages.length - 1].content));
-    fronts.length = 0;
-    await runTurn({ house, project: world(), message: 'the tide should feel like a character' });
-    ok('plain talk carries no such line', !fronts.filter((f) => f.messages).some((f) => /Nothing was changed just now/.test(JSON.stringify(f.messages))));
-
-    /* "did you add it?" after the edit landed: the persona answers from the house's record, not its memory */
-    const landed = { role: 'maker', text: 'He is looking at his own book… (a thought, shown as a reply)', at: 3,
-      cards: [{ status: 'applied', name: 'Plot Essential.md', how: 'put it under e005', reason: 'the courier packet, per Protocol 20', now: 'e006 [Sun 09:00] [setup]: The courier packet had not reached the 13th or 2nd Division desks.' }],
-      batches: [{ id: 'b1', undone: false }] };
-    const undone = { role: 'maker', text: 'Moved the scene.', at: 5,
-      cards: [{ status: 'applied', name: 'Plot Essential.md', how: 'exact', reason: 'moved the scene', now: 'WHERE: the Quay' }],
-      batches: [{ id: 'b2', undone: true }] };
-    fronts.length = 0;
-    await runTurn({ house, project: world(), history: [{ role: 'writer', text: 'add the paperwork', at: 2 }, landed, { role: 'writer', text: 'move the scene', at: 4 }, undone], message: 'did you add it?' });
-    const asked = fronts.filter((f) => f.messages).pop();
-    const last = asked ? asked.messages[asked.messages.length - 1].content : '';
-    ok('asked "did you add it?", the persona is shown the change that stands, with the words it wrote',
-      /Changed earlier in this conversation, and standing now \(newest first\)/.test(last) && /Plot Essential\.md: put it under e005 \(the courier packet\) \u2014 now reads: \u201ce006 \[Sun 09:00\] \[setup\]: The courier packet had not reached the 13th or 2nd Division desks\.\u201d/.test(last), last.slice(last.indexOf('Changed earlier'), last.indexOf('Changed earlier') + 400));
-    ok('a change that was put back is not in the record', !/WHERE: the Quay/.test(last));
-    ok('and the record carries no machinery (the crew\'s "per Protocol 20" is gone)', !/Protocol 20/.test(last));
-    const workerSys = [];
-    const standIn = globalThis.fetch;
-    globalThis.fetch = async (url, init) => {
-      const req = JSON.parse(init.body);
-      const sys = (req.body.messages.find((m) => m.role === 'system') || {}).content || '';
-      if (forFront(req)) return sseAnswer([{ choices: [{ delta: { content: 'It is already in.' }, finish_reason: 'stop' }] }, '[DONE]']);
-      if (!sys.includes(LISTENER_MARK)) workerSys.push(sys);
-      return wholeAnswer({ choices: [{ message: { content: sys.includes(LISTENER_MARK) ? '{"jobs":[{"worker":"editor","task":"Add the courier packet line."}]}' : 'It is already there.' }, finish_reason: 'stop' }] });
-    };
-    await runTurn({ house, project: world(), message: 'add that the packet is still with the courier' });
-    ok('the crew is told: what is already in the document is not written again', workerSys.length && workerSys.every((sy) => /If what he asks for is already in the document as it stands, change nothing, and say that it is already there\./.test(sy)));
-    globalThis.fetch = standIn;
-    listenerSays = 'not readable';          /* the listener's answer lost: the keyword reading decides */
-    const edit = await runTurn({ house, project: world(), message: HIS });
-    ok('and through the real turn, even with the listener\'s answer lost, it is written', edit.project.docs[0].text.includes('The packet was still in transit.'), edit.project.docs[0].text);
-    ok('what the listener is told: a soft suggestion to add to an existing document is an ask, and a question with it is part of the job',
-      fronts.some((f) => f.listener && /A suggestion to put something into a document that already exists IS an ask, however softly he puts it/.test(f.listener) && /a question he asks with it \(how, who, why\) is part of the job/.test(f.listener)));
-  } catch (e) { ok('the thought-splitting tests ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
-}
-
-/* ============================ HIS ANSWER STARTS WHILE THE LISTENER READS */
-{
-  const { runTurn } = await import('../js/agents/run.js');
-  const { LISTENER_MARK } = await import('../js/agents/listener.js');
-  const realFetch = globalThis.fetch;
-  const house = { connections: [{ id: 'c1', url: 'https://relay.example/v1', model: 'm', key: 'k' }], agentConnections: {}, settings: { yourName: 'Bruce' }, personaFrame: '' };
-  const world = () => ({ id: 'pe1', docs: [{ id: 'd1', name: 'Plot Essential.md', kind: 'pe', text: '# PLOT ESSENTIAL — Tide — V1.0\n\n## WORLD\n### Rules\n- The tide decides who rules.\n\n## SCENE\nWHERE: the salt flats\n' }], chats: [], recentSections: [] });
-  let log, gate, open, listenerSays, fronts, frontSays;
-  const reset = () => {
-    log = []; fronts = [];
-    gate = new Promise((r) => { open = r; });
-    listenerSays = '{"jobs":[]}';
-    frontSays = () => [{ choices: [{ delta: { content: 'It already does, a little.' }, finish_reason: 'stop' }] }, '[DONE]'];
-  };
-  /* a stream that honours Stop and a letting-go, the way a real one does */
-  const streamOf = (lines, signal, slow = 0) => new Response(new ReadableStream({
-    async start(c) {
-      const enc = new TextEncoder();
-      signal && signal.addEventListener('abort', () => { try { c.error(new DOMException('let go', 'AbortError')); } catch (_) {} }, { once: true });
-      for (const l of lines) {
-        if (signal && signal.aborted) return;
-        c.enqueue(enc.encode('data: ' + (typeof l === 'string' ? l : JSON.stringify(l)) + '\n\n'));
-        if (slow) await new Promise((r) => setTimeout(r, slow));
-      }
-      try { c.close(); } catch (_) {}
-    },
-  }), { status: 200 });
-  globalThis.fetch = async (url, init) => {
-    const req = JSON.parse(init.body);
-    const sys = (req.body.messages.find((m) => m.role === 'system') || {}).content || '';
-    if (forFront(req)) {
-      fronts.push(req.body);
-      log.push(fronts.length === 1 ? 'front asked' : 'front asked again');
-      const lines = frontSays(fronts.length);
-      if (!Array.isArray(lines)) return lines;
-      return streamOf(lines, init.signal, fronts.length === 1 ? 40 : 0);
-    }
-    if (sys.includes(LISTENER_MARK)) {
-      log.push('listener asked');
-      await gate;
-      log.push('listener answered');
-      return wholeAnswer({ choices: [{ message: { content: listenerSays }, finish_reason: 'stop' }] });
-    }
-    log.push('worker');
-    return wholeAnswer({ choices: [{ message: { content: 'Added it.\n<edits>[{"file":"Plot Essential.md","insert_after":"- The tide decides who rules.","replace":"- The kingdom has a second moon."}]</edits>' }, finish_reason: 'stop' }] });
-  };
-  const run = async (message, extra = {}) => {
-    const heard = { text: [], thinking: [], letGo: [], order: [] };
-    setTimeout(() => open(), 120);
-    const r = await runTurn({ house, project: world(), message,
-      onText: (t, at) => { heard.text.push([t, at, Date.now(), log.includes('listener answered')]); heard.order.push('text:' + t); },
-      onThinking: (t, at) => { heard.thinking.push([t, at, Date.now(), log.includes('listener answered')]); heard.order.push('thinking:' + t); },
-      onLetGo: () => { heard.letGo.push(Date.now()); heard.order.push('let go'); }, ...extra });
-    return { r, heard };
-  };
-  try {
-    /* talk: the reply is asked for at once, and shown only once the listener has answered */
-    reset();
-    let { r, heard } = await run('the tide should feel like a character');
-    eq('talk: his answer is asked for at the same moment the listener reads', log.slice(0, 2).sort(), ['front asked', 'listener asked']);
-    ok('talk: nothing of it is shown before the listener has answered', heard.text.length > 0 && heard.text.every(([, , , after]) => after === true),
-      JSON.stringify(heard.text.map(([t, , , after]) => [t, after])));
-    eq('talk: one reply, the one that was started, word for word', [fronts.length, r.reply, r.error], [1, 'It already does, a little.', null]);
-
-    /* the same words it would have had: the early reply reads exactly what the ordinary one reads */
-    const early = fronts[0];
-    reset();
-    listenerSays = 'not an answer at all';           /* the old reading runs, and sends nobody */
-    ({ r } = await run('the tide should feel like a character'));
-    eq('talk: the early reply reads exactly what the ordinary one reads', JSON.stringify(fronts[0].messages), JSON.stringify(early.messages));
-
-    /* a job the keyword reading could not see: the early reply is let go unseen */
-    reset();
-    listenerSays = '{"jobs":[{"worker":"editor","task":"Add a second moon to the rules."}]}';
-    frontSays = (n) => (n === 1
-      ? [{ choices: [{ delta: { content: 'EARLY WORDS ' } }] }, { choices: [{ delta: { content: 'that must never show' } }] }, { choices: [{ delta: { content: '.' }, finish_reason: 'stop' }] }, '[DONE]']
-      : [{ choices: [{ delta: { content: 'Two moons it is.' }, finish_reason: 'stop' }] }, '[DONE]']);
-    ({ r, heard } = await run('give the kingdom a second moon'));
-    ok('a job after all: the early reply never reaches him', !heard.text.some(([t]) => /EARLY|never show/.test(t)), JSON.stringify(heard.text.map(([t]) => t)));
-    eq('a job after all: he hears the reply written after the work', [r.reply, fronts.length], ['Two moons it is.', 2]);
-    ok('and that one is told what got done', /What got done while you were talking/.test(JSON.stringify(fronts[1].messages)));
-    ok('and the change landed', /second moon/.test(r.project.docs[0].text));
-
-    /* a job the keyword reading does see: nothing is started early */
-    reset();
-    listenerSays = '{"jobs":[{"worker":"editor","task":"Change the rule."}]}';
-    ({ r } = await run('change the rule to say the tide decides nothing'));
-    eq('an obvious job starts nothing early: one reply, after the work', [fronts.length, log.indexOf('front asked') > log.indexOf('worker')], [1, true]);
-
-    /* something waits on him: his words are likely its answer, so nothing is started early */
-    reset();
-    const history = [{ role: 'writer', text: 'tidy it', at: 1 }, { role: 'maker', text: 'Here is the plan.', at: 2, asks: [{ worker: 'showrunner', ask: 'PLAN: cut the old subplot. Go ahead?' }] }];
-    ({ r } = await run('sounds right to me', { history }));
-    ok('with something waiting on him, the reply waits for the listener', log.indexOf('front asked') > log.indexOf('listener answered'), JSON.stringify(log));
-
-    /* the early reply failed before a word came: the ordinary one is asked for, and he still gets his answer */
-    reset();
-    frontSays = (n) => (n === 1 ? wholeAnswer({ error: 'provider', status: 429, detail: 'Too Many Requests' }) : [{ choices: [{ delta: { content: 'Here I am.' }, finish_reason: 'stop' }] }, '[DONE]']);
-    ({ r } = await run('the tide should feel like a character'));
-    eq('an early reply that failed before a word costs him nothing: the ordinary one comes', [r.reply, r.error, fronts.length], ['Here I am.', null, 2]);
-    reset();
-    frontSays = () => wholeAnswer({ error: 'provider', status: 401, detail: 'Incorrect API key provided' });
-    ({ r } = await run('the tide should feel like a character'));
-    eq('but a bad key is not asked twice: it is said, once', [fronts.length, /Incorrect API key/.test(r.error || '')], [1, true]);
-
-    /* Stop while the listener reads: nothing is shown, and the turn says it stopped */
-    reset();
-    const stop = new AbortController();
-    setTimeout(() => stop.abort(), 30);
-    ({ r, heard } = await run('the tide should feel like a character', { signal: stop.signal }));
-    eq('Stop while the listener reads: nothing is shown, and it stopped', [r.stopped === true, heard.text.length], [true, 0]);
-
-    /* "ok build it" in a new world, while the listener's answer cannot be read:
-     * it is still a build, and no reply is started early for it */
-    reset();
-    listenerSays = 'hm, hard to say';
-    const blank = { id: 'pe2', docs: [], chats: [], recentSections: [] };
-    const builderSaid = [];
-    const before = globalThis.fetch;
-    globalThis.fetch = async (url, init) => {
-      const req = JSON.parse(init.body);
-      const sys = (req.body.messages.find((m) => m.role === 'system') || {}).content || '';
-      if (/PROACTIVE CO-WRITER/.test(sys)) { builderSaid.push(1); log.push('builder'); return wholeAnswer({ choices: [{ message: { content: 'Built.\n<file name="Plot Essential.md">\n# PLOT ESSENTIAL — Salt — V1.0\n\n## SCENE\nWHERE: the quay\n</file>' }, finish_reason: 'stop' }] }); }
-      return before(url, init);
-    };
-    setTimeout(() => open(), 30);
-    r = await runTurn({ house, project: blank, message: 'ok build it', history: [{ role: 'writer', text: 'a drowned city where the guilds own the tides', at: 1 }, { role: 'maker', text: 'Lovely. Who holds the keys to the lock gates?', at: 2 }] });
-    globalThis.fetch = before;
-    eq('"ok build it" builds even when the listener\'s answer cannot be read', [builderSaid.length, r.project.docs.map((d) => d.name)], [1, ['Plot Essential.md']]);
-    eq('and nothing was started early for it: one reply, after the build', [fronts.length, log.includes('builder') && log.indexOf('front asked') > log.indexOf('builder')], [1, true]);
-
-    /* THE STREAM STARTS AT THE THINKING (v1.6.0): the early reply's thinking is
-     * shown the moment it arrives, while the listener still reads; only its
-     * words wait for the listener. (Before, both waited, and the thinking
-     * reached the room all at once when the listener answered.) */
-    reset();
-    frontSays = () => [{ choices: [{ delta: { reasoning_content: 'Mm, the tide ' } }] }, { choices: [{ delta: { reasoning_content: 'as a character...' } }] },
-      { choices: [{ delta: { content: 'Yes.' }, finish_reason: 'stop' }] }, '[DONE]'];
-    ({ r, heard } = await run('the tide should feel like a character'));
-    ok('talk: its thinking is shown the moment it arrives, before the listener has answered', heard.thinking.length === 2 && heard.thinking.every(([, , , after]) => after === false),
-      JSON.stringify(heard.thinking.map(([t, , , after]) => [t, after])));
-    ok('and each piece carries the moment it arrived, drawn the same moment', heard.thinking.every(([, at, shown]) => at > 0 && shown - at < 20),
-      JSON.stringify(heard.thinking.map(([, at, shown]) => shown - at)));
-    ok('its words still wait for the listener, and keep the moment they arrived', heard.text.length === 1 && heard.text[0][3] === true && heard.text[0][1] > 0 && heard.text[0][2] - heard.text[0][1] >= 20,
-      JSON.stringify(heard.text.map(([t, at, shown, after]) => [t, shown - at, after])));
-    eq('kept as the reply\'s own: its thinking and its words, nothing let go', [r.thinking, r.reply, heard.letGo.length], ['Mm, the tide as a character...', 'Yes.', 0]);
-
-    /* a job after all: the thinking the early reply showed is let go with it, and
-     * the reply written after the work thinks from its own first word */
-    reset();
-    listenerSays = '{"jobs":[{"worker":"editor","task":"Add a second moon to the rules."}]}';
-    frontSays = (n) => (n === 1
-      ? [{ choices: [{ delta: { reasoning_content: 'EARLY THOUGHT ' } }] }, { choices: [{ delta: { content: 'EARLY WORDS' }, finish_reason: 'stop' }] }, '[DONE]']
-      : [{ choices: [{ delta: { reasoning_content: 'With the moon in, ' } }] }, { choices: [{ delta: { content: 'Two moons it is.' }, finish_reason: 'stop' }] }, '[DONE]']);
-    ({ r, heard } = await run('give the kingdom a second moon'));
-    eq('a job after all: what the early reply showed is let go once, before the reply after the work thinks',
-      heard.order, ['thinking:EARLY THOUGHT ', 'let go', 'thinking:With the moon in, ', 'text:Two moons it is.']);
-    eq('and the reply he keeps carries only its own thinking', [r.reply, r.thinking], ['Two moons it is.', 'With the moon in, ']);
-
-    /* an early reply that showed no thinking is let go without a word to the room */
-    reset();
-    listenerSays = '{"jobs":[{"worker":"editor","task":"Add a second moon to the rules."}]}';
-    frontSays = (n) => (n === 1 ? [{ choices: [{ delta: { content: 'EARLY WORDS' }, finish_reason: 'stop' }] }, '[DONE]'] : [{ choices: [{ delta: { content: 'Two moons it is.' }, finish_reason: 'stop' }] }, '[DONE]']);
-    ({ r, heard } = await run('give the kingdom a second moon'));
-    eq('nothing shown, nothing to let go', [heard.letGo.length, r.reply], [0, 'Two moons it is.']);
-
-    /* Stop while the listener reads, after some thinking was shown: it stays — his
-     * Stop, not the house's choice (Cozy Tavern M301) — and nothing is let go */
-    reset();
-    frontSays = () => [{ choices: [{ delta: { reasoning_content: 'Hm. ' } }] }, { choices: [{ delta: { reasoning_content: 'The tide...' } }] }, { choices: [{ delta: { content: 'never shown' }, finish_reason: 'stop' }] }, '[DONE]'];
-    const halt = new AbortController();
-    setTimeout(() => halt.abort(), 60);
-    ({ r, heard } = await run('the tide should feel like a character', { signal: halt.signal }));
-    eq('Stop while the listener reads: the thinking shown stays, the words never come', [r.stopped === true, heard.thinking.length > 0, heard.text.length, heard.letGo.length], [true, true, 0, 0]);
-
-    /* a piece already on its way when the early reply is let go never reaches the
-     * room: a provider that ignores the hang-up keeps streaming, and none of it lands */
-    reset();
-    listenerSays = '{"jobs":[{"worker":"editor","task":"Add a second moon to the rules."}]}';
-    const deaf = (lines) => new Response(new ReadableStream({
-      async start(c) {
-        const enc = new TextEncoder();
-        for (const l of lines) { try { c.enqueue(enc.encode('data: ' + (typeof l === 'string' ? l : JSON.stringify(l)) + '\n\n')); } catch (_) { return; } await new Promise((res) => setTimeout(res, 25)); }
-        try { c.close(); } catch (_) {}
-      },
-    }), { status: 200 });
-    frontSays = (n) => (n === 1
-      ? deaf(Array.from({ length: 16 }, (_, i) => ({ choices: [{ delta: { reasoning_content: `late ${i} ` } }] })).concat(['[DONE]']))
-      : [{ choices: [{ delta: { content: 'Two moons it is.' }, finish_reason: 'stop' }] }, '[DONE]']);
-    ({ r, heard } = await run('give the kingdom a second moon'));
-    const cut = heard.order.indexOf('let go');
-    ok('after the let-go, nothing more of the early reply reaches the room', cut > 0 && !heard.order.slice(cut + 1).some((x) => /^thinking:late/.test(x)), JSON.stringify(heard.order));
-
-    /* a passing failure after its thinking was shown: the ordinary reply is asked
-     * for, and the failed one's thinking is let go first, so the box starts over */
-    reset();
-    frontSays = (n) => (n === 1
-      ? [{ choices: [{ delta: { reasoning_content: 'FIRST TRY ' } }] }, { error: { message: 'Overloaded, try again', code: 529 } }]
-      : [{ choices: [{ delta: { reasoning_content: 'second try ' } }] }, { choices: [{ delta: { content: 'Here I am.' }, finish_reason: 'stop' }] }, '[DONE]']);
-    ({ r, heard } = await run('the tide should feel like a character'));
-    eq('a passing failure after thinking: let go, then the ordinary reply from its own first thought',
-      [heard.order, r.reply, r.thinking], [['thinking:FIRST TRY ', 'let go', 'thinking:second try ', 'text:Here I am.'], 'Here I am.', 'second try ']);
-  } catch (e) { ok('the early-reply tests ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
-}
 
 /* ============================ the save line: deletes and house saves (v1.1.8) */
 {
@@ -2497,102 +1474,6 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
   eq('a lower-case <user> tag is still left as the preset\'s own markup', voiceMacros('<user>x</user> <USER>', named), '<user>x</user> Bruce');
 }
 
-/* ============================ chatting stays chatting; clear and delete work (v1.1.12) */
-{
-  const { runTurn, landTurn } = await import('../js/agents/run.js');
-  const { LISTENER_MARK } = await import('../js/agents/listener.js');
-  const { undoBatch } = await import('../js/doc/edits.js');
-  const calls = [];
-  let listenerSays = () => '{"jobs": []}';
-  let workerSays = () => 'Read it all back.';
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = async (url, init) => {
-    const req = JSON.parse(init.body);
-    if (forFront(req)) {
-      calls.push({ who: 'front' });
-      const sse = 'data: ' + JSON.stringify({ choices: [{ delta: { content: 'Mm.' } }] }) + '\n\ndata: [DONE]\n\n';
-      return new Response(new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(sse)); c.close(); } }), { status: 200 });
-    }
-    const sys = (req.body.messages.find((m) => m.role === 'system') || {}).content || '';
-    const user = (req.body.messages.find((m) => m.role === 'user') || {}).content || '';
-    const who = sys.includes(LISTENER_MARK) ? 'listener' : /Evidenced CLEAN vs False CLEAN/.test(sys) ? 'eye' : /PROACTIVE CO-WRITER/.test(sys) ? 'builder' : 'worker';
-    calls.push({ who, user });
-    const out = who === 'listener' ? listenerSays(user) : workerSays(user, sys);
-    return wholeAnswer({ choices: [{ message: { content: out }, finish_reason: 'stop' }] });
-  };
-  const house = { connections: [{ id: 'c1', url: 'https://one.example/v1', model: 'm', key: 'k' }], agentConnections: {}, settings: { makerName: 'Eni', yourName: 'Bruce' }, personaFrame: 'You are Eni.' };
-  /* a plot essential with leftover findings: undated events, a name inside a trait */
-  const MESSY = '# PLOT ESSENTIAL — Harbour — V1.0\n\n## WORLD\n### Rules\n- The city lives inside a dormant leviathan.\n\n## TIMELINE\ne001 Mira arrives.\ne002 The tide turns.\n\n## SCENE\nWHERE: the Ribway\n';
-  const world = () => ({ id: 'pq', docs: [{ id: 'd1', name: 'Plot Essential.md', kind: 'pe', text: MESSY }, { id: 'd2', name: 'Notes.md', kind: 'notes', text: 'ideas' }], chats: [], recentSections: [] });
-  const heavy = () => calls.filter((c) => c.who !== 'front' && c.who !== 'listener');
-  try {
-    /* a question, with findings sitting in the document: nobody works, the persona just answers */
-    let r = await runTurn({ house, project: world(), message: 'what do you think of Mira so far?' });
-    ok('a question sends no worker, even with leftover findings in the document', heavy().length === 0, calls.map((c) => c.who).join(','));
-    ok('and changes nothing', r.project.docs[0].text === MESSY);
-
-    /* brainstorming with nothing built: never a build, whether the listener answers or not */
-    const BRAIN = 'ok so I am thinking a drowned city where the guilds own the tides, and Mira is a salvager who hates the guild, and there is a lighthouse keeper who knows too much. Still thinking about the magic.';
-    const fresh = () => ({ id: 'pb', docs: [], chats: [], recentSections: [] });
-    calls.length = 0;
-    r = await runTurn({ house, project: fresh(), message: BRAIN });
-    ok('brainstorming builds nothing when the listener hears it as talk', !calls.some((c) => c.who === 'builder') && r.project.docs.length === 0);
-    calls.length = 0;
-    listenerSays = () => 'hm';
-    r = await runTurn({ house, project: fresh(), message: BRAIN });
-    ok('and nothing when the listener cannot answer either — the old "long message builds" rule is gone', !calls.some((c) => c.who === 'builder') && r.project.docs.length === 0, calls.map((c) => c.who).join(','));
-
-    /* when he says build it, the builder reads the whole brainstorm, however long */
-    calls.length = 0;
-    listenerSays = () => '{"jobs":[{"worker":"builder","task":"Build the plot essential from everything Bruce said."}]}';
-    const long = [];
-    for (let i = 0; i < 40; i++) long.push({ role: i % 2 ? 'maker' : 'writer', text: (i === 0 ? 'FIRST IDEA: the guilds own the tides. ' : 'more brainstorming. ') + 'x'.repeat(900), at: i });
-    await runTurn({ house, project: fresh(), history: long, message: 'okay, make the plot essential now' });
-    const b = calls.find((c) => c.who === 'builder');
-    ok('asked to build, the builder reads the whole brainstorm — its first idea too', b && b.user.includes('FIRST IDEA: the guilds own the tides.'), b ? 'first idea missing' : 'no builder');
-
-    /* clear: the house empties it; the guard against loss does not stop what he asked for */
-    calls.length = 0;
-    listenerSays = () => '{"jobs": [], "clear": ["plot essential"]}';
-    r = await runTurn({ house, project: world(), message: 'clear the plot essential' });
-    ok('"clear the plot essential" empties it', r.project.docs.find((d) => d.name === 'Plot Essential.md').text === '', JSON.stringify(r.cards));
-    ok('no worker was sent for it, and nothing read it back', heavy().length === 0, calls.map((c) => c.who).join(','));
-    ok('its card says so, with a way to put it back', r.cards.some((c) => c.status === 'applied' && c.how === 'cleared it') && r.batches.length === 1);
-    const back = undoBatch(r.project.docs.map((d) => ({ name: d.name, text: d.text })), r.batches[0]);
-    ok('putting it back restores every word', back.ok && back.changes[0].text === MESSY);
-
-    /* delete: gone from the world, gone where it lands, and it can come back */
-    calls.length = 0;
-    listenerSays = () => '{"jobs": [], "delete": ["Notes.md"]}';
-    const w0 = world();
-    r = await runTurn({ house, project: w0, message: 'delete the notes, I do not need them' });
-    ok('"delete the notes" deletes it', !r.project.docs.some((d) => d.name === 'Notes.md'));
-    const snap = new Map(w0.docs.map((d) => [d.name, d.text]));
-    const liveWorld = { ...w0, chats: [{ id: 'ch', turns: [] }] };
-    const landed = landTurn(liveWorld, { chatId: 'ch', snapshot: snap, result: r, makerTurn: { role: 'maker', text: 'Mm.', at: 5, cards: r.cards, batches: r.batches } });
-    ok('and it is deleted in the world it lands in', !landed.world.docs.some((d) => d.name === 'Notes.md'));
-    const undo = undoBatch(landed.world.docs.map((d) => ({ name: d.name, text: d.text })), r.batches[0]);
-    ok('and it can come back, with its kind', undo.ok && undo.changes[0].add === true && undo.changes[0].text === 'ideas' && undo.changes[0].kind === 'notes', JSON.stringify(undo));
-    const handChanged = { ...w0, docs: w0.docs.map((d) => (d.name === 'Notes.md' ? { ...d, text: 'he typed more' } : d)), chats: [{ id: 'ch', turns: [] }] };
-    const kept = landTurn(handChanged, { chatId: 'ch', snapshot: snap, result: r, makerTurn: { role: 'maker', text: 'Mm.', at: 6, cards: r.cards, batches: r.batches } });
-    ok('a document he changed by hand meanwhile is kept, never deleted from under him', kept.world.docs.some((d) => d.name === 'Notes.md' && d.text === 'he typed more'));
-
-    /* a worker cannot clear a document by claiming to be the house */
-    calls.length = 0;
-    listenerSays = () => '{"jobs":[{"worker":"editor","task":"tidy the notes"}]}';
-    workerSays = () => 'Done.\n<edits>[{"house": true, "clear": true, "file": "Plot Essential.md"}]</edits>';
-    r = await runTurn({ house, project: world(), message: 'tidy the wording in the notes' });
-    ok('a worker\'s edit that claims to be the house clears nothing', r.project.docs[0].text === MESSY, r.project.docs[0].text.slice(0, 40));
-
-    /* a one-field edit is not read back in full (the craft's *edit: required scan only) */
-    calls.length = 0;
-    listenerSays = () => '{"jobs":[{"worker":"editor","task":"Move the scene to the Quay."}]}';
-    workerSays = (user, sys) => (/Evidenced CLEAN vs False CLEAN/.test(sys) ? 'read back' : 'Moved.\n<edits>' + JSON.stringify([{ file: 'Plot Essential.md', find: 'WHERE: the Ribway', replace: 'WHERE: the Quay' }]) + '</edits>');
-    r = await runTurn({ house, project: world(), message: 'move the scene to the Quay' });
-    ok('a one-field edit lands without a full read-back after it', /WHERE: the Quay/.test(r.project.docs[0].text) && !calls.some((c) => c.who === 'eye'), calls.map((c) => c.who).join(','));
-  } catch (e) { ok('the chatting tests ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
-}
-
 /* ============================ connections: does it think? (Cozy Tavern M348, M350, M351) (v1.1.12) */
 {
   const { testConnection, listModels } = await import('../js/agents/call.js');
@@ -2656,9 +1537,7 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
 /* ============================ his words are his (v1.1.13) */
 {
   const { lint } = await import('../js/doc/lint.js');
-  const { sweep, runTurn } = await import('../js/agents/run.js');
   const { applyRun } = await import('../js/doc/edits.js');
-  const { LISTENER_MARK } = await import('../js/agents/listener.js');
   const HIS = '# PE\n\n## WORLD\n### Rules\n- Magic costs memory.\nTBD: the name of the drowned king\n\n### Calendar\n\n## MC — Jovan (16)\nID: a salvager\n→ Mira: trusts her (P:40 R:0 S:0)\n\n### Mira (captain | active | 24)\nID: captain\nAGENDA: [HIDDEN]\nNOTE: [FLASHBACK] the first storm\n';
   const r0 = lint(HIS, { kind: 'pe' });
   ok('the craft\'s own [HIDDEN] and his one-word tags are never taken out', r0.text.includes('AGENDA: [HIDDEN]') && r0.text.includes('[FLASHBACK]'), r0.text);
@@ -2669,7 +1548,7 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
   const r2 = lint(HIS, { kind: 'pe', keep: HIS });
   ok('his own typing, left as he typed it, loses nothing', r2.text.replace(/\n+$/, '') === HIS.replace(/\n+$/, ''), JSON.stringify(r2.found.map((f) => f.said)));
   const proj = { docs: [{ name: 'A.md', kind: 'pe', text: '# A\n\n## SCENE\nWHERE: x\n' }, { name: 'His.md', kind: 'pe', text: 'TBD: keep me\nsomething [OLD_NOTE] of his\n' }] };
-  const sw = sweep(proj, new Set(['A.md']), new Map(proj.docs.map((d) => [d.name, d.text])));
+  const sw = checkChanged(proj, new Set(['A.md']), new Map(proj.docs.map((d) => [d.name, d.text])));
   ok('a document nobody touched this turn is not rewritten', sw.project.docs[1].text === proj.docs[1].text, sw.project.docs[1].text);
   const cr = applyRun([{ name: 'Plot Essential.md', text: '' }], [{ create_file: 'Plot Essential.md', replace: '# PE\n' }]);
   ok('a plot essential cleared a moment ago can be written again by creating it', cr.cards[0].status === 'applied' && cr.texts.get('Plot Essential.md') === '# PE\n');
@@ -2677,82 +1556,8 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
   ok('but creating over a document with words in it is still refused', cr2.cards[0].status === 'refused');
 
   /* the whole turn: "clear it and build it again" clears, then builds into the same document */
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = async (url, init) => {
-    const req = JSON.parse(init.body);
-    if (forFront(req)) {
-      const sse = 'data: ' + JSON.stringify({ choices: [{ delta: { content: 'Mm.' } }] }) + '\n\ndata: [DONE]\n\n';
-      return new Response(new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(sse)); c.close(); } }), { status: 200 });
-    }
-    const sys = (req.body.messages.find((m) => m.role === 'system') || {}).content || '';
-    const out = sys.includes(LISTENER_MARK) ? '{"jobs":[{"worker":"builder","task":"Build the plot essential again from the talk."}],"clear":["Plot Essential.md"]}'
-      : /PROACTIVE CO-WRITER/.test(sys) ? 'Built it.\n<edits>[{"create_file":"Plot Essential.md","replace":"# PLOT ESSENTIAL — Anew — V1.0\\n\\n## SCENE\\nWHERE: the lighthouse\\n"}]</edits>'
-      : 'Read it all back.';
-    return wholeAnswer({ choices: [{ message: { content: out }, finish_reason: 'stop' }] });
-  };
-  try {
-    const house = { connections: [{ id: 'c1', url: 'https://one.example/v1', model: 'm', key: 'k' }], agentConnections: {}, settings: { yourName: 'Bruce' }, personaFrame: '' };
-    const r = await runTurn({ house, project: { id: 'pz', docs: [{ id: 'd1', name: 'Plot Essential.md', kind: 'pe', text: HIS }], chats: [], recentSections: [] }, message: 'clear the plot essential and build it again from what we said' });
-    ok('"clear it and build it again" clears, then writes the new one into the same document', r.project.docs.length === 1 && /Anew/.test(r.project.docs[0].text) && !/Jovan/.test(r.project.docs[0].text), JSON.stringify(r.cards.map((c) => [c.status, c.how || c.why])));
-  } finally { globalThis.fetch = realFetch; }
 }
 
-/* ============================ a change that changed nothing (v1.1.14) */
-{
-  const { runTurn } = await import('../js/agents/run.js');
-  const { LISTENER_MARK } = await import('../js/agents/listener.js');
-  const calls = [];
-  let editorSays = () => '';
-  let front = '';
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = async (url, init) => {
-    const req = JSON.parse(init.body);
-    if (forFront(req)) {
-      const m = req.body.messages; front = m[m.length - 1].content;
-      const sse = 'data: ' + JSON.stringify({ choices: [{ delta: { content: 'Mm.' } }] }) + '\n\ndata: [DONE]\n\n';
-      return new Response(new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(sse)); c.close(); } }), { status: 200 });
-    }
-    const sys = (req.body.messages.find((m) => m.role === 'system') || {}).content || '';
-    const user = (req.body.messages.find((m) => m.role === 'user') || {}).content || '';
-    let out = 'Read it all back.';
-    if (sys.includes(LISTENER_MARK)) out = '{"jobs":[{"worker":"editor","task":"Make Rukia a lieutenant."}]}';
-    else if (/Edit Mode Discipline/.test(sys)) { calls.push(user); out = editorSays(user, calls.length); }
-    return wholeAnswer({ choices: [{ message: { content: out }, finish_reason: 'stop' }] });
-  };
-  const BLEACH = '# PLOT ESSENTIAL — Bleach — V1.0\n\n### Rukia (shinigami | active | 150)\nRANK: unseated officer\nID: a quiet shinigami\n\n### Renji (shinigami | active | 150)\nRANK: lieutenant\n';
-  const world = () => ({ id: 'pbl', docs: [{ id: 'd1', name: 'Bleach.md', kind: 'pe', text: BLEACH }], chats: [], recentSections: [] });
-  const house = { connections: [{ id: 'c1', url: 'https://one.example/v1', model: 'm', key: 'k' }], agentConnections: {}, settings: { yourName: 'Bruce' }, personaFrame: '' };
-  const blk = (edits) => 'Done.\n<edits>' + JSON.stringify(edits) + '</edits>';
-  try {
-    /* the real change lands; four "change X to X" are sent back once, the worker says they were right: he sees nothing */
-    editorSays = (user, n) => (n === 1 ? blk([
-      { file: 'Bleach.md', find: 'RANK: unseated officer', replace: 'RANK: lieutenant' },
-      { file: 'Bleach.md', find: 'ID: a quiet shinigami', replace: 'ID: a quiet shinigami' },
-      { file: 'Bleach.md', find: 'ID: a quiet shinigami', replace: 'ID: a quiet shinigami' },
-      { file: 'Bleach.md', find: 'ID: a quiet shinigami', replace: 'ID: a quiet shinigami' },
-      { file: 'Bleach.md', find: 'ID: a quiet shinigami', replace: 'ID: a quiet shinigami' },
-    ]) : 'Those were already right.');
-    let r = await runTurn({ house, project: world(), message: 'make Rukia a lieutenant' });
-    ok('the real change lands', r.project.docs[0].text.includes('RANK: lieutenant\nID: a quiet shinigami'), r.project.docs[0].text);
-    ok('a change that changed nothing is never shown to him as "not done"', !r.cards.some((c) => /leaves the words exactly/.test(c.why || '')), JSON.stringify(r.cards.map((c) => [c.status, c.why])));
-    ok('nor told to the persona', !/Not done/.test(front) && !/leaves the words/.test(front), front.slice(-200));
-    ok('it went back to the worker once, listed once, not four times', calls.length === 2 && (calls[1].match(/put back the very words it found/g) || []).length === 1, calls.length);
-
-    /* the worker meant a change and wrote the old words back: sent back, it sends the real one, and it lands */
-    calls.length = 0;
-    editorSays = (user, n) => (n === 1 ? blk([{ file: 'Bleach.md', find: 'RANK: unseated officer', replace: 'RANK: unseated officer' }])
-      : blk([{ file: 'Bleach.md', find: 'RANK: unseated officer', replace: 'RANK: lieutenant' }]));
-    r = await runTurn({ house, project: world(), message: 'make Rukia a lieutenant' });
-    ok('a change the worker botched by writing the old words back is caught, and the real one lands', r.project.docs[0].text.includes('RANK: lieutenant\nID:'), r.project.docs[0].text);
-
-    /* a genuine failure repeated is still shown — once */
-    calls.length = 0;
-    editorSays = () => blk([{ file: 'Bleach.md', find: 'NOT THERE AT ALL', replace: 'x' }, { file: 'Bleach.md', find: 'NOT THERE AT ALL', replace: 'x' }]);
-    r = await runTurn({ house, project: world(), message: 'make Rukia a lieutenant' });
-    const misses = r.cards.filter((c) => c.status === 'refused' && /not in the document/.test(c.why || ''));
-    ok('a real failure is still shown, once, not once per copy', misses.length === 1, misses.length);
-  } finally { globalThis.fetch = realFetch; }
-}
 
 /* --- A WORLDBOOK, CHOSEN AND MADE: entries as plain data, put in by name (v1.4.0) --- */
 {
@@ -2799,115 +1604,6 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
 }
 
 /* --- the worldbook keeper, through the real turn --- */
-{
-  const { runTurn } = await import('../js/agents/run.js');
-  const { setCraftForTests } = await import('../js/engine/crafts.js');
-  const { readWorldbook } = await import('../js/doc/lint.js');
-  setCraftForTests('worldbook', readFileSync(join(ROOT, 'engine', 'worldbook-maker.md'), 'utf8'));
-  const PE = '# PLOT ESSENTIAL — The Ember Crown — V1.0\n# STATE: Mon 14 Apr 247, 09:00 / the Ribway\n# CALENDAR: Gregorian\n\n## WORLD\n### Rules\n- Epistemic Law: NPCs know only what they witnessed.\n\n## MC — Jovan (17)\nID: lean\nCORE: patient\n\n## SCENE\nWHERE: the Ribway / LAST: "Hold the rope," Mira said.';
-  const house = { connections: [{ id: 'c1', url: 'https://relay.example/v1', model: 'm', key: 'k' }], agentConnections: {}, settings: { yourName: 'Bruce' }, personaFrame: '' };
-  const world = (docs, title = 'The Ember Crown') => ({ id: 'pwb', title, docs, chats: [], recentSections: [] });
-  const ASK = 'Make a worldbook for SillyTavern from Plot Essential.md.';
-  const ents = [{ name: 'Aldric', keys: ['Aldric', 'the general'], content: 'He says "never" when he means "not yet".', strategy: 'green' }];
-  const block = (edits) => 'Done.\n\n<edits>\n' + JSON.stringify(edits) + '\n</edits>';
-  let keeper = () => '', builder = () => '', writer = () => '', listener = () => 'garbled';
-  const calls = [];
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = async (url, init) => {
-    const req = JSON.parse(init.body);
-    const sys = (req.body.messages.find((m) => m.role === 'system') || {}).content || '';
-    const msgs = req.body.messages.filter((m) => m.role !== 'system');
-    if (forFront(req)) {
-      calls.push({ who: 'front' });
-      return sseAnswer([{ choices: [{ delta: { content: 'Here it is.' } }] }, '[DONE]']);
-    }
-    const who = /You are the one who listens/.test(sys) ? 'listener' : /worldbook architect for SillyTavern/.test(sys) ? 'keeper'
-      : /PROACTIVE CO-WRITER/.test(sys) ? 'builder' : /Evidenced CLEAN vs False CLEAN/.test(sys) ? 'eye'
-        : /You write and keep AI instruction sets/.test(sys) ? 'writer' : 'other';
-    const user = msgs.map((m) => m.content).join('\n');
-    calls.push({ who, sys, user, max: req.body.max_tokens });
-    const out = { keeper, builder, writer, listener }[who] ? { keeper, builder, writer, listener }[who](user, calls.filter((c) => c.who === who).length) : 'Read it back; nothing needed changing.';
-    return wholeAnswer({ choices: [{ message: { content: out }, finish_reason: 'stop' }] });
-  };
-  const named = (r, n) => r.project.docs.find((d) => d.name === n);
-  try {
-    /* the craft's own first rule, into a world with no worldbook: it used to be refused and lost */
-    keeper = (user, n) => (n === 1 ? block([{ file: 'Worldbook.json', append: true, replace: JSON.stringify(ents), reason: 'begin it' }])
-      : block([{ file: 'The Ember Crown.json', entries: ents, reason: 'begin it' }]));
-    let r = await runTurn({ house, project: world([{ id: 'd1', name: 'Plot Essential.md', kind: 'pe', text: PE }]), message: ASK, forceWorker: 'worldbook' });
-    const book = named(r, 'The Ember Crown.json');
-    eq('the keeper\'s change for a worldbook that is not there goes back to it once, and its worldbook lands', [calls.filter((c) => c.who === 'keeper').length, book && book.kind, book && (readWorldbook(book.text).entries || [])[0].content], [2, 'worldbook', ents[0].content]);
-    ok('it was told, going back, which documents are here', /The documents here are: Plot Essential\.md/.test(calls.filter((c) => c.who === 'keeper')[1].user), calls.filter((c) => c.who === 'keeper')[1].user.slice(-400));
-    ok('and he never saw the first try as a failure', !r.cards.some((c) => c.status === 'refused'), JSON.stringify(r.cards.map((c) => [c.status, c.why])));
-    const first = calls.find((c) => c.who === 'keeper');
-    ok('the keeper is taught to write entries as data, never inside a string', /entries go into the block of changes as data/.test(first.sys) && first.sys.indexOf('as data') > first.sys.indexOf('worldbook architect'), first.sys.slice(-300));
-    ok('and told by name that there is no worldbook yet, and what to call it', /There is no worldbook in this world yet: your entries start one\. Call it The Ember Crown\.json\./.test(first.user), first.user.slice(-500));
-    ok('the plot essential\'s read-back is not sent over a worldbook', !calls.some((c) => c.who === 'eye'), calls.map((c) => c.who).join(','));
-
-    /* entries as data, quotes inside their words: one try, whole */
-    calls.length = 0;
-    keeper = () => block([{ file: 'The Ember Crown.json', entries: ents }]);
-    r = await runTurn({ house, project: world([{ id: 'd1', name: 'Plot Essential.md', kind: 'pe', text: PE }]), message: ASK, forceWorker: 'worldbook' });
-    eq('entries written as data land at the first try, their quotes untouched', [calls.filter((c) => c.who === 'keeper').length, (readWorldbook(named(r, 'The Ember Crown.json').text).entries || [])[0].content], [1, ents[0].content]);
-
-    /* two different sets of entries for one worldbook are two changes, never one made twice */
-    calls.length = 0;
-    const brinE = { name: 'Brin', keys: ['Brin'], content: 'The smith.' };
-    keeper = (user, n) => (n === 1 ? block([{ file: 'Lore.json', entries: ents }, { file: 'Missing.json', find: 'x', replace: 'y' }])
-      : block([{ file: 'Lore.json', entries: ents }, { file: 'Lore.json', entries: [brinE] }]));
-    r = await runTurn({ house, project: world([{ id: 'd2', name: 'Lore.json', kind: 'worldbook', text: '[]' }]), message: 'fill the worldbook', forceWorker: 'worldbook' });
-    eq('entries sent again beside new ones: the new ones land, never taken for the ones already made', (readWorldbook(named(r, 'Lore.json').text).entries || []).map((e) => e.name), ['Aldric', 'Brin']);
-
-    /* a worldbook already here is named to the keeper */
-    calls.length = 0;
-    keeper = () => block([{ file: 'Lore.json', entries: [{ name: 'Brin', keys: ['Brin'], content: 'The smith.' }] }]);
-    r = await runTurn({ house, project: world([{ id: 'd2', name: 'Lore.json', kind: 'worldbook', text: JSON.stringify(ents) }]), message: 'add Brin the smith to the worldbook', forceWorker: 'worldbook' });
-    ok('with a worldbook here, the keeper is told its name', /The worldbook in this world is Lore\.json: entries go into it, by that name\./.test(calls.find((c) => c.who === 'keeper').user));
-    eq('and the entry goes into it, the old one kept', (readWorldbook(named(r, 'Lore.json').text).entries || []).map((e) => e.name), ['Aldric', 'Brin']);
-
-    /* nothing said yet, nothing written: it asks first */
-    calls.length = 0;
-    keeper = () => 'There is nothing to build from yet.\n\n<ask>What is this world, who is in it, and where does it happen?</ask>';
-    r = await runTurn({ house, project: world([], 'A new world'), message: "Let's start a worldbook for this world.", forceWorker: 'worldbook' });
-    ok('a keeper with nothing to build from is told to ask first, and with no world name, what to call it', /write nothing yet: put to Bruce, in <ask>/.test(calls.find((c) => c.who === 'keeper').user) && /Worldbook\.json if it has no name yet/.test(calls.find((c) => c.who === 'keeper').user));
-    eq('its question waits on him, and nothing is written', [r.asks.map((a) => a.worker), r.project.docs.length], [['worldbook'], 0]);
-
-    /* his answer: the listener cannot be read, and the answer still reaches the keeper */
-    calls.length = 0;
-    keeper = (user) => (/What you put to Bruce last time, word for word/.test(user) ? block([{ file: 'Ash Harbour.json', entries: [{ name: 'Ash Harbour', keys: ['Ash Harbour'], content: 'A drowned harbour city.', strategy: 'blue' }] }]) : 'no');
-    const history = [{ role: 'writer', text: "Let's start a worldbook for this world.", worker: 'worldbook', at: 1 }, { role: 'maker', text: 'What is this world?', asks: r.asks, at: 2 }];
-    r = await runTurn({ house, project: world([], 'A new world'), history, message: 'A drowned harbour city called Ash Harbour, run by a tide-cult.' });
-    eq('with the listener unreadable, his answer goes back to the one waiting on it, and the worldbook is made', [calls.map((c) => c.who).filter((w) => w !== 'front').join(','), Boolean(named(r, 'Ash Harbour.json'))], ['listener,keeper', true]);
-    ok('it is handed its own question and his answer, word for word', /What you put to Bruce last time, word for word:\nWhat is this world, who is in it, and where does it happen\?\n\nWhat Bruce said back:\nA drowned harbour city called Ash Harbour/.test(calls.find((c) => c.who === 'keeper').user));
-    calls.length = 0;
-    r = await runTurn({ house, project: world([], 'A new world'), history, message: 'thanks!' });
-    ok('a thanks is not an answer: it is sent to nobody', !calls.some((c) => c.who === 'keeper'), calls.map((c) => c.who).join(','));
-    ok('the listener is given room for a whole answer when the connection sets none', calls.find((c) => c.who === 'listener').max >= 2400, calls.find((c) => c.who === 'listener').max);
-
-    /* the builder's interview, answered while the listener cannot be read */
-    calls.length = 0;
-    builder = (user) => (/What you put to Bruce last time/.test(user) ? 'Built.\n\n<file name="Plot Essential.md">\n# PLOT ESSENTIAL — Ash Harbour — V1.0\n## SCENE\nWHERE: the quay\n</file>' : 'no');
-    const asked = [{ worker: 'builder', ask: '1. What is the setting?\n2. Who is your main character?', at: 1 }];
-    r = await runTurn({ house, project: world([], 'A new world'), history: [{ role: 'writer', text: "Let's start a new plot essential for this world.", worker: 'builder', at: 1 }, { role: 'maker', text: 'A few questions first.', asks: asked, at: 2 }],
-      message: 'A drowned harbour city. Jovan, 17, a ferryman. The trouble is the tide-cult.' });
-    eq('the builder\'s interview answered: the answer reaches the builder and the plot essential is built', [calls.some((c) => c.who === 'builder'), Boolean(named(r, 'Plot Essential.md'))], [true, true]);
-    ok('and the plot essential\'s own read-back still reads a plot essential', calls.some((c) => c.who === 'eye'), calls.map((c) => c.who).join(','));
-
-    /* the keeper reads the whole brainstorm, as the builder does */
-    calls.length = 0;
-    keeper = () => block([{ file: 'Long Talk.json', entries: ents }]);
-    const talk = [{ role: 'writer', text: 'THE VERY FIRST IDEA: the moons are sisters. ' + 'x'.repeat(30000), at: 1 }, { role: 'maker', text: 'Lovely.', at: 2 }];
-    await runTurn({ house, project: world([], 'Long Talk'), history: talk, message: "Let's start a worldbook for this world.", forceWorker: 'worldbook' });
-    ok('a worldbook built from talk reads the whole of it, not its last 24,000 characters', /THE VERY FIRST IDEA: the moons are sisters/.test(calls.find((c) => c.who === 'keeper').user));
-
-    /* an instruction set is not read back by the plot essential's eye */
-    calls.length = 0;
-    writer = () => block([{ file: 'Eni.md', append: true, replace: '- Always answer as Eni, in her own voice.' }]);
-    r = await runTurn({ house, project: world([{ id: 'd3', name: 'Eni.md', kind: 'instructions', text: '# Eni\n- Speak warmly.' }]), message: 'add a rule that she always answers as herself', forceWorker: 'instructions' });
-    ok('the instructions writer\'s change lands', named(r, 'Eni.md').text.includes('Always answer as Eni'));
-    ok('and the plot essential\'s eye never reads an instruction set back', !calls.some((c) => c.who === 'eye'), calls.map((c) => c.who).join(','));
-  } catch (e) { ok('the worldbook keeper\'s turns ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
-}
 
 /* --- the worldbook's own checks: capitals, keys on one line, a stray quote --- */
 {
@@ -2947,56 +1643,6 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
   eq('an empty worldbook is no worldbook yet', labels([{ ...wb, text: '' }]), ['Start a plot essential', 'Start a worldbook', 'Build from a story card']);
 }
 
-/* --- every command in his engine reaches someone who knows what it means (v1.4.1) --- */
-{
-  const { houseCommand, writtenCommand, REGISTRY } = await import('../js/agents/router.js');
-  const { runTurn } = await import('../js/agents/run.js');
-  const { guessKind } = await import('../js/doc/kind.js');
-  /* the craft's own definition of each command, wherever it lives, and the worker each is sent to */
-  const defined = (cmd) => [...SECTIONS.values()].filter((x) => x.text.includes('`' + cmd)).map((x) => x.id);
-  const silent = [];
-  for (const cmd of ['*new', '*source_new', '*hybrid_new', '*p', '#q', '*continuity', '*summarize brief', '*ooc', '*edit', '*retcon', '*import', '#skip', '*cleanup', '*optimize', '#prune', '*delete']) {
-    const w = (route(cmd + ' x', { hasPlotEssential: true, hasDocs: true })[0] || {}).worker;
-    const reads = w ? sliceFor(SECTIONS, w).ids : [];
-    if (!w || !defined(cmd).some((id) => reads.includes(id))) silent.push(`${cmd} -> ${w || 'nobody'}`);
-  }
-  eq('every command sent to a worker goes to one whose reading defines it', silent, []);
-  eq('the five the craft writes for a chat window are the house\'s, never a worker\'s', ['*regress Rukia is a lieutenant', '*next', '*show_full_file', '*show_spoilers', '*hide_spoilers']
-    .map((c) => [route(c, { hasPlotEssential: true, hasDocs: true }).length, (houseCommand(c) || {}).what, writtenCommand(c)]),
-  [[0, 'regress', true], [0, 'next', true], [0, 'show_full_file', true], [0, 'spoilers', true], [0, 'spoilers', true]]);
-  eq('only the bare command is one: words around *next are talk', [houseCommand('what comes *next in the story'), houseCommand('*regress')], [null, { what: 'regress', rest: '' }]);
-  eq('the registry is notes, never a plot essential', guessKind(REGISTRY), 'notes');
-
-  /* through the real turn: *regress keeps the entry, in the registry, and sends nobody */
-  const house = { connections: [{ id: 'c1', url: 'https://relay.example/v1', model: 'm', key: 'k' }], agentConnections: {}, settings: { yourName: 'Bruce' }, personaFrame: '' };
-  const PE = '# PLOT ESSENTIAL — X — V1.0\n## SCENE\nWHERE: the quay';
-  const crew = [];
-  let front = '';
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = async (url, init) => {
-    const req = JSON.parse(init.body);
-    if (forFront(req)) { front = JSON.stringify(req.body.messages); return sseAnswer([{ choices: [{ delta: { content: 'Kept.' } }] }, '[DONE]']); }
-    crew.push(((req.body.messages.find((m) => m.role === 'system') || {}).content || '').slice(0, 60));
-    return wholeAnswer({ choices: [{ message: { content: 'Nothing to change.' }, finish_reason: 'stop' }] });
-  };
-  try {
-    const w0 = { id: 'preg', docs: [{ id: 'd1', name: 'Plot Essential.md', kind: 'pe', text: PE }], chats: [], recentSections: [] };
-    let r = await runTurn({ house, project: w0, message: '*regress Rukia is a lieutenant, never an unseated officer' });
-    const reg = r.project.docs.find((d) => d.name === REGISTRY);
-    eq('*regress: the entry is kept in the registry, a notes document, and nobody is sent', [Boolean(reg) && reg.kind, reg && reg.text.split('\n').filter((l) => l.startsWith('- ')), crew.length],
-      ['notes', ['- Rukia is a lieutenant, never an unseated officer'], 0]);
-    ok('the plot essential is left exactly as it was', r.project.docs.find((d) => d.name === 'Plot Essential.md').text === PE);
-    ok('and the one he talks to is told it was kept', /Changed: Anti-regression registry\.md/.test(front), front.slice(-300));
-    r = await runTurn({ house, project: r.project, message: '*regress Jovan is seventeen' });
-    eq('a second entry goes under the first', r.project.docs.find((d) => d.name === REGISTRY).text.split('\n').filter((l) => l.startsWith('- ')), ['- Rukia is a lieutenant, never an unseated officer', '- Jovan is seventeen']);
-    r = await runTurn({ house, project: r.project, message: '*regress Jovan is seventeen' });
-    ok('the same entry twice is kept once, and never shown as a failure', r.project.docs.find((d) => d.name === REGISTRY).text.split('\n').filter((l) => l === '- Jovan is seventeen').length === 1 && !r.cards.some((c) => c.status === 'refused'));
-    crew.length = 0;
-    await runTurn({ house, project: w0, message: '#prune the dead side threads' });
-    ok('#prune goes to the showrunner, whose reading now says what it means', crew.length >= 1 && /cleanup|craft work/i.test(crew[0]) && sliceFor(SECTIONS, 'showrunner').text.includes('#prune'), crew.join(' | '));
-  } catch (e) { ok('the command turns ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
-}
-
 /* --- every shortcut, looked up rather than remembered (v1.4.2) --- */
 {
   const { SHORTCUTS, allShortcuts, engineLines, WHO } = await import('../js/agents/shortcuts.js');
@@ -3010,14 +1656,15 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
   eq('every command in his engine and the auditor\'s craft is listed, so he can look it up', missing, []);
   ok('and the house\'s own *card is listed too', names.includes('*card'));
   eq('no command is listed twice', names.filter((c, i) => names.indexOf(c) !== i), []);
-  /* each one goes where its line says, through the real router */
+  /* each one goes where its line says: the house answers its own before anyone is asked; every
+   * other one reaches the one he talks to, which reads his whole engine (v2.0) */
   const wrong = [];
   for (const x of listed) {
-    if (x.who === 'house') { if (!houseCommand(x.cmd + (x.cmd === '*regress' ? ' a line' : '')) || route(x.cmd, { hasPlotEssential: true, hasDocs: true }).length) wrong.push(x.cmd); continue; }
-    const r = route(x.cmd + ' something', { hasPlotEssential: true, hasDocs: true });
-    if (!r.length || r[0].worker !== x.who) wrong.push(`${x.cmd} -> ${r.length ? r[0].worker : 'nobody'}, listed as ${x.who}`);
+    const house = Boolean(houseCommand(x.cmd + (x.cmd === '*regress' ? ' a line' : '')));
+    if ((x.who === 'house') !== house) wrong.push(`${x.cmd}: listed as ${x.who}, the house ${house ? 'answers' : 'does not answer'} it`);
+    if (!['house', 'maker', 'auditor'].includes(x.who)) wrong.push(`${x.cmd}: listed as ${x.who}, who is nobody here`);
   }
-  eq('each shortcut goes to the one its line says, through the real router', wrong, []);
+  eq('each shortcut goes to the one its line says, through the house\'s own reading', wrong, []);
   ok('every line says what it does, who does it, and how to type it', listed.every((x) => x.does.length > 20 && WHO[x.who] && x.example.startsWith(x.cmd)), JSON.stringify(listed.filter((x) => !(x.does.length > 20 && WHO[x.who] && x.example.startsWith(x.cmd))).map((x) => x.cmd)));
   /* his engine's own words, read out of the files, never retyped */
   eq('*p is shown with his engine\'s own words for it', said.get('*p'), 'Update Pipeline (7.2); input = Storyteller output');
@@ -3030,10 +1677,9 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
 
 /* --- the plot essential's pipelines, foolproofed (v1.5.0) --- */
 {
-  const { runTurn, frontBody, registryNote } = await import('../js/agents/run.js');
-  const { isNewStory, REGISTRY } = await import('../js/agents/router.js');
+  const { frontBody } = await import('../js/agents/run.js');
+  const { isNewStory } = await import('../js/agents/router.js');
   const { guessKind } = await import('../js/doc/kind.js');
-  const { hasPlotEssential } = await import('../js/doc/index.js');
   eq('a new story typed as one is known: *new, *source_new, *hybrid_new and a card — and nothing else', ['*new a steppe', 'x *source_new Bleach', '*hybrid_new mine', '*card\nX', 'a new idea', '*news', '#q'].map(isNewStory), [true, true, true, true, false, false, false]);
   eq('a skip bridge is a continuation file, by its name or by its heading', [guessKind('Skip Bridge 2.md', ''), guessKind('Bridge.md', '# SKIP BRIDGE 2 (skip target: the siege)\n## EVENTS')], ['continuity', 'continuity']);
   {
@@ -3046,107 +1692,6 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
   ok('the one he brainstorms with is a co-writer, in all four voices', voices.every((t) => /as a co-writer, not a note-taker/.test(t) && /offer a couple of concrete ways it could go, and why/.test(t) && /only what only (?:Bruce|they) can decide/.test(t)));
   ok('and it speaks each in its own voice: \"I\" where the persona is \"I\", \"you\" where it is \"you\"', /While Bruce and I work a world out, I think it through/.test(voices[2]) && /While you and Bruce work a world out, think it through/.test(voices[0]));
 
-  const OLD = '# PLOT ESSENTIAL — Ash Harbour — V2.0\n# STATE: Mon 14 Apr 247, 09:00 / the quay\n# CALENDAR: Gregorian\n\n## WORLD\n### Rules\n- Epistemic Law: NPCs know only what they witnessed.\n\n## MC — Jovan (17)\nID: lean\nCORE: patient\n\n### Mira (ferrywoman | core | 30)\nID: tall\nCORE: blunt\n→ Jovan: old friend (P:60 R:10 S:5)\n\n### Tal (priest | core | 50)\nID: bald\nCORE: pious\n→ Jovan: wary (P:20 R:0 S:0)\n\n## TIMELINE\ne001 [Mon 14 Apr 247, 08:00] [arrival]: Jovan reached the quay.\ne002 [Mon 14 Apr 247, 08:30] [omen]: The tide rose wrong.\n\n## SCENE\nWHERE: the quay / LAST: "Hold the rope," Mira said.';
-  const house = { connections: [{ id: 'c1', url: 'https://relay.example/v1', model: 'm', key: 'k' }], agentConnections: {}, settings: { yourName: 'Bruce' }, personaFrame: '' };
-  const role = (sys) => /You are the one who listens/.test(sys) ? 'listener' : /PROACTIVE CO-WRITER/.test(sys) ? 'builder' : /THE SKIP WORKFLOW/.test(sys) ? 'novelist'
-    : /worldbook architect/.test(sys) ? 'keeper' : /Evidenced CLEAN vs False CLEAN/.test(sys) ? 'eye' : /Update Pipeline/.test(sys) && /Narrative Truth/.test(sys) && /\b5\.2 Relationship Tracking/.test(sys) ? 'chronicler'
-      : /Edit Mode Discipline/.test(sys) && !/Update Pipeline \(`\*p`/.test(sys) ? 'editor' : 'other';
-  let answer = {};
-  const log = [];
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = async (url, init) => {
-    const req = JSON.parse(init.body);
-    if (forFront(req)) { log.push({ w: 'front', sys: req.body.messages[0].content }); return sseAnswer([{ choices: [{ delta: { content: 'ok' } }] }, '[DONE]']); }
-    const sys = (req.body.messages.find((m) => m.role === 'system') || {}).content || '';
-    const user = req.body.messages.filter((m) => m.role !== 'system').map((m) => m.content).join('\n');
-    const w = role(sys);
-    log.push({ w, user });
-    const out = answer[w] ? answer[w](user) : w === 'listener' ? 'unreadable' : 'Nothing else needed changing.';
-    return wholeAnswer({ choices: [{ message: { content: out }, finish_reason: 'stop' }] });
-  };
-  const world = (docs) => ({ id: 'pv', title: 'Ash Harbour', docs, chats: [], recentSections: [] });
-  const pe = (text = OLD) => ({ id: 'd', name: 'Plot Essential.md', kind: 'pe', text });
-  try {
-    /* every finding the checks hand on, one job per worker */
-    const MESSY = OLD.replace('e001 [Mon 14 Apr 247, 08:00] [arrival]:', 'e001:').replace('e002 [Mon 14 Apr 247, 08:30] [omen]: The tide rose wrong.', 'e002 [Mon 14 Apr 247, 08:30]: ' + 'The tide rose wrong and '.repeat(20) + 'it stopped.').replace('CORE: pious', 'CORE: pious, devoted to Mira since childhood');
-    answer = { builder: () => 'Built.\n\n<file name="Plot Essential.md">\n' + MESSY + '\n</file>' };
-    log.length = 0;
-    await runTurn({ house, project: { id: 'pb', title: 'A new world', docs: [], chats: [], recentSections: [] }, message: 'Build the plot essential now.', forceWorker: 'builder' });
-    const after = log.map((l) => l.w).filter((w) => !['builder', 'front'].includes(w));
-    const chron = log.filter((l) => l.w === 'chronicler');
-    eq('after a build, every finding is handed on: each worker once, the chronicler with all three of its own', [after, chron.length && ['without a full date-time', 'no tags', 'over its word budget'].every((x) => chron[0].user.includes(x))], [['chronicler', 'editor', 'eye'], true]);
-
-    /* a long paste, then "fold that in": the chronicler reads it from its first line */
-    const PASTE = 'FIRST LINE OF THE PASTED STORY: Mira cut the rope. ' + 'The quay burned through the night. '.repeat(1100);
-    answer = { chronicler: () => 'Folded.' };
-    log.length = 0;
-    await runTurn({ house, project: world([pe()]), history: [{ role: 'writer', text: PASTE, at: 1 }, { role: 'maker', text: 'What a night.', at: 2 }], message: 'fold that into the plot essential' });
-    const c2 = log.find((l) => l.w === 'chronicler');
-    ok(`"fold that in" after a ${PASTE.length.toLocaleString()}-character paste: the chronicler reads it from its first line`, Boolean(c2) && c2.user.includes('FIRST LINE OF THE PASTED STORY'));
-
-    /* the skip bridge lands as a continuation file, never a second plot essential */
-    answer = { novelist: () => 'Viable.\n\n<file name="Skip Bridge 1.md">\n# SKIP BRIDGE 1 (skip target: the siege)\n# STATE: Tue 15 Apr 247, 22:00 / the walls\n# CALENDAR: Gregorian\n\n## EVENTS\ne003 [Mon 14 Apr 247, 12:00] [siege]: The gates closed.\n\n## CURRENT SCENE\nWHERE: the walls\n</file>' };
-    const r4 = await runTurn({ house, project: world([pe()]), message: '#skip to the night of the siege' });
-    const br = r4.project.docs.find((d) => d.name === 'Skip Bridge 1.md');
-    eq('#skip: the bridge is a continuation file, and the world still has one plot essential', [br && br.kind, r4.project.docs.filter((d) => hasPlotEssential([d])).length], ['continuity', 1]);
-
-    /* the registry is said to every worker on his engine, and to nobody else */
-    const reg = { id: 'r', name: REGISTRY, kind: 'notes', text: '# Anti-regression registry\n\nWhat the storyteller has got wrong before.\n\n- Rukia is a lieutenant.\n- Jovan is seventeen.\n' };
-    answer = { chronicler: () => 'Folded.' };
-    log.length = 0;
-    await runTurn({ house, project: world([pe(), reg]), message: '*p Rukia, the unseated officer, saluted.' });
-    const c5 = log.find((l) => l.w === 'chronicler');
-    ok('with a registry, the worker folding a page is told it is there and that it is right', Boolean(c5) && /Anti-regression registry\.md lists what the storyteller has got wrong before — 2 things\. It is right/.test(c5.user), c5 && c5.user.slice(-400));
-    eq('and the note is for his engine\'s workers only, and only when there is something in it', [registryNote(world([pe(), reg]), 'worldbook'), registryNote(world([pe()]), 'chronicler'), registryNote(world([pe(), { ...reg, text: '# Anti-regression registry\n' }]), 'editor')], ['', '', '']);
-
-    /* the co-writer stance reaches the wire */
-    log.length = 0;
-    await runTurn({ house, project: world([]), message: 'hello, lovely evening' });
-    ok('the one he talks to is given it on the wire', log.some((l) => l.w === 'front' && /as a co-writer, not a note-taker/.test(l.sys || '')));
-  } catch (e) { ok('the pipeline turns ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
-}
-
-/* --- plain words are enough: a new story asked for in plain words gets a world of its own (v1.5.1) --- */
-{
-  const { asksNewStory } = await import('../js/agents/router.js');
-  const { readJobs, listenerPrompt } = await import('../js/agents/listener.js');
-  const { runTurn } = await import('../js/agents/run.js');
-  eq('a new story asked for in plain words is known', ["let's make a new plot essential for a Bleach story", 'start a new story about a glass steppe', 'I want to do another story now', 'can you build another world for me']
-    .map(asksNewStory), [true, true, true, true]);
-  eq('and the story itself, a question about one, or another job never is', ['the empire declares a new world order', 'they make a new world order out of the ashes', 'what would a new story look like?', 'the new captain arrives at dawn', 'fold this into the plot essential', 'make the tide stronger']
-    .map(asksNewStory), [false, false, false, false, false, false]);
-  eq('"make it shorter" — the button\'s own name — is a job in plain words too', route('make it shorter', { hasPlotEssential: true, hasDocs: true }).map((x) => x.worker), ['compressor']);
-  eq('the listener says when he starts a different story, and only then', [readJobs('{"jobs":[],"new_story":true}').newStory, 'newStory' in readJobs('{"jobs":[]}')], [true, false]);
-  ok('it is told what a new story is, and that the house starts it elsewhere', /"new_story" is true only when he is starting a different story/.test(listenerPrompt({ frame: '', reading: '', docs: [], talk: '', message: 'x' }).system));
-
-  const house = { connections: [{ id: 'c1', url: 'https://relay.example/v1', model: 'm', key: 'k' }], agentConnections: {}, settings: { yourName: 'Bruce' }, personaFrame: '' };
-  const PE = '# PLOT ESSENTIAL — Ash Harbour — V1.0\n## SCENE\nWHERE: the quay';
-  let listener = () => 'unreadable';
-  const seen = [];
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = async (url, init) => {
-    const req = JSON.parse(init.body);
-    if (forFront(req)) { seen.push('front'); return sseAnswer([{ choices: [{ delta: { content: 'ok' } }] }, '[DONE]']); }
-    const sys = (req.body.messages.find((m) => m.role === 'system') || {}).content || '';
-    const w = /You are the one who listens/.test(sys) ? 'listener' : /PROACTIVE CO-WRITER/.test(sys) ? 'builder' : 'other';
-    seen.push(w);
-    const out = w === 'listener' ? listener() : w === 'builder' ? 'Built.\n\n<file name="Plot Essential.md">\n# PLOT ESSENTIAL — Glass Steppe — V1.0\n## SCENE\nWHERE: the steppe\n</file>' : 'Nothing to change.';
-    return wholeAnswer({ choices: [{ message: { content: out }, finish_reason: 'stop' }] });
-  };
-  const withPE = () => ({ id: 'pn', title: 'Ash Harbour', docs: [{ id: 'd', name: 'Plot Essential.md', kind: 'pe', text: PE }], chats: [], recentSections: [] });
-  try {
-    listener = () => '{"jobs":[{"worker":"builder","task":"Build a Bleach story."}],"new_story":true}';
-    seen.length = 0;
-    let r = await runTurn({ house, project: withPE(), message: "let's make a new plot essential for a Bleach story" });
-    eq('in a world with a plot essential, a new story is handed back before anyone works, and nothing here changes', [r.newStory, seen, r.project.docs[0].text], [true, ['listener'], PE]);
-    listener = () => 'unreadable';
-    seen.length = 0;
-    r = await runTurn({ house, project: withPE(), message: "let's make a new plot essential for a Bleach story" });
-    eq('the same when the listener cannot be read', [r.newStory, seen], [true, ['listener']]);
-    seen.length = 0;
-    r = await runTurn({ house, project: { id: 'pe0', title: 'A new world', docs: [], chats: [], recentSections: [] }, message: "let's make a new plot essential for a Bleach story" });
-    eq('in a world with nothing in it, it is simply built there', [Boolean(r.newStory), seen.includes('builder'), (r.project.docs[0] || {}).name], [false, true, 'Plot Essential.md']);
-  } catch (e) { ok('the new-story turns ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
 }
 
 /* ============================ the line-by-line audit (v1.6.1) */
@@ -3165,36 +1710,6 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
   eq('an unfinished thought that opens it leaves nothing', ownWords('<think>still planning'), '');
   eq('a closer named mid-sentence is words too', ownWords('End the plan with </thinking> and then write.'), 'End the plan with </thinking> and then write.');
 
-  const { runTurn } = await import('../js/agents/run.js');
-  const { LISTENER_MARK } = await import('../js/agents/listener.js');
-  const realFetch = globalThis.fetch;
-  const house = { connections: [{ id: 'c1', url: 'https://relay.example/v1', model: 'm', key: 'k' }], agentConnections: {}, settings: { yourName: 'Bruce' }, personaFrame: '' };
-  const PE = '# PLOT ESSENTIAL \u2014 Tide \u2014 V1.0\n\n## WORLD\n### Rules\n- The tide decides who rules.\n';
-  const fronts = [];
-  const PRESET = 'Open every reply with <thinking> and plan the beat there.\nThen write the scene.';
-  globalThis.fetch = async (url, init) => {
-    const req = JSON.parse(init.body);
-    const sys = (req.body.messages.find((m) => m.role === 'system') || {}).content || '';
-    if (forFront(req)) { fronts.push(req.body); return wholeAnswer({ choices: [{ message: { content: 'All set.' }, finish_reason: 'stop' }] }); }
-    if (sys.includes(LISTENER_MARK)) return wholeAnswer({ choices: [{ message: { content: '{"jobs":[]}' }, finish_reason: 'stop' }] });
-    return wholeAnswer({ choices: [{ message: { content: `I wrote the preset whole.\n<file name="Preset.md">\n${PRESET}\n</file>\n<ask>Which model is this preset for?</ask>` }, finish_reason: 'stop' }] });
-  };
-  try {
-    /* a document that holds the word <thinking>: written whole, and the question after it still asked */
-    const world = { id: 'pa', docs: [{ id: 'd1', name: 'Plot Essential.md', kind: 'pe', text: PE }], chats: [], recentSections: [] };
-    const r = await runTurn({ house, project: world, message: 'write the preset', forceWorker: 'editor' });
-    const doc = r.project.docs.find((d) => d.name === 'Preset.md');
-    eq('a document holding <thinking> is written whole', doc && doc.text, PRESET);
-    ok('and the question written after it still reaches him', (r.asks || []).some((a) => /Which model is this preset for/.test(a.ask || '')), JSON.stringify(r.asks));
-    /* the persona re-reads its own earlier reply whole */
-    fronts.length = 0;
-    const history = [{ role: 'writer', text: 'how should the preset open?', at: 1 }, { role: 'maker', text: 'Put <thinking> tags at the top, then write the scene.', at: 2 },
-      { role: 'writer', text: 'and the old way?', at: 3 }, { role: 'maker', text: '<think>he means before</think>\n\nJust the scene.', at: 4 }];
-    await runTurn({ house, project: world, message: 'thanks', history });
-    const said = JSON.stringify((fronts[0] || {}).messages || []);
-    ok('the persona re-reads its own reply whole, the tag it named included', said.includes('Put <thinking> tags at the top, then write the scene.'), said.slice(0, 300));
-    ok('and never a thought it had', said.includes('Just the scene.') && !said.includes('he means before'), said.slice(0, 300));
-  } catch (e) { ok('the audit turns ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
 }
 
 /* ============================ the line-by-line audit, part 2 (v1.6.2) */
@@ -3220,36 +1735,6 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
 
   /* through the real turn: a change that landed and is repeated in a re-quote is not
    * sent again, so it never comes back as a false \u201cnot done\u201d */
-  const { runTurn } = await import('../js/agents/run.js');
-  const realFetch = globalThis.fetch;
-  const house = { connections: [{ id: 'c1', url: 'https://relay.example/v1', model: 'm', key: 'k' }], agentConnections: {}, settings: { yourName: 'Bruce' }, personaFrame: '' };
-  const PE = '# PLOT ESSENTIAL \u2014 Tide \u2014 V1.0\n\n## WORLD\n### Rules\n- The tide decides who rules.\n- Salt is money.\n';
-  let asked = 0;
-  globalThis.fetch = async (url, init) => {
-    const req = JSON.parse(init.body);
-    if (forFront(req)) return wholeAnswer({ choices: [{ message: { content: 'Done.' }, finish_reason: 'stop' }] });
-    const user = (req.body.messages.find((m) => m.role === 'user') || {}).content || '';
-    asked++;
-    const block = (list) => `Changed it.\n<edits>${JSON.stringify(list)}</edits>`;
-    if (/could not be placed, or changed nothing/.test(user)) {
-      return wholeAnswer({ choices: [{ message: { content: block([
-        { file: 'Plot Essential.md', find: '- Salt is money.', replace: '- Salt is money, and water is law.' },
-        { file: 'Plot Essential.md', find: '- The tide decides who rules.', replace: '- The moon decides who rules.' },
-      ]) }, finish_reason: 'stop' }] });
-    }
-    /* the whole document sent back exactly as it stands (it writes no card), then two changes */
-    return wholeAnswer({ choices: [{ message: { content: `Changed it.\n<file name="Plot Essential.md">\n${PE}\n</file>\n<edits>${JSON.stringify([
-      { file: 'Plot Essential.md', find: '- Salt is money.', replace: '- Salt is money, and water is law.' },
-      { file: 'Plot Essential.md', find: '- The tied decides who rules.', replace: '- The moon decides who rules.' },
-    ])}</edits>` }, finish_reason: 'stop' }] });
-  };
-  try {
-    const r = await runTurn({ house, project: { id: 'pl', docs: [{ id: 'd1', name: 'Plot Essential.md', kind: 'pe', text: PE }], chats: [], recentSections: [] }, message: '*edit the rules', forceWorker: 'editor' });
-    const text = r.project.docs[0].text;
-    ok('both changes are in the document', text.includes('- Salt is money, and water is law.') && text.includes('- The moon decides who rules.'), text);
-    const notDone = (r.cards || []).filter((c) => c.status === 'refused');
-    eq('and nothing that landed comes back as not done', notDone.map((c) => c.why), []);
-  } catch (e) { ok('the re-quote turn ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
 }
 
 /* ============================ the audit, part 3: a backup brings the house setup back (v1.6.3) */
@@ -3288,9 +1773,7 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
 /* ============================ SEARCHING THE INTERNET (v1.7.0) */
 {
   const S = await import('../js/agents/search.js');
-  const { listenerPrompt, readJobs, LISTENER_MARK: LM } = await import('../js/agents/listener.js');
   const { callModel, onKey } = await import('../js/agents/call.js');
-  const { runTurn } = await import('../js/agents/run.js');
   eq('what is asked for: each once, at most three', S.readSearch('<search>Rukia Kuchiki rank</search> and <search>rukia kuchiki rank</search><search>a</search><search>b</search><search>c</search>'), ['Rukia Kuchiki rank', 'a', 'b']);
   eq('and the asking is never left in the words', S.stripSearch('Checking.\n<search>Rukia</search>\nDone.'), 'Checking.\n\nDone.');
   const hermes = { id: 'h1', name: 'Hermes', url: 'http://127.0.0.1:8642/v1', model: 'hermes-agent', key: 'old-key' };
@@ -3300,56 +1783,10 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
     S.searcherFor({ connections: [front, hermes], agentConnections: {} }).id,
     S.searcherFor({ connections: [front], agentConnections: {} })], ['c1', 'h1', null]);
   eq('off unless he turned it on', [S.searchOn({ settings: {} }), S.searchOn({ settings: { searchInternet: 'on' } })], [false, true]);
-  const offP = listenerPrompt({ frame: 'F', reading: '', docs: [], talk: '', message: 'hi', p: {} });
-  const onP = listenerPrompt({ frame: 'F', reading: '', docs: [], talk: '', message: 'hi', p: {}, search: true });
-  eq('off, the listener is told nothing about looking things up; on, it may ask', [/look_up|internet/.test(offP.system), /look_up/.test(onP.system)], [false, true]);
-  eq('what the listener wants looked up is read', readJobs('{"jobs": [], "look_up": ["Rukia zanpakuto", "Rukia zanpakuto"]}').lookUp, ['Rukia zanpakuto']);
+  const offP = frontBody({ you: 'Bruce', maker: 'Eni', person: 'second' });
+  const onP = frontBody({ you: 'Bruce', maker: 'Eni', person: 'second' }, { search: true });
+  eq('off, the one he talks to is told nothing about looking things up; on, it is told how', [/<search>|internet|looked up/.test(offP), /<search>/.test(onP)], [false, true]);
 
-  const realFetch = globalThis.fetch;
-  const PE = '# PLOT ESSENTIAL \u2014 Soul Society \u2014 V1.0\n\n## WORLD\n### Rules\n- Captains lead the Gotei 13.\n\n## CAST\n### Rukia Kuchiki\nID: unseated officer\n';
-  const world = () => ({ id: 'ps', docs: [{ id: 'd1', name: 'Plot Essential.md', kind: 'pe', text: PE }], chats: [], recentSections: [] });
-  const sys = (req) => { const b = req.body || {}; return typeof b.system === 'string' ? b.system : ((b.messages || []).find((m) => m.role === 'system') || {}).content || ''; };
-  const userOf = (req) => ((req.body.messages || []).filter((m) => m.role === 'user').pop() || {}).content || '';
-  let searched = [], fronts = [], workerUsers = [], workerSystems = [];
-  const reset = () => { searched = []; fronts = []; workerUsers = []; workerSystems = []; };
-  let editorSays = null;
-  globalThis.fetch = async (url, init) => {
-    const req = JSON.parse(init.body);
-    if (sys(req).includes(S.SEARCH_MARK)) { searched.push(userOf(req)); return wholeAnswer({ choices: [{ message: { content: 'Her zanpakuto is Sode no Shirayuki; she is lieutenant of the 13th Division (bleach.fandom.com).' }, finish_reason: 'stop' }] }); }
-    if (sys(req).includes(LM)) return wholeAnswer({ choices: [{ message: { content: '{"jobs": [], "look_up": ["Rukia Kuchiki zanpakuto"]}' }, finish_reason: 'stop' }] });
-    if (forFront(req)) { fronts.push(JSON.stringify(req.body.messages)); return wholeAnswer({ choices: [{ message: { content: 'It is Sode no Shirayuki.' }, finish_reason: 'stop' }] }); }
-    workerUsers.push(userOf(req)); workerSystems.push(sys(req));
-    return wholeAnswer({ choices: [{ message: { content: editorSays(userOf(req)) }, finish_reason: 'stop' }] });
-  };
-  const house = (on) => ({ connections: [front, { ...hermes }], agentConnections: { keeper: 'c1' }, settings: { yourName: 'Bruce', ...(on ? { searchInternet: 'on' } : {}) }, personaFrame: '' });
-  try {
-    /* on: the listener asks for a lookup; the searcher looks; the one he talks to answers with what was found */
-    reset();
-    let r = await runTurn({ house: house(true), project: world(), message: 'what is Rukia\'s zanpakuto called?' });
-    eq('the listener\'s lookup goes to the one who searches', searched, ['Look this up on the internet: Rukia Kuchiki zanpakuto']);
-    const last = fronts[fronts.length - 1] || '';
-    ok('and the one he talks to answers with what was found in front of it', /Looked up on the internet just now/.test(last) && /Sode no Shirayuki/.test(last), last.slice(-300));
-    ok('the reply that had started without it was let go', fronts.length === 2 && !/Looked up on the internet/.test(fronts[0]), fronts.length);
-    eq('his answer is the one written with it', r.reply, 'It is Sode no Shirayuki.');
-    /* on: a worker asks for a lookup; the searcher looks; the worker does the job with it in front of it */
-    reset();
-    editorSays = (user) => (/Looked up on the internet just now/.test(user)
-      ? 'Set her rank from canon.\n<edits>[{"file": "Plot Essential.md", "find": "ID: unseated officer", "replace": "ID: lieutenant, 13th Division", "reason": "canon rank, looked up"}]</edits>'
-      : 'I need her canon rank first.\n<search>Rukia Kuchiki rank 13th Division</search>');
-    r = await runTurn({ house: house(true), project: world(), message: 'set Rukia\'s rank as in canon', forceWorker: 'editor' });
-    eq('a worker\'s own ask is looked up', searched, ['Look this up on the internet: Rukia Kuchiki rank 13th Division']);
-    ok('and the job is done with what came back', r.project.docs[0].text.includes('ID: lieutenant, 13th Division'), r.project.docs[0].text.slice(-80));
-    ok('the worker was told it may ask, only while it is on', workerSystems.length > 0 && workerSystems.every((x) => x.includes('<search>')), workerSystems.length);
-    ok('the asking never reaches the one he talks to', !/<search>|Rukia Kuchiki rank 13th Division<\/search>/.test(fronts.join(' ')), fronts.join(' ').slice(0, 200));
-    /* off: nothing is looked up, the worker is told nothing about it, and every request is what it was */
-    reset();
-    r = await runTurn({ house: house(false), project: world(), message: 'set Rukia\'s rank as in canon', forceWorker: 'editor' });
-    eq('off: nothing is looked up', searched, []);
-    ok('off: the worker reads nothing about looking things up', workerSystems.length > 0 && workerSystems.every((x) => !x.includes('<search>')), workerSystems.length);
-    reset();
-    r = await runTurn({ house: house(false), project: world(), message: 'what is Rukia\'s zanpakuto called?' });
-    eq('off: the listener\'s ask is never acted on', [searched.length, fronts.some((f) => /Looked up on the internet/.test(f))], [0, false]);
-  } catch (e) { ok('the search turns ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
 
   /* a Hermes Agent narrates its tools in the stream; only its words are the answer */
   {
@@ -3364,6 +1801,7 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
   }
 
   /* HERMES' KEY FOLLOWS HERMES: a refused key from a Hermes Agent is mended once, from the phone */
+  const realFetch = globalThis.fetch;
   const asked = [];
   let keyAsked = 0;
   const heard = [];
@@ -3388,61 +1826,7 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
 
 /* ============================ THE NOTE AT THE END (v1.8.0) */
 {
-  const { runTurn } = await import('../js/agents/run.js');
   const { fillHouse } = await import('../js/store.js');
-  const { LISTENER_MARK: LM } = await import('../js/agents/listener.js');
-  const realFetch = globalThis.fetch;
-  const PE = '# PLOT ESSENTIAL \u2014 Tide \u2014 V1.0\n\n## WORLD\n### Rules\n- The tide decides who rules.\n';
-  const world = () => ({ id: 'pn', docs: [{ id: 'd1', name: 'Plot Essential.md', kind: 'pe', text: PE }], chats: [], recentSections: [] });
-  const conn = { id: 'c1', url: 'https://relay.example/v1', model: 'note-model', key: 'k' };
-  const house = (extra = {}, settings = {}) => ({ connections: [{ ...conn }], agentConnections: {}, settings: { yourName: 'Bruce', makerName: 'Eni', ...settings }, personaFrame: 'You are {{char}}.', ...extra });
-  let fronts = [], others = [], refuseLate = false;
-  globalThis.fetch = async (url, init) => {
-    const req = JSON.parse(init.body);
-    const msgs = req.body.messages || [];
-    if (forFront(req)) {
-      fronts.push(msgs);
-      const late = msgs.some((m, i) => i > 0 && m.role === 'system');
-      if (refuseLate && late) return wholeAnswer({ error: 'provider', status: 400, detail: 'Invalid request: the system message must be at the beginning of the conversation' });
-      return wholeAnswer({ choices: [{ message: { content: 'Here.' }, finish_reason: 'stop' }] });
-    }
-    others.push(JSON.stringify(msgs));
-    const sys = (msgs.find((m) => m.role === 'system') || {}).content || '';
-    return wholeAnswer({ choices: [{ message: { content: sys.includes(LM) ? '{"jobs": []}' : 'Noted.' }, finish_reason: 'stop' }] });
-  };
-  const NOTE = 'Stay in character as {{char}}, and call {{user}} by name.';
-  try {
-    fronts = []; others = [];
-    await runTurn({ house: house({ postNote: NOTE }), project: world(), message: 'thanks' });
-    let m = fronts[fronts.length - 1] || [];
-    const lastM = m[m.length - 1] || {};
-    eq('the note rides last, after his message, as a system message', [lastM.role, lastM.content], ['system', 'Stay in character as Eni, and call Bruce by name.']);
-    ok('his message stands just before it', (m[m.length - 2] || {}).role === 'user' && /thanks/.test((m[m.length - 2] || {}).content), JSON.stringify(m.slice(-2)).slice(0, 200));
-    fronts = []; others = [];
-    await runTurn({ house: house({ postNote: NOTE }), project: world(), message: 'the tide should feel like a character' });
-    ok('every request to the one he talks to carries it, the early reply\'s too', fronts.length >= 1 && fronts.every((x) => (x[x.length - 1] || {}).content === 'Stay in character as Eni, and call Bruce by name.'), fronts.length);
-    ok('and nobody else\'s request does', others.length > 0 && !others.some((x) => x.includes('Stay in character')), others.length);
-    fronts = [];
-    await runTurn({ house: house({ postNote: NOTE }, { noteRole: 'user' }), project: world(), message: 'thanks' });
-    m = fronts[fronts.length - 1] || [];
-    ok('as a user message: at the end of his', (m[m.length - 1] || {}).role === 'user' && /thanks[\s\S]*Stay in character as Eni, and call Bruce by name\.$/.test((m[m.length - 1] || {}).content), JSON.stringify(m.slice(-1)).slice(0, 200));
-    fronts = [];
-    await runTurn({ house: house({ postNote: NOTE }, { sendNote: 'off' }), project: world(), message: 'thanks' });
-    ok('switched off: kept, not sent', !JSON.stringify(fronts).includes('Stay in character'));
-    fronts = [];
-    await runTurn({ house: house({ postNote: '   ' }), project: world(), message: 'thanks' });
-    ok('an empty note is never sent', !(fronts[0] || []).slice(1).some((x) => x.role === 'system'), JSON.stringify(fronts[0] || []).slice(0, 200));
-    /* a model that takes no system message after his: remembered, and the same turn goes again with it in his */
-    fronts = []; refuseLate = true;
-    const h = house({ postNote: NOTE });
-    const r = await runTurn({ house: h, project: world(), message: 'thanks' });
-    m = fronts[fronts.length - 1] || [];
-    eq('refused as a system message, it goes again at the end of his, and the reply comes', [r.reply, (m[m.length - 1] || {}).role, /Stay in character as Eni/.test((m[m.length - 1] || {}).content || ''), Boolean(h.connections[0].learned && h.connections[0].learned.noLateSystem)], ['Here.', 'user', true, true]);
-    fronts = [];
-    await runTurn({ house: h, project: world(), message: 'thanks' });
-    eq('and next time it goes that way at once, with no refusal first', fronts.length, 1);
-    refuseLate = false;
-  } catch (e) { ok('the note turns ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
   const filled = fillHouse({ settings: {}, postNote: '' }, { postNote: 'Be warm.' });
   eq('a backup brings the note back where the house has none, never over his', [filled.house.postNote, fillHouse({ settings: {}, postNote: 'mine' }, { postNote: 'Be warm.' }).house.postNote], ['Be warm.', 'mine']);
 }

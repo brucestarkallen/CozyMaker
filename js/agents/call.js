@@ -248,7 +248,7 @@ export async function listModels(conn) {
   } catch (e) { return { ok: false, error: (e && e.message) || String(e) }; }
 }
 
-/* The front of the house streams, so the writer sees words arriving. */
+/* The one he talks to streams, so the writer sees words arriving. */
 export async function streamModel(conn, opts = {}) {
   let out;
   let keyMended = false;
@@ -274,7 +274,10 @@ async function streamOnce(conn, opts, dropThinking) {
   const req = buildRequest(conn, {
     system: opts.system,
     messages: opts.messages || [],
-    maxTokens: Number.isFinite(conn.maxTokens) ? conn.maxTokens : undefined,
+    /* a reply that writes documents has a floor, like every worker's: a value he set
+     * that is higher is his; nothing set and no floor asked for, nothing is sent */
+    maxTokens: opts.floor ? Math.max(Number.isFinite(conn.maxTokens) ? conn.maxTokens : 0, opts.floor)
+      : Number.isFinite(conn.maxTokens) ? conn.maxTokens : undefined,
     room: 512,
     stream: true,
   });
