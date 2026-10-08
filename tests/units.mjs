@@ -1209,6 +1209,11 @@ eq('an unset name never leaves a raw macro on the wire', voiceMacros('{{user}}',
 eq('{{User}} in any case is his name', voiceMacros('{{User}} and {{ CHAR }}', p), 'Bruce and Eni');
 eq('a preset\'s own <user> tag is markup, not a name', voiceMacros('<user>hi</user> <USER>', p), '<user>hi</user> Bruce');
 ok('the house can point at an unfilled macro', unfilledMacros(personaOf({ settings: { makerName: 'Eni' }, personaFrame: '{{user}} and {{char}}' })).join() === '{{user}}');
+/* v2.5: with one brace, as he writes them himself — they reached the model as braces */
+eq('{char} and {user} with one brace read as the two names too', voiceMacros('You are {char}. {user} is here. { User } too.', p), 'You are Eni. Bruce is here. Bruce too.');
+eq('with no names set, one brace reads as the plain words, never braces', voiceMacros('{user} and {char}', personaOf({ settings: {} })), 'the author and the one telling this');
+eq('a template\'s own ${user}, a {username} or {"user": 1} are left as written', voiceMacros('${user} {username} {"user": 1} {{ username }}', p), '${user} {username} {"user": 1} {{ username }}');
+eq('the house points at an unfilled macro in the form he wrote it', unfilledMacros(personaOf({ settings: {}, personaFrame: '{{user}} and {char} and ${user}' })), ['{{user}}', '{char}']);
 
 /* --- the front reads the book without the workers' tools (Cozy Tavern M335) --- */
 {

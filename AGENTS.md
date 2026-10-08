@@ -32,9 +32,9 @@ newer commit on the device is taken by the page itself when nothing is in progre
 Only this phone's own page reaches `/api/` (Host and Origin checked).
 
 **The gate.** `bash tests/all.sh` — thirteen runs, all green before any push. On
-8 Oct 2026, on a two-core machine: units 643, harness 185, thinking 13, saves 20,
+8 Oct 2026, on a two-core machine: units 647, harness 185, thinking 13, saves 20,
 two pages 22, server 82, browser 103, walk 228, the house walk 37, live stream
-12 + 12, stream flows 29, launcher 21 — 1,407 checks. The browser runs need
+12 + 12, stream flows 29, launcher 21 — 1,411 checks. The browser runs need
 Playwright's Chromium.
 
 **What no test here can show.** Every model in the suites is a stand-in on the
@@ -1586,6 +1586,11 @@ fixed, each at its cause:
   reply run into the one before. His own word in Cozy Tavern (M635): "when I delete my message, its
   output should be gone too". It takes every reply after it, up to his next message, with what they
   changed put back first (or nothing is deleted); a reply's own Delete still takes only that reply.
+- **`{char}` and `{user}` with one brace reached the model as braces.** He writes them that way himself; only
+  SillyTavern's `{{char}}` / `{{user}}`, `<BOT>` / `<USER>` were read. One brace reads as the names now, or as the
+  plain words when a box is empty; a template's own `${user}`, a `{username}` or `{"user": …}` stay as written
+  (told apart by the `$`, not a lookbehind, which an older browser cannot parse at all). The hint under their
+  instructions names an unfilled macro in the form he wrote it. Documents keep their macros for SillyTavern.
 - **The context line kept the old number** when a reply landed while he read further up; it follows
   every redraw now. "1m 60s" is 2m 0s. Sending walked his whole engine and documents through JSON once
   more to record the request (`snapshotBody` copies the lists and shares the strings).
@@ -1602,9 +1607,9 @@ fixed, each at its cause:
   It takes the best of five rounds now; the 30ms bound is unchanged, and a search that grows with the
   square of the document is slow in every round.
 
-Tests: units (+49), harness (+13), server (+20), a new suite with two copies of the real store against
+Tests: units (+53), harness (+13), server (+20), a new suite with two copies of the real store against
 the real server (`two_pages.mjs`, 22), and a new walk in the browser (`walk_house.py`, 37). Every new
-check was run against untouched 2.4.1: units 32 red, harness 12 red, server 15 red, the house walk 20
+check was run against untouched 2.4.1: units 35 red, harness 12 red, server 15 red, the house walk 20
 red (a part that cannot run there is reported as a failure, never thrown), and the two-page suite stops
 at its first check (2.4.1's store has no way to catch up). The fixes to this release's own new code (the house merge reading the house as
 it is, the open world taking a merge before the copy beside is written, a reply landing in a world
@@ -1617,7 +1622,7 @@ their check went red.
 bash tests/all.sh           every suite, exit code intact
 ```
 
-    node tests/units.mjs         643 checks — the real modules on a real document
+    node tests/units.mjs         647 checks — the real modules on a real document
     node tests/harness.mjs       185 checks — the whole turn (v2.0): what the one he talks to reads, the
                                               changes it makes, the steps, its helpers, the checks on
                                               what a turn brought in, put it back after a repair, Go on,
@@ -1655,7 +1660,7 @@ bash tests/all.sh           every suite, exit code intact
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-1,407 checks. Every suite must be green before a push. `tests/fixtures/` holds answers recorded from the
+1,411 checks. Every suite must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

@@ -81,11 +81,22 @@ export function greeting(p) {
 /* {{user}} and {{char}} — and <USER> and <BOT> — are SillyTavern's names for
  * the two of them. His instructions come from there, and sent raw they reach
  * the model as template syntax (Cozy Tavern M361). They are read as his names,
- * whole words only, exactly as SillyTavern does. A macro whose name box is
- * empty is left as written rather than guessed at. */
+ * whole words only, exactly as SillyTavern does; a macro whose name box is
+ * empty reads as a plain word (below). */
 /* {{user}} is read in any case, as SillyTavern reads it; <USER> and <BOT> only
- * in capitals — a preset's own <user> tag is markup, not a name. */
-export const MACROS = /\{\{\s*([Uu][Ss][Ee][Rr]|[Cc][Hh][Aa][Rr])\s*\}\}|<(USER|BOT)>/g;
+ * in capitals — a preset's own <user> tag is markup, not a name. {user} and {char}
+ * with one brace are read too (v2.5): it is how he writes them himself, and left
+ * alone they reached the model as braces — the one thing this file exists to stop.
+ * Never ${user} (a template's own), never {username} or {"user": …}. */
+export const MACROS = /\{\{\s*([Uu][Ss][Ee][Rr]|[Cc][Hh][Aa][Rr])\s*\}\}|<(USER|BOT)>|(\$?)\{\s*([Uu][Ss][Ee][Rr]|[Cc][Hh][Aa][Rr])\s*\}/g;
+/* which of the two a macro names, in any of its forms; null for ${user}, a template's
+ * own (told apart by its $ rather than by a lookbehind, which an older browser cannot
+ * read at all — and a pattern it cannot read stops the whole page) */
+function macroFor(curly, angle, dollar, single) {
+  if (curly) return curly.toLowerCase();
+  if (single) return dollar ? null : single.toLowerCase();
+  return angle && angle.toUpperCase() === 'USER' ? 'user' : 'char';
+}
 /* A MACRO NEVER REACHES THE MODEL AS BRACES. When he has set the name, the
  * macro reads as it — the whole point of the two boxes. When he has NOT (a
  * preset pasted in and the names not yet filled), a raw {{user}} in what the
@@ -96,8 +107,9 @@ export const MACROS = /\{\{\s*([Uu][Ss][Ee][Rr]|[Cc][Hh][Aa][Rr])\s*\}\}|<(USER|
  * nothing machine-like leaks while he has not. */
 const MACRO_FALLBACK = { user: 'the author', char: 'the one telling this' };
 export function voiceMacros(text, p) {
-  return String(text || '').replace(MACROS, (whole, curly, angle) => {
-    const which = (curly || (angle && angle.toUpperCase() === 'USER' ? 'user' : 'char')).toLowerCase();
+  return String(text || '').replace(MACROS, (whole, curly, angle, dollar, single) => {
+    const which = macroFor(curly, angle, dollar, single);
+    if (!which) return whole;
     const name = which === 'user' ? p.you : p.maker;
     return name || MACRO_FALLBACK[which];
   });
@@ -105,9 +117,12 @@ export function voiceMacros(text, p) {
 export function unfilledMacros(p) {
   const found = new Set();
   for (const m of String(p.frame || '').matchAll(MACROS)) {
-    const which = (m[1] || (m[2] && m[2].toUpperCase() === 'USER' ? 'user' : 'char')).toLowerCase();
-    if (which === 'user' && !p.you) found.add('{{user}}');
-    if (which === 'char' && !p.maker) found.add('{{char}}');
+    const which = macroFor(m[1], m[2], m[3], m[4]);
+    if (!which) continue;
+    /* said in the form he wrote it, so he can find it in what he wrote */
+    const said = m[4] ? `{${which}}` : `{{${which}}}`;
+    if (which === 'user' && !p.you) found.add(said);
+    if (which === 'char' && !p.maker) found.add(said);
   }
   return [...found];
 }

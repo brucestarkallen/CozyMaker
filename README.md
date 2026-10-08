@@ -63,6 +63,12 @@ and whether this place speaks to them as *you* or as *I*. Everything the app
 adds underneath is written the way two people talk, so nothing in here can
 knock them out of character.
 
+`{{char}}` and `{{user}}` in their instructions and in the note at the end read as
+**What they are called** and **What you are called** — in any case, with one brace
+or two (`{char}`, `{user}`), and SillyTavern's `<BOT>` and `<USER>` too. With a
+name box empty they read as plain words ("the one telling this", "the author"),
+never as braces. Inside the documents they stay as written, for SillyTavern to read.
+
 **Connections.** Address, model, key. What you set is what gets sent — your
 temperature, your top-p, your thinking. What you leave alone is not sent at
 all, so the provider does whatever it normally does. "Try it" makes a real call
@@ -180,7 +186,7 @@ Under their instructions, in The house, **The note at the end** takes anything y
 like — a reminder, a rule, a mood — and sends it after your message on every turn,
 so it is the last thing the one you talk to reads before answering: SillyTavern's
 post-history instructions, Cozy Tavern's note at the end. `{{user}}` and `{{char}}`
-read as the two names. **Send the note at the end** keeps the words and stops
+(or `{user}` and `{char}`) read as the two names. **Send the note at the end** keeps the words and stops
 sending them; **Sent after your message as** chooses a system message (the
 default) or a user message at the end of yours. A model that takes no system
 message after yours is remembered, and sent it at the end of yours instead.
@@ -308,7 +314,7 @@ the model needs changing.
 Read `AGENTS.md` first.
 
 ```
-bash tests/all.sh    thirteen runs, 1,407 checks
+bash tests/all.sh    thirteen runs, 1,411 checks
 ```
 
 `docs/lineage.md` lists every version of Cozy Tavern and Cozy Chat and what
