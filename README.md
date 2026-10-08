@@ -230,11 +230,23 @@ never more than a moment behind it. Off, each piece shows the moment it arrives.
 ## How it works
 
 The one you talk to reads, every time you speak: your instructions for them,
-your whole engine (`engine/generalist.md`, word for word), how this room works,
-and every document in the world, whole. They answer you, and when you ask for a
+your whole engine (`engine/generalist.md`, word for word — except that where it
+says "the user" they read your name), how this room works, and every document in
+the world, whole. They answer you, and when you ask for a
 change they make it themselves, inside their reply — part of a document by
 quoting it exactly, or a whole document written out plainly. You see their
 words; the changes appear as cards underneath, each with **put it back**.
+
+Everything CozyMaker says to them is said the way a person says it, so nothing
+they read pulls their thinking out of the voice you gave them — whether your
+instructions are in the box or only a name. Nothing they read calls you "the
+user": your engine and the keepers' crafts read your name (the files themselves
+are never changed), or "the author" if you have not set one. The app is "the room",
+and what it tells them between steps is a note from the room, to them by name,
+never words put in your mouth. Nothing CozyMaker itself says calls them an
+assistant, a persona or a worker. And the room asks them to think things over as themselves,
+in their own voice, never in rule names — they still run every check your engine
+asks for.
 
 After every reply the house puts the changes in and runs its checks. If
 something needs them — a change whose quote did not match, something the checks
@@ -269,7 +281,8 @@ Their helpers, each called by name, each reporting back to them:
 | **the instructions writer** | writes and keeps AI instruction sets and presets |
 
 The last three work from the Plot Essential and Instructions Maker's own crafts
-(its Worldbook Maker and Summaryception Auditor, word for word) and your own for
+(its Worldbook Maker and Summaryception Auditor, word for word but for your name
+where they say "the user") and your own for
 instructions; each can be changed from its document, with the original one tap
 away. The cog, under the floor, shows exactly who reads what.
 

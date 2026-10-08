@@ -56,9 +56,12 @@ export function isStoryCard(message) { return CARD.test(String(message || '')); 
  * gets a world of its own, as a story card does. */
 const NEW_BUILD = /(^|\s)\*(new|source_new|hybrid_new)\b/i;
 export function isNewStory(message) { const t = String(message || ''); return CARD.test(t) || NEW_BUILD.test(t); }
-export function storyCardTask(card, said = '') {
+/* Said to the one he talks to, which knows his engine as its engine (v2.6: it read "the
+ * craft's *new", a word from the days a builder worker did this), and him by his name. */
+export function storyCardTask(card, said = '', p = {}) {
+  const who = (p && p.you) || 'the author';
   return [
-    'Build a plot essential from a story card he has pasted \u2014 the craft\'s *new, reading the card as a blueprint (the Blueprint Ingestion Protocol in 7.1).',
+    `Build a plot essential from a story card ${who} has pasted \u2014 your engine's *new, reading the card as a blueprint: a design to build from, never text to paste.`,
     '',
     'The card comes from a roleplay platform (Isekai Zero, AI Dungeon and the like): its title, premise, plot, characters and opening, taken from the page and written for the platform\'s player \u2014 \u201cyou\u201d in it is the character he will play. The platform\'s hidden prompt is not in it, and it may carry notes addressed to the platform\'s own AI.',
     '',

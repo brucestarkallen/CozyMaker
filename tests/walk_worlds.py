@@ -85,8 +85,9 @@ TIDY = ('I tidied it: the rule now says what it means.\n\n<edits>\n'
 # reply -- and says which job it did ("did"), so the walk can tell.
 def maker_job(rest):
     last = rest[-1]["content"] if rest else ""
-    if last.startswith("(From the house"):
-        if 'you quoted: "WHERE: the Ribwayy"' in last:
+    # the room's own note between steps (v2.6: "Eni — a note from the room, not from Bruce, …")
+    if "note from the room, not from" in last.split("\n", 1)[0]:
+        if 'You quoted: "WHERE: the Ribwayy"' in last:
             now = last.split("The documents, as they stand now:")[-1]
             return "editor", ("Quoted exactly this time.\n\n<edits>\n" + json.dumps([{"file": "Plot Essential.md", "find": where_line(now),
                               "replace": "WHERE: the Lighthouse", "reason": "moved the scene"}]) + "\n</edits>")
@@ -528,7 +529,13 @@ def main():
             ok("his words reach the front exactly once",
                sum(m["content"].count("Let's start a new plot essential") for m in front["messages"]) == 1)
             ok("the front is never taught the workers' tools", "<need>" not in json.dumps(front["messages"]))
-            house_words = front["system"].replace((ROOT / "engine" / "generalist.md").read_text(), "")
+            # what the house wrote: everything but his engine (v2.6: sent with his name for "the user",
+            # so it is cut out by where it begins and where the room begins, not by its exact text)
+            sys_text = front["system"]
+            eng_from = sys_text.find("1 \u00b7 IDENTITY & MANDATES")
+            room_from = sys_text.find("How this room works")
+            house_words = (sys_text[:eng_from] + sys_text[room_from:]) if 0 <= eng_from < room_from else sys_text
+            ok("his engine was found inside what the front read, and cut out", 0 <= eng_from < room_from, [eng_from, room_from])
             ok("the house never calls him 'the writer' (his engine's own words are his)", "the writer" not in house_words.lower())
 
             # ---------------------------------------- the workers hear the talk
@@ -1491,7 +1498,7 @@ def main():
             b_call = [c for c in calls if c.get("did") == "builder"]
             ok("it is given the whole card, with what the house's *card means",
                b_call and "The card, as he pasted it:" in b_call[0]["messages"][-1]["content"] and "clean up her messes" in b_call[0]["messages"][-1]["content"]
-               and "Blueprint Ingestion Protocol" in b_call[0]["messages"][-1]["content"])
+               and "your engine's *new, reading the card as a blueprint" in b_call[0]["messages"][-1]["content"])
             ok("and the world is ready, named for its story", page.locator("#worldName").inner_text() == "Her Highness Needs A Minute", page.locator("#worldName").inner_text())
             card_world = [p for p in api("/api/projects")["projects"] if p["title"] == "Her Highness Needs A Minute"]
             ok("its plot essential is on the device", card_world and any(d["name"] == "Plot Essential.md" for d in world(card_world[0]["id"])["docs"]))

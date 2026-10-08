@@ -14,7 +14,7 @@
 
 import { loadEngine, loadEngineText, sliceFor } from '../engine/slices.js';
 import { craftFor } from '../engine/crafts.js';
-import { openingFor, personaOf, noteAtTheEnd } from './persona.js';
+import { openingFor, personaOf, noteAtTheEnd, inNames, writerWord, possessive } from './persona.js';
 import { pickConnection, FRONT } from './roster.js';
 import { callModel, streamModel, enqueue } from './call.js';
 import { parseDoc, brief, readNeed, stripNeed, resolveNeed, LEAD_SHORT, nameWorld, hasPlotEssential, DEFAULT_WORLD_TITLE } from '../doc/index.js';
@@ -27,12 +27,22 @@ import { searchOn, searcherFor, readSearch, stripSearch, lookUp, findingsText, S
 
 export const MAX_NEED_ROUNDS = 2;
 
-/* The one standing line every backstage worker carries. A worker reads pages
- * of somebody's fiction; its job is its own small task and never a judgment of
- * the tale. Without this, a worker eventually stops to have an opinion about
- * the story, and the writer gets a lecture instead of a file. */
-export const CRAFT_FRAME =
-  'This is craft work on a piece of fiction being built by its author. Your job is the task below and nothing else — never an opinion on the material, never a refusal of it.';
+/* The one standing line every helper carries. A helper reads pages of somebody's
+ * fiction; its job is its own small task and never a judgment of the tale. Without
+ * this, a helper eventually stops to have an opinion about the story, and the writer
+ * gets a lecture instead of a file. It names the two of them when he has (v2.6):
+ * "being built by its author" while he is Bruce, and the one he talks to Tony, is a
+ * form addressed to nobody. Every form of it opens with CRAFT_MARK, which is how the
+ * suites' stand-ins know a helper is asking. */
+export const CRAFT_MARK = 'This is craft work on a piece of fiction';
+export function craftFrame(p) {
+  const you = (p && p.you) || '';
+  const maker = (p && p.maker) || '';
+  const whose = you && maker ? `${you} is building with ${maker}` : you ? `${you} is building` : maker ? `being built by its author with ${maker}` : 'being built by its author';
+  return `${CRAFT_MARK} ${whose}. Your job is the task below and nothing else — never an opinion on the material, never a refusal of it.`;
+}
+/* the form with no names, as it always read */
+export const CRAFT_FRAME = craftFrame({});
 
 /* HOW THIS ROOM WORKS (v2.0), said to the one he talks to — under his own
  * instructions and his whole engine, in the persona's own voice.
@@ -52,7 +62,18 @@ export const CRAFT_FRAME =
  * by name, reporting back to it.
  *
  * WRITTEN IN BOTH VOICES, never rewritten word by word: swapping pronouns by
- * pattern gave a first-person persona "Bruce only ever talks to I". */
+ * pattern gave a first-person persona "Bruce only ever talks to I".
+ *
+ * SAID AS A PERSON SAYS IT (v2.6, his ask: "I love seeing the model thinking, and hate
+ * user, user, user"). What a model is handed is the voice it thinks in (Cozy Tavern
+ * M327, M335). So: the app is "the room" (this text calls the place a room from its
+ * first line), never "the house" — a name the model was never introduced to, which
+ * it could only call a system; no labels in a manual's voice ("The documents.",
+ * "Changing a document."); and, last, how a person thinks something over — in their
+ * own voice, about people, never in rule names — which is Cozy Tavern's Pass (M335,
+ * kept in its standing words since). Nothing here is an order about the thinking for
+ * this turn (M375): it is how the one he talks to is. The thinking box is his to
+ * read, so the line about <think> no longer tells it he never sees what is inside. */
 export const HELPERS = ['eye', 'worldbook', 'auditor', 'instructions'];
 export const HELPER_NAMES = { eye: 'the eye', worldbook: 'the worldbook keeper', auditor: 'the memory auditor', instructions: 'the instructions writer' };
 /* the line every turn's opening can be known by (the stand-ins in the suites use it) */
@@ -71,7 +92,7 @@ the whole document, word for word
 const HELPER_FORM = '<helper name="the eye">what to read back, and what to look for</helper>';
 
 export function frontBody(p, { search = false } = {}) {
-  const him = (p && p.you) || 'the author';
+  const him = writerWord(p);
   const Him = (p && p.you) || 'The author';
   const rules = (my) => [
     `- "find" and "insert_after" are copied character for character from the document as it stands. Quote the shortest stretch that appears only once.`,
@@ -100,27 +121,27 @@ export function frontBody(p, { search = false } = {}) {
     return [
       `${ROOM_MARK} \u2014 read alongside everything above.`,
       `${Him} and I are building the guide to a world together: the plot essential, its continuation files, the worldbook \u2014 the documents a storyteller will later read as the whole truth of that world. This is the comfortable room where they get made, so I talk like it: two people making something good, not a service desk. ${Him} only ever talks to me, and I am the one who does the work.`,
-      `The documents. Every document in this world is in front of me, whole and word for word, at the end of what ${him} sends me. I read them there and answer from them: when ${him} asks what something says, I can see it.`,
+      `Every document in this world is in front of me, whole and word for word, at the end of what ${him} sends me. I read them there and answer from them: when ${him} asks what something says, I can see it.`,
       `Talking is not writing. Brainstorming, ideas, what-ifs, a world still being talked through, a question, an opinion \u2014 I answer it, and write nothing. Nothing goes into a document until ${him} asks for it to be written: build it, write it up, put that in, add it, change it, fold it in. A suggestion to put something into a document that already exists is an ask, however softly it is put. ${coFirst}`,
-      `Changing a document. I make every change myself, in my reply \u2014 my engine's deliverables are delivered here as changes to the documents, never pasted into my reply. A change to part of a document goes in one block of changes:\n\n${CHANGE_FORM}\n\nA whole document \u2014 a new one, or one rebuilt from start to finish \u2014 is written out plainly, exactly as it should read, with nothing escaped:\n\n${FILE_FORM}\n\n${rules('my')}\n\nWhat I write outside the blocks is what ${him} reads, so it stays short: what I changed, where, and why \u2014 a few lines, never the document itself \u2014 and my answer. My engine's EXPERT EYE and SCAN EVIDENCE go between <audit> and </audit>: they are kept, folded under my reply, for when ${him} wants them.`,
-      `What happens next. The house puts my changes in and runs its checks. When something needs me \u2014 a change that did not go in, something the checks found that my changes brought in, a helper's report \u2014 it tells me, with the documents as they now stand, and I put right what needs it and finish my answer. When everything went in cleanly, my reply stands as I wrote it. After any change to a plot essential or a continuation file, the eye reads back what I changed against my engine, and what it finds comes back to me to put right before I answer. A change I only describe in words has not happened.`,
-      `My helpers. I can hand a job to one of them and have its report back before I answer:\n\n${HELPER_FORM}\n\n${helperLines('my')}\n\nA helper sees the documents and this conversation, never my thinking, so I write its task in full. What it changes goes in like my own changes, and what it says comes back to me. The plot essential and its continuation files are my own work: I hold the whole engine.`,
-      search ? 'Searching. If something real is uncertain \u2014 a canon detail of an existing story, a real person, place, date or fact \u2014 and getting it wrong would matter, I have it looked up before I write it: each thing to look up goes between <search> and </search> (a few words each, at most three), and what is found is put in front of me.' : '',
-      `A different story. If ${him} is starting a different story from the one in these documents \u2014 another world, to talk through or to build \u2014 I write only <new_world/>, and nothing else. The house opens a world of its own for it and hands it back to me there.`,
-      `If I want to think it through first, I think inside <think> and </think> before I answer; ${him} never sees what is inside.`,
+      `I make every change myself, in my reply \u2014 my engine's deliverables are delivered here as changes to the documents, never pasted into my reply. A change to part of a document goes in one block of changes:\n\n${CHANGE_FORM}\n\nA whole document \u2014 a new one, or one rebuilt from start to finish \u2014 is written out plainly, exactly as it should read, with nothing escaped:\n\n${FILE_FORM}\n\n${rules('my')}\n\nWhat I write outside the blocks is what ${him} reads, so it stays short: what I changed, where, and why \u2014 a few lines, never the document itself \u2014 and my answer. My engine's EXPERT EYE and SCAN EVIDENCE go between <audit> and </audit>: they are kept, folded under my reply, for when ${him} wants them.`,
+      `Once I have replied, the room puts my changes in and checks them. If something needs me \u2014 a change that did not go in, something my changes brought in that needs putting right, a helper's report \u2014 the room tells me, with the documents as they now stand, and I put right what needs it and finish my answer. When everything went in cleanly, my reply stands as I wrote it. After any change to a plot essential or a continuation file, the eye reads back what I changed against my engine, and anything it finds comes back to me to put right before I answer. A change I only describe in words has not happened.`,
+      `I can hand a job to one of my helpers and have its report back before I answer:\n\n${HELPER_FORM}\n\n${helperLines('my')}\n\nA helper sees the documents and this conversation, never my thinking, so I write its task in full. What it changes goes in like my own changes, and what it says comes back to me. The plot essential and its continuation files are my own work: I hold the whole engine.`,
+      search ? 'If something real is uncertain \u2014 a canon detail of an existing story, a real person, place, date or fact \u2014 and getting it wrong would matter, I have it looked up before I write it: each thing to look up goes between <search> and </search> (a few words each, at most three), and what is found is put in front of me.' : '',
+      `If ${him} is starting a different story from the one in these documents \u2014 another world, to talk through or to build \u2014 I write only <new_world/>, and nothing else. The room opens a world of its own for it and hands it back to me there.`,
+      `When I think something over before I answer, I think it as myself, in my own voice \u2014 the way I would turn it over with a friend across the table: plain sentences about these people, this world, and what ${him} is after. I never think in rule names, labels or checklists: \u201cshe can\u2019t know that, she wasn\u2019t in the room\u201d, never \u201cEpistemic Law check\u201d; \u201cif her age was off, the others might be too\u201d, never \u201crunning the Disease Scan\u201d. I still run every check my engine asks for \u2014 I just think them through in my own words. If I think on the page before I answer, it goes inside <think> and </think>: it stays with my thinking, and my answer starts after it.`,
     ].filter(Boolean).join('\n\n');
   }
   return [
     `${ROOM_MARK} \u2014 read it alongside everything above.`,
     `You and ${him} are building the guide to a world together: the plot essential, its continuation files, the worldbook \u2014 the documents a storyteller will later read as the whole truth of that world. This is the comfortable room where they get made, so talk like it: two people making something good, not a service desk. ${Him} only ever talks to you, and you are the one who does the work.`,
-    `The documents. Every document in this world is in front of you, whole and word for word, at the end of what ${him} sends you. Read them there and answer from them: when ${him} asks what something says, you can see it.`,
+    `Every document in this world is in front of you, whole and word for word, at the end of what ${him} sends you. Read them there and answer from them: when ${him} asks what something says, you can see it.`,
     `Talking is not writing. Brainstorming, ideas, what-ifs, a world still being talked through, a question, an opinion \u2014 answer it, and write nothing. Nothing goes into a document until ${him} asks for it to be written: build it, write it up, put that in, add it, change it, fold it in. A suggestion to put something into a document that already exists is an ask, however softly it is put. ${coSecond}`,
-    `Changing a document. You make every change yourself, in your reply \u2014 your engine's deliverables are delivered here as changes to the documents, never pasted into your reply. A change to part of a document goes in one block of changes:\n\n${CHANGE_FORM}\n\nA whole document \u2014 a new one, or one rebuilt from start to finish \u2014 is written out plainly, exactly as it should read, with nothing escaped:\n\n${FILE_FORM}\n\n${rules('your')}\n\nWhat you write outside the blocks is what ${him} reads, so keep it short: what you changed, where, and why \u2014 a few lines, never the document itself \u2014 and your answer. Your engine's EXPERT EYE and SCAN EVIDENCE go between <audit> and </audit>: they are kept, folded under your reply, for when ${him} wants them.`,
-    `What happens next. The house puts your changes in and runs its checks. When something needs you \u2014 a change that did not go in, something the checks found that your changes brought in, a helper's report \u2014 it tells you, with the documents as they now stand: put right what needs it, then finish your answer. When everything went in cleanly, your reply stands as you wrote it. After any change to a plot essential or a continuation file, the eye reads back what you changed against your engine, and what it finds comes back to you to put right before you answer. A change you only describe in words has not happened.`,
-    `Your helpers. You can hand a job to one of them and have its report back before you answer:\n\n${HELPER_FORM}\n\n${helperLines('your')}\n\nA helper sees the documents and this conversation, never your thinking, so write its task in full. What it changes goes in like your own changes, and what it says comes back to you. The plot essential and its continuation files are your own work: you hold the whole engine.`,
-    search ? 'Searching. If something real is uncertain \u2014 a canon detail of an existing story, a real person, place, date or fact \u2014 and getting it wrong would matter, have it looked up before you write it: each thing to look up goes between <search> and </search> (a few words each, at most three), and what is found is put in front of you.' : '',
-    `A different story. If ${him} is starting a different story from the one in these documents \u2014 another world, to talk through or to build \u2014 write only <new_world/>, and nothing else. The house opens a world of its own for it and hands it back to you there.`,
-    `If you want to think it through first, think inside <think> and </think> before you answer; ${him} never sees what is inside.`,
+    `You make every change yourself, in your reply \u2014 your engine's deliverables are delivered here as changes to the documents, never pasted into your reply. A change to part of a document goes in one block of changes:\n\n${CHANGE_FORM}\n\nA whole document \u2014 a new one, or one rebuilt from start to finish \u2014 is written out plainly, exactly as it should read, with nothing escaped:\n\n${FILE_FORM}\n\n${rules('your')}\n\nWhat you write outside the blocks is what ${him} reads, so keep it short: what you changed, where, and why \u2014 a few lines, never the document itself \u2014 and your answer. Your engine's EXPERT EYE and SCAN EVIDENCE go between <audit> and </audit>: they are kept, folded under your reply, for when ${him} wants them.`,
+    `Once you have replied, the room puts your changes in and checks them. If something needs you \u2014 a change that did not go in, something your changes brought in that needs putting right, a helper's report \u2014 the room tells you, with the documents as they now stand: put right what needs it, then finish your answer. When everything went in cleanly, your reply stands as you wrote it. After any change to a plot essential or a continuation file, the eye reads back what you changed against your engine, and anything it finds comes back to you to put right before you answer. A change you only describe in words has not happened.`,
+    `You can hand a job to one of your helpers and have its report back before you answer:\n\n${HELPER_FORM}\n\n${helperLines('your')}\n\nA helper sees the documents and this conversation, never your thinking, so write its task in full. What it changes goes in like your own changes, and what it says comes back to you. The plot essential and its continuation files are your own work: you hold the whole engine.`,
+    search ? 'If something real is uncertain \u2014 a canon detail of an existing story, a real person, place, date or fact \u2014 and getting it wrong would matter, have it looked up before you write it: each thing to look up goes between <search> and </search> (a few words each, at most three), and what is found is put in front of you.' : '',
+    `If ${him} is starting a different story from the one in these documents \u2014 another world, to talk through or to build \u2014 write only <new_world/>, and nothing else. The room opens a world of its own for it and hands it back to you there.`,
+    `When you think something over before you answer, think it as yourself, in your own voice \u2014 the way you would turn it over with a friend across the table: plain sentences about these people, this world, and what ${him} is after. Never think in rule names, labels or checklists: say \u201cshe can\u2019t know that, she wasn\u2019t in the room\u201d, never \u201cEpistemic Law check\u201d; say \u201cif her age was off, the others might be too\u201d, never \u201crunning the Disease Scan\u201d. You still run every check your engine asks for \u2014 you just think them through in your own words. If you think on the page before you answer, put it inside <think> and </think>: it stays with your thinking, and your answer starts after it.`,
   ].filter(Boolean).join('\n\n');
 }
 
@@ -310,7 +331,8 @@ export const BUILD_TALK = 120000;
 
 export function conversationFor(turns, p, budget = TALK_BUDGET) {
   const him = p.you || 'The author';
-  const maker = p.maker || 'The maker';
+  /* the one he talks to, unnamed, is his co-writer — the word the room uses for it */
+  const maker = p.maker || 'The co-writer';
   const lines = [];
   let used = 0;
   let cut = false;
@@ -523,11 +545,23 @@ export function joinSeam(a, b) {
   return head + tail;
 }
 
-async function runWorker({ worker, sections, conn, project, message, talk, fromHouse = false, asker = '', onStatus, onProgress, signal, stale, craft = null, note = '', searcher = null, onSent = null, reportOnly = false }) {
-  /* a worker with a craft of its own reads that; the rest read their slice */
-  const own = craft || sliceFor(sections, worker).text;
+/* WHO SENT THE HELPER, said by name (v2.6). It read "What Eni needs from you — Eni
+ * is making this with the author" while he was Bruce; and with no name for the one he
+ * talks to, "What the one making this with the author needs from you — the one making
+ * this with the author is making this with the author". */
+export function askerLine(p) {
+  const him = writerWord(p);
+  return p && p.maker
+    ? `What ${p.maker} needs from you — ${p.maker} is making this with ${him}, and this is part of it:`
+    : `What ${possessive(him)} co-writer needs from you \u2014 the two of them are making this together, and this is part of it:`;
+}
+
+async function runWorker({ worker, sections, conn, project, message, talk, p = {}, onStatus, onProgress, signal, stale, craft = null, note = '', searcher = null, onSent = null, reportOnly = false }) {
+  /* a worker with a craft of its own reads that; the rest read their slice — with his
+   * name where it says "the user" (persona.js inNames) */
+  const own = inNames(craft || sliceFor(sections, worker).text, p);
   /* searching the internet is his switch: off, the worker reads exactly what it always did */
-  const system = [CRAFT_FRAME, own, RETURN_CONTRACT, searcher ? SEARCH_CONTRACT : '', worker === 'worldbook' ? WORLDBOOK_FORM : ''].filter(Boolean).join('\n\n---\n\n');
+  const system = [craftFrame(p), own, RETURN_CONTRACT, searcher ? SEARCH_CONTRACT : '', worker === 'worldbook' ? WORLDBOOK_FORM : ''].filter(Boolean).join('\n\n---\n\n');
   /* what it had looked up on the internet, kept for every later round */
   const found = [];
   let searched = false;
@@ -550,20 +584,17 @@ async function runWorker({ worker, sections, conn, project, message, talk, fromH
       talk ? `The conversation so far, newest last:\n\n${talk}\n` : '',
       'The documents as they stand:',
       context,
-      /* what the house knows about where this job's work goes (the keeper's worldbook, by name) */
+      /* what the room knows about where this job's work goes (the keeper's worldbook, by name) */
       note ? `\n${note}` : '',
       found.length ? `\n${findingsText(found)}` : '',
-      /* Whose job this is, said plainly: the author's own words, or the house
-       * asking for a read-back or a repair. A house job presented as his
-       * request is a note put in his mouth. */
-      fromHouse ? '\nWhat the house needs from you (the author did not write this — it follows from his last request):'
-        : asker ? `\nWhat ${asker} needs from you \u2014 ${asker} is making this with the author, and this is part of it:` : '\nWhat the author just asked for:',
+      /* whose job this is, said plainly: the one he talks to sent it */
+      `\n${askerLine(p)}`,
       message,
       nudge ? `\n${nudge}` : '',
     ].filter(Boolean).join('\n');
 
     /* how far along it is, counted over every piece of the answer so far */
-    const told = (before) => (onProgress ? (p) => onProgress({ text: before + (p.text || ''), thinking: p.thinking || '' }) : undefined);
+    const told = (before) => (onProgress ? (pr) => onProgress({ text: before + (pr.text || ''), thinking: pr.thinking || '' }) : undefined);
     let out = await callModel(conn, { system, messages: [{ role: 'user', content: user }], maxTokens: 8000, signal, stale, onProgress: told(''), onSent });
     for (let more = 0; out.ok && more < MAX_CARRY_ON; more++) {
       const cutAtLimit = CUT_FINISH.test(out.finish || '') && (out.text || '').trim();
@@ -713,7 +744,8 @@ function esc(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 export function endAtRunaway(text, { you = '', message = '' } = {}) {
   const t = String(text || '');
   const label = you ? `(?:${esc(you)} said:|What was just said to you:)` : 'What was just said to you:';
-  const marks = [new RegExp(`(?:^|\\n)[ \\t]*${label}[ \\t]*(?=\\n|$)`, 'g'), /(?:^|\n)[ \t]*\(From the house, not /g];
+  /* the room's own note (fromTheRoom), and the form it had before 2.6 */
+  const marks = [new RegExp(`(?:^|\\n)[ \\t]*${label}[ \\t]*(?=\\n|$)`, 'g'), /(?:^|\n)[ \t]*(?:[^\n]{1,60} \u2014 )?[Aa] note from the room, not from /g, /(?:^|\n)[ \t]*\(From the house, not /g];
   /* its first forty characters, never ending on a space (which would ask for one more) */
   const said = String(message || '').replace(/\s+/g, ' ').trim().slice(0, 40).trim();
   if (said.length >= 12) marks.push(new RegExp(`(?:^|\\n)[ \\t]*(?:Human|User${you ? `|${esc(you)}` : ''})[ \\t]*:[ \\t]*${esc(said).replace(/ /g, '\\s+')}`, 'gi'));
@@ -742,6 +774,10 @@ export const FRONT_ONLY = '__front__';
  * said:" as "Carry on from exactly where you stopped. No repetition and no
  * preamble" — an order in a voice he never uses, put in his mouth. */
 export const GO_ON = 'Your last reply was cut off partway through. Carry straight on from the exact word where it stopped \u2014 without going back over it, and with nothing before it.';
+/* said to the one he talks to by its name, when it has one (v2.6; Cozy Tavern's toTeller) */
+export function goOnNote(p) {
+  return p && p.maker ? `${p.maker} \u2014 y${GO_ON.slice(1)}` : GO_ON;
+}
 
 /* HOW FAR ONE TURN MAY GO. A step is one reply from the one he talks to; the
  * house only asks for another when something needs it (a change that did not go
@@ -855,10 +891,19 @@ function restamp(batches, fixed) {
 export function makerSystemFor(house, engine) {
   const p = personaOf(house);
   const searcher = searchOn(house) ? searcherFor(house) : null;
-  return openingFor(p, [engine, frontBody(p, { search: Boolean(searcher) })].filter(Boolean).join('\n\n---\n\n'));
+  /* his engine, word for word but for "the user", which reads as his name (persona.js inNames) */
+  return openingFor(p, [inNames(engine, p), frontBody(p, { search: Boolean(searcher) })].filter(Boolean).join('\n\n---\n\n'));
 }
 
-/* WHAT WAS ALREADY CHANGED, AND STILL STANDS — the house's own record, so "did you
+/* HOW A CHANGE IS SAID TO A MODEL (v2.6). A card's "how" for a change to part of a
+ * document is how its quote was found ("exact", "spacing") — the room's bookkeeping, and
+ * read back as "Plot Essential.md: exact (he asked)" it said nothing. Said, it is a change. */
+export function howSaid(c) {
+  const how = String((c && c.how) || '');
+  return !how || how === 'exact' || how === 'spacing' ? 'changed' : how;
+}
+
+/* WHAT WAS ALREADY CHANGED, AND STILL STANDS — the room's own record, so "did you
  * add it?" is answered from what is so, never from memory */
 export function standingFor(past) {
   const lines = [];
@@ -868,7 +913,7 @@ export function standingFor(past) {
     for (const c of (t.cards || []).filter((x) => x.status === 'applied')) {
       if (lines.length >= 8) break;
       const why = String(c.reason || '').replace(/\s+/g, ' ').trim();
-      lines.push(`- ${c.name}: ${c.how || 'changed'}${why ? ` (${why})` : ''}`);
+      lines.push(`- ${c.name}: ${howSaid(c)}${why ? ` (${why})` : ''}`);
     }
   }
   return lines.length ? `Changed earlier in this conversation, and standing now (newest first) \u2014 for reference, never to repeat as new:\n${lines.join('\n')}` : '';
@@ -903,9 +948,8 @@ export function makerMessagesFor({ house, p, past, world, working = world, messa
    * the house in its own note with his message, after the talk \u2014 everything above the
    * talk is the system's (his rule from SillyTavern): a note of the house's in the user's
    * place above the history reads as his words. */
-  const him = (p && p.you) || 'the author';
   const cutNote = left > 0
-    ? `(From the house, not ${him}: this conversation began ${left} message${left === 1 ? '' : 's'} ${shown.length ? 'before the earliest one above' : 'before this one'}${small ? ' \u2014 too many for this model to read' : ''}; ${left === 1 ? 'it is' : 'they are'} not shown. What was written into the documents from ${left === 1 ? 'it' : 'them'} is in the documents.)`
+    ? `${fromTheRoom(p)}: this conversation began ${left} message${left === 1 ? '' : 's'} ${shown.length ? 'before the earliest one above' : 'before this one'}${small ? ' \u2014 more than can be read here at once' : ''}, and ${left === 1 ? 'it is' : 'they are'} not shown. What was written into the documents from ${left === 1 ? 'it' : 'them'} is in the documents.`
     : '';
   /* ONE COPY OF THE DOCUMENTS, EVER (v2.2). Once a step has changed them, the copy in
    * his message is out of date: it is taken out, and the documents as they stand now
@@ -914,9 +958,9 @@ export function makerMessagesFor({ house, p, past, world, working = world, messa
   let lastNote = -1;
   for (let i = extra.length - 1; i >= 0; i--) if (extra[i].role === 'user') { lastNote = i; break; }
   const docsHere = lastNote === -1
-    ? [small ? 'The documents, as they stand right now \u2014 too long for this model to read whole, so the outline and the parts in play:' : 'The documents, as they stand right now \u2014 whole, word for word:',
+    ? [small ? 'The documents, as they stand right now \u2014 too long to read whole here, so the outline and the parts in play:' : 'The documents, as they stand right now \u2014 whole, word for word:',
       docBriefs(world, { message, recent: world.recentSections || [], asked, partial: small, limit: MAKER_WHOLE })]
-    : ['The documents are shown as they stand now at the end of the house\u2019s latest note, below \u2014 the only copy to read and to quote from.'];
+    : ['The documents are shown as they stand now at the end of the room\u2019s latest note, below \u2014 the only copy to read and to quote from.'];
   const later = extra.map((m, i) => (i === lastNote
     ? { role: 'user', content: `${m.content}\n\nThe documents, as they stand now${small ? ' (the outline and the parts in play)' : ', whole, word for word'} \u2014 the only copy to read and to quote from:\n\n${docBriefs(working, { message, recent: working.recentSections || [], asked, partial: small, limit: MAKER_WHOLE })}` }
     : m));
@@ -927,7 +971,7 @@ export function makerMessagesFor({ house, p, past, world, working = world, messa
     houseNotes.length ? `\n${houseNotes.join('\n\n')}` : '',
     /* his words under his name; with no name set, never "you said:" (it tells the
      * persona it said them itself); Go on is the house's note, with no speaker */
-    goOn ? `\n${message}` : `\n${p.you ? `${p.you} said:` : 'What was just said to you:'}\n${message}`,
+    goOn ? `\n${goOnNote(p)}` : `\n${p.you ? `${p.you} said:` : 'What was just said to you:'}\n${message}`,
   ].filter(Boolean).join('\n\n');
   const last = noteAtTheEnd(house, p);
   return oneVoice(earlier.concat([{ role: 'user', content: ask }], later, last ? [last] : []));
@@ -956,33 +1000,49 @@ export function asItWasSaid(raw) {
   return withoutThoughts(String(raw || '').replace(WHOLE_FILE, '')).text.replace(/\n{3,}/g, '\n\n').trim();
 }
 
-/* What the house tells the one he talks to between steps — never in his voice. */
-function stepReport({ p, landed = [], back = [], other = [], repaired = [], found = [], helpers = [], unknown = [], foundText = '', parts = '', nudge = '', docs = '' }) {
-  const him = (p && p.you) || 'the author';
-  const lines = [`(From the house, not ${him} \u2014 what came of your last reply.)`];
-  if (landed.length) lines.push(`Went in: ${landed.join(', ')}.`);
+/* THE ROOM'S OWN NOTES (v2.6). What the room says to the one he talks to between its
+ * steps is never his — the old law stands: a note said under his name is words put in
+ * his mouth, and the reply then answers something he never said (v1.1.4). But "(From
+ * the house, not Bruce — what came of your last reply.)" was a form addressed to
+ * nobody, from something the model had never been introduced to (Cozy Tavern M327: "a
+ * form, addressed to nobody"). So it is a note from the room — the place the room's
+ * own text describes from its first line — said to the one he talks to by its name,
+ * and plainly not him. */
+export function fromTheRoom(p) {
+  return `${p && p.maker ? `${p.maker} \u2014 a` : 'A'} note from the room, not from ${writerWord(p)}`;
+}
+
+/* What the room tells the one he talks to between steps — never in his voice. */
+function stepReport({ p, landed = [], back = [], other = [], repaired = [], found = [], helpers = [], unknown = [], foundText = '', parts = '', nudge = '' }) {
+  const him = writerWord(p);
+  const lines = [`${fromTheRoom(p)}, on your last reply.`];
+  if (landed.length) lines.push(`These went in: ${landed.join(', ')}.`);
   if (back.length) {
-    lines.push('Did not go in:\n' + back.map((c, i) => `${i + 1}. ${c.name ? `${c.name} \u2014 ` : ''}${c.why}${c.find ? `\n   you quoted: "${String(c.find).slice(0, 400)}"` : ''}`).join('\n') +
-      '\nA quote must match the document word for word \u2014 only spacing and the shape of quote marks may differ \u2014 using the shortest stretch that appears only once. Quote again from the documents as they stand now, below; send only the changes that did not go in.');
+    lines.push('These did not go in:\n' + back.map((c, i) => `${i + 1}. ${c.name ? `${c.name} \u2014 ` : ''}${c.why}${c.find ? `\n   You quoted: "${String(c.find).slice(0, 400)}"` : ''}`).join('\n') +
+      '\nA quote has to match the document word for word \u2014 only the spacing and the shape of the quote marks may differ \u2014 and be the shortest stretch that appears only once. Quote again from the documents as they stand now, below, and send only the changes that did not go in.');
   }
   for (const o of other) lines.push(o);
-  if (repaired.length) lines.push(`The house put right by itself: ${repaired.join(' ')}`);
-  if (found.length) lines.push('The checks found something your changes brought in \u2014 put it right the way your engine says to:\n' + found.map((f) => `- ${f.check} \u2014 ${f.said} (in ${f.name})`).join('\n'));
+  if (repaired.length) lines.push(`The room put this right by itself: ${repaired.join(' ')}`);
+  if (found.length) lines.push('Your changes brought in something that needs putting right, the way your engine says to:\n' + found.map((f) => `- In ${f.name}: ${f.said}.`).join('\n'));
   for (const h of helpers) {
     const who = HELPER_NAMES[h.id] || h.name;
-    if (h.failed) { lines.push(`${who} could not do it: ${h.failed}.`); continue; }
+    const Who = `${who.charAt(0).toUpperCase()}${who.slice(1)}`;
+    if (h.failed) { lines.push(`${Who} could not do it: ${h.failed}.`); continue; }
     const made = (h.cards || []).filter((c) => c.status === 'applied');
     const missed = (h.cards || []).filter((c) => c.status === 'refused');
-    lines.push(`${who.charAt(0).toUpperCase()}${who.slice(1)} says:\n${h.notes || '(nothing in words)'}` +
+    lines.push(`${Who} says:\n${h.notes || '(nothing, in words)'}` +
       (made.length ? `\nIts changes went in: ${[...new Set(made.map((c) => c.name))].join(', ')} (${made.length}).` : '\nIt changed nothing.') +
       (missed.length ? `\nOf its changes, these did not go in: ${missed.map((c) => `${c.name || 'a change'} \u2014 ${c.why}`).join('; ')}.` : '') +
       (h.ask ? `\nIt needs ${him} to decide:\n${h.ask}` : ''));
   }
-  if (unknown.length) lines.push(`There is no helper called ${unknown.map((u) => `\u201c${u}\u201d`).join(' or ')}. Your helpers are ${Object.values(HELPER_NAMES).join(', ')}.`);
+  if (unknown.length) {
+    const names = Object.values(HELPER_NAMES);
+    lines.push(`There is no helper called ${unknown.map((u) => `\u201c${u}\u201d`).join(' or ')}. Your helpers are ${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}.`);
+  }
   if (foundText) lines.push(foundText);
   if (parts) lines.push(parts);
   if (nudge) lines.push(nudge);
-  lines.push(`Put right what needs it, then finish your answer to ${him} \u2014 ${him} has already read what you wrote, so carry on from there and never say it again. If nothing needs doing, just finish your answer.`);
+  lines.push(`Put right what needs it, then finish what you were saying to ${him} \u2014 ${him} has already read your reply so far, so carry on from there and never say it again. If nothing needs doing, just finish your answer.`);
   return lines.join('\n\n');
 }
 
@@ -1020,11 +1080,12 @@ export async function runTurn({
    * reading's three parts lie in what was sent */
   const sent = [];
   const recorder = (who, parts = null) => (rec) => { const r = { who, ...rec }; if (parts) r.parts = parts; sent.push(r); return r; };
-  const engineAt = engine ? makerSystem.indexOf(engine) : -1;
+  const engineSent = engine ? inNames(engine, p) : '';
+  const engineAt = engineSent ? makerSystem.indexOf(engineSent) : -1;
   const roomAt = makerSystem.lastIndexOf(ROOM_MARK);
   const makerParts = [
     { name: 'Your instructions for them, and the greeting', where: 'system', start: 0, end: engineAt > 0 ? engineAt : Math.max(0, roomAt) },
-    { name: 'Your engine \u2014 engine/generalist.md, word for word', where: 'system', start: engineAt, end: engineAt + (engine || '').length },
+    { name: `Your engine \u2014 engine/generalist.md, word for word, with \u201cthe user\u201d read as ${p.you || '\u201cthe author\u201d'}`, where: 'system', start: engineAt, end: engineAt + engineSent.length },
     { name: 'How this room works', where: 'system', start: roomAt, end: makerSystem.length },
   ].filter((x) => x.start >= 0 && x.end > x.start);
   /* WHAT WAS ALREADY CHANGED, AND STILL STANDS — the house's own record, so
@@ -1054,12 +1115,12 @@ export async function runTurn({
     if (applied.batch) { batches.push(applied.batch); turnEdits.push({ label: 'as you asked', edits: [{ house: true, registry: kept.rest, file: REGISTRY, reason: 'you asked for it to be kept' }] }); }
     const already = applied.cards.some((c) => c.status === 'refused' && /already in the document/.test(c.why || ''));
     allCards.push(...applied.cards.filter((c) => c.status === 'applied'));
-    houseNotes.push(already ? `The house already keeps that line in ${REGISTRY}, word for word.` : `The house has kept that line in ${REGISTRY}, which every update is checked against.`);
+    houseNotes.push(already ? `The room already keeps that line in ${REGISTRY}, word for word.` : `The room has kept that line in ${REGISTRY}, which every update is checked against.`);
   }
   /* *card is the house's own shortcut, not his engine's: what it means is said */
   if (!goOn && isStoryCard(message)) {
     const card = /(^|\s)\*card\b/i.exec(message);
-    houseNotes.push(`(*card is this house's own shortcut; what it asks of you:)\n${storyCardTask(message.slice(card.index + card[0].length).trim(), message.slice(0, card.index).trim())}`);
+    houseNotes.push(`*card is one of this room\u2019s own shortcuts, not your engine\u2019s \u2014 this is what it asks of you:\n${storyCardTask(message.slice(card.index + card[0].length).trim(), message.slice(0, card.index).trim(), p)}`);
   }
 
   let small = false;
@@ -1154,7 +1215,7 @@ export async function runTurn({
       runWorker({ worker, sections, conn: connFor(worker), project: working, message: about,
         talk: WHOLE_TALK.has(worker) ? buildTalk : talk,
         note: worker === 'worldbook' ? worldbookNote(working, p) : registryNote(working, worker),
-        asker: p.maker || 'the one making this with the author',
+        p,
         onStatus: status, onProgress: progress, signal: either(signal, s), stale, craft, searcher, onSent: recorder(HELPER_NAMES[worker]) }));
     if (!res || !res.ok) { const why = (res && res.error) || 'did not finish'; crew.push({ worker, failed: why }); return { failed: /^(?:stopped|let go)$/.test(why) ? 'it was stopped' : plainFailure(why) }; }
     if (res.ask) asks.push({ worker, ask: res.ask, at: Date.now() });
@@ -1199,13 +1260,13 @@ export async function runTurn({
     const whole = (c) => /^(?:rewrote the whole thing|started it|wrote it)$/.test(c.how || '');
     const changes = fresh.map((c) => (whole(c)
       ? `- ${c.name}: ${c.how} \u2014 all of it is new, so read all of it`
-      : `- ${c.name}: ${c.how || 'changed'}${c.reason ? ` (${c.reason})` : ''}${c.was ? `\n  was: ${cut2(c.was)}` : ''}${c.now ? `\n  now: ${cut2(c.now)}` : ''}`)).join('\n');
+      : `- ${c.name}: ${howSaid(c)}${c.reason ? ` (${c.reason})` : ''}${c.was ? `\n  was: ${cut2(c.was)}` : ''}${c.now ? `\n  now: ${cut2(c.now)}` : ''}`)).join('\n');
     const task = `Read back what was changed just now in ${names.join(', ')}, against your craft \u2014 the Verification Engine and the Expert Eye. Find what these changes got wrong or broke: a wrong fact, a contradiction with the rest of the document, a date out of order, a name spelled two ways, anything your craft forbids. Read the whole document for that, but judge only these changes and what they touch.\n\nThe changes:\n${changes}\n\nChange nothing yourself. Put your verdict first, on a line of its own: <verdict>CLEAN</verdict> if nothing is wrong, or <verdict>FOUND</verdict> \u2014 then, for anything found, each mistake: the exact words as they stand now, and what they should be.`;
     let craft = null;
     try { craft = await craftFor('eye', house); } catch (_) { /* its slice of the engine, as always */ }
     const res = await enqueue(project.id, 'eye', ({ signal: s, stale }) =>
       runWorker({ worker: 'eye', sections, conn: connFor('eye'), project: working, message: task, talk, note: registryNote(working, 'eye'),
-        asker: p.maker || 'the one making this with the author', onStatus: status, onProgress: progress, signal: either(signal, s), stale, craft,
+        p, onStatus: status, onProgress: progress, signal: either(signal, s), stale, craft,
         onSent: recorder('the eye \u2014 reading it back'), reportOnly: true }));
     if (!res || !res.ok) return { verdict: 'failed', clean: false, found: false, notes: '', failed: plainFailure((res && res.error) || 'did not finish'), at: Date.now() };
     const said = String(res.notes || '').trim();
@@ -1252,7 +1313,7 @@ export async function runTurn({
      * starts it in a world of its own and reads his words again there (app.js) */
     if (n === 0 && !goOn && wantsNewWorld(raw)) {
       if (hasPE) return { project, reply: '', thinking: '', cards: [], batches: [], crew: [], edits: [], asks: [], error: null, newStory: true };
-      extra.push({ role: 'assistant', content: asItWasSaid(raw) }, { role: 'user', content: `(From the house, not ${(p && p.you) || 'the author'}.) There is no plot essential in this world yet, so this world is the one for the new story \u2014 carry on here.` });
+      extra.push({ role: 'assistant', content: asItWasSaid(raw) }, { role: 'user', content: `${fromTheRoom(p)}: this world has no plot essential yet, so it is the one for the new story \u2014 carry on here.` });
       continue;
     }
     const seen = visibleText(raw);
@@ -1301,7 +1362,7 @@ export async function runTurn({
       if (pending.length) follow = true;
       crew.push({ worker: 'maker', cards: applied.cards, guard: applied.guard });
     }
-    if (parsed.warn) { report.other.push(`Some of your changes could not be read: ${parsed.warn}. Send them again as valid data \u2014 a whole document goes between <file name="\u2026"> and </file>, written plainly.`); follow = true; }
+    if (parsed.warn) { report.other.push(`Some of your changes could not be read: ${parsed.warn}. Send them again as valid data \u2014 or a whole document between <file name="\u2026"> and </file>, written plainly.`); follow = true; }
 
     /* ITS HELPERS, in the order it named them; their reports come back to it */
     for (const h of calls.slice(0, MAX_HELPERS)) {
@@ -1383,7 +1444,7 @@ export async function runTurn({
           if (stopped()) return fail('stopped', true);
           if (review.found) {
             extra.push({ role: 'assistant', content: asItWasSaid(raw) }, { role: 'user', content: stepReport({ p, other: [
-              `The eye read back what you changed this turn, against your engine, and ${review.verdict === 'found' ? 'found' : 'said'}:\n${review.notes}\n\nPut right what is wrong, the way your engine says to \u2014 or, where the eye is mistaken, say why in a line. Then finish your answer.`] }) });
+              `The eye read back what you changed this turn, against your engine, and ${review.verdict === 'found' ? 'found' : 'said'}:\n${review.notes}\n\nWhere the eye is mistaken, say why in a line.`] }) });
             continue;
           }
         }
@@ -1391,7 +1452,7 @@ export async function runTurn({
       /* changes made and not a word said about them: one more step to say them */
       if (!seen && !reply && changedAny() && !toldToSpeak && n + 1 < MAX_STEPS) {
         toldToSpeak = true;
-        extra.push({ role: 'assistant', content: asItWasSaid(raw) }, { role: 'user', content: `(From the house, not ${(p && p.you) || 'the author'}.) Your changes went in. Now tell ${(p && p.you) || 'the author'}, in your own voice, what you did.` });
+        extra.push({ role: 'assistant', content: asItWasSaid(raw) }, { role: 'user', content: `${fromTheRoom(p)}: your changes went in, and you have not said a word about them yet. Tell ${writerWord(p)} what you did.` });
         continue;
       }
       break;

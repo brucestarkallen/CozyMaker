@@ -266,7 +266,11 @@ def main():
             engine = (ROOT / "engine" / "generalist.md").read_text()
             ok("it was given his own instructions first", front["system"].startswith("You are Eni. You are warm"), front["system"][:80])
             ok("it was greeted like a person", "Hey Eni, this is Bruce." in front["system"])
-            ok("it read his whole engine, word for word", engine in front["system"], f"{len(front['system'])} chars")
+            # v2.6: word for word, but where his engine says "the user" it reads his name
+            plain = [ln for ln in engine.split("\n") if "user" not in ln.lower() and ln.strip()]
+            ok("it read his whole engine, word for word but with his name for \u201cthe user\u201d",
+               all(ln in front["system"] for ln in plain) and "When Bruce gives a command, EXECUTE IT." in front["system"]
+               and not re.search(r"\buser\b", front["system"], re.I), f"{len(front['system'])} chars")
             ok("it was told how to change a document itself", "<edits>" in front["system"] and "How this room works" in front["system"])
             ok("it read the plot essential whole, word for word", PE_SEED.strip() in front["user"])
             ok("his words came after it, under his name", front["user"].rfind("Bruce said:") > front["user"].find("## SCENE"))

@@ -236,7 +236,7 @@ export function lint(text, { kind = 'pe', deliverable = true, keep = null } = {}
         return body ? lead + body : '';
       }).join('\n');
       found.push(finding('working notes in the document',
-        `took out ${tags.length} of the maker's own markers that had ended up inside the text`,
+        `took out ${tags.length} working marker${tags.length > 1 ? 's' : ''} that had ended up inside the text`,
         { repaired: true, count: tags.length }));
     }
     let chores = 0;
@@ -295,9 +295,13 @@ export function lint(text, { kind = 'pe', deliverable = true, keep = null } = {}
   }
 
   /* 5 — events: numbering, order, and a date on every one. These cannot be
-   *     repaired from here without inventing something, so the chronicler is
-   *     sent to do them. */
+   *     repaired from here without inventing something, so they go to the one he
+   *     talks to. Each is said the way a person would say it (v2.6): what is wrong
+   *     and how to put it right, in grammar that holds for one as for many, and
+   *     never "the craft's Temporal Anchoring" — the room's notes name no rule,
+   *     because a rule named is a rule thought aloud (Cozy Tavern M335). */
   const ev = readEvents(src);
+  const one = (list) => list.length === 1;
   if (ev.duplicates.length) {
     found.push(finding('the same event number twice',
       `${ev.duplicates.join(', ')} appear${ev.duplicates.length > 1 ? '' : 's'} more than once`,
@@ -305,18 +309,18 @@ export function lint(text, { kind = 'pe', deliverable = true, keep = null } = {}
   }
   if (ev.outOfOrder.length) {
     found.push(finding('events out of order',
-      `${ev.outOfOrder.join(', ')} come after a later number`,
+      `${ev.outOfOrder.join(', ')} come${one(ev.outOfOrder) ? 's' : ''} after a later number`,
       { worker: 'chronicler', count: ev.outOfOrder.length }));
   }
   const some = (list) => `${list.slice(0, 6).join(', ')}${list.length > 6 ? ` and ${list.length - 6} more` : ''}`;
   if (ev.undated.length) {
     found.push(finding('an event without a full date-time',
-      `${some(ev.undated)} carry no full date-time [day month year, hour:minute] \u2014 assign each as the craft's Temporal Anchoring says: from elapsed time, scene pacing and the calendar, in order with the events around it`,
+      `${some(ev.undated)} ${one(ev.undated) ? 'has' : 'have'} no full date-time [day month year, hour:minute] \u2014 give ${one(ev.undated) ? 'it one' : 'each one'} from elapsed time, scene pacing and the calendar, in order with the events around it`,
       { worker: 'chronicler', count: ev.undated.length }));
   }
   if (ev.lateOrder.length) {
     found.push(finding('events out of time order',
-      `${some(ev.lateOrder)}, which comes before it \u2014 timestamps must run forward (the craft's Mechanical Audit)`,
+      `${some(ev.lateOrder)}${one(ev.lateOrder) ? ', though it comes after it in the timeline' : ' \u2014 each comes later in the timeline than the one it is dated before'}; dates must run forward`,
       { worker: 'chronicler', count: ev.lateOrder.length }));
   }
   if (ev.stateEarly) {
@@ -326,7 +330,7 @@ export function lint(text, { kind = 'pe', deliverable = true, keep = null } = {}
   }
   if (ev.untagged.length) {
     found.push(finding('an event with no tags',
-      `${some(ev.untagged)} carry no thematic tag \u2014 the craft tags every event at creation; its tags decide how it is compressed`,
+      `${some(ev.untagged)} ${one(ev.untagged) ? 'has' : 'have'} no thematic tag \u2014 every event is tagged when it is made, and its tags decide how it is compressed later`,
       { worker: 'chronicler', count: ev.untagged.length }));
   }
   /* the 80-word ceiling is the PLOT ESSENTIAL's timeline tier (5.1); a continuation
@@ -334,7 +338,7 @@ export function lint(text, { kind = 'pe', deliverable = true, keep = null } = {}
    * compressed"), and held to it, its events would have been sent to be cut */
   if (kind === 'pe' && ev.long.length) {
     found.push(finding('an event over its word budget',
-      `${some(ev.long)} run past ${EVENT_WORDS} words, the craft's longest timeline tier \u2014 compress it, keeping its causal chain and its significant lines`,
+      `${some(ev.long)} run${one(ev.long) ? 's' : ''} past ${EVENT_WORDS} words, the longest an event in a plot essential may be \u2014 compress ${one(ev.long) ? 'it' : 'each'}, keeping its causal chain and its significant lines`,
       { worker: 'chronicler', count: ev.long.length }));
   }
 
@@ -342,7 +346,9 @@ export function lint(text, { kind = 'pe', deliverable = true, keep = null } = {}
   const bleed = namedPersonGate(src);
   if (bleed.length) {
     found.push(finding('a name inside a character trait',
-      `${bleed.slice(0, 4).join(', ')}${bleed.length > 4 ? ` and ${bleed.length - 4} more` : ''} describe who someone knows inside the line about who they are`,
+      bleed.length === 1
+        ? `${bleed[0]} in a CORE line \u2014 who someone knows belongs with their bonds, never in the line about who they are`
+        : `${bleed.slice(0, 4).join(', ')}${bleed.length > 4 ? ` and ${bleed.length - 4} more` : ''} \u2014 each in a CORE line, where who someone knows never belongs: it goes with their bonds`,
       { worker: 'editor', count: bleed.length }));
   }
 
@@ -350,7 +356,7 @@ export function lint(text, { kind = 'pe', deliverable = true, keep = null } = {}
   const tokens = Math.ceil(src.length / 4);
   if (tokens >= (kind === 'continuity' ? CONTINUITY_THRESHOLDS : THRESHOLDS).bloated) {
     found.push(finding('the document has grown heavy',
-      `about ${tokens.toLocaleString()} tokens — past the point where it starts crowding the storyteller`,
+      `it has grown to about ${tokens.toLocaleString()} tokens — past the point where it starts crowding the storyteller`,
       { worker: 'compressor' }));
   }
 
@@ -447,14 +453,15 @@ function lintWorldbook(src) {
   const found = [];
   const read = readWorldbook(src);
   if (!read.ok) {
-    found.push(finding('the worldbook is not readable as data', read.why, { worker: 'worldbook' }));
+    found.push(finding('the worldbook is not readable as data', `it cannot be read as entries \u2014 ${read.why}`, { worker: 'worldbook' }));
     return { text: src, found, changed: false };
   }
   const entries = read.entries;
   let repaired = 0;
   let reread = 0;
-  if (read.fixed) { found.push(finding('the worldbook data was put right', 'a trailing comma or a raw line break inside a value', { repaired: true })); reread++; }
-  if (read.reshaped) { found.push(finding('the worldbook was made one list of entries', 'it was wrapped in another shape', { repaired: true })); reread++; }
+  /* each said so it stands alone: "In Lore.json, put right a trailing comma…" */
+  if (read.fixed) { found.push(finding('the worldbook data was put right', 'put right a trailing comma or a raw line break inside a value', { repaired: true })); reread++; }
+  if (read.reshaped) { found.push(finding('the worldbook was made one list of entries', 'made it one list of entries, where it was wrapped in another shape', { repaired: true })); reread++; }
   const seen = new Map();
   const dupes = [];
   const keyless = [];
@@ -483,7 +490,7 @@ function lintWorldbook(src) {
     }
   }
   if (repaired) found.push(finding('an entry set up wrong', `put ${repaired} setting${repaired > 1 ? 's' : ''} back in range`, { repaired: true, count: repaired }));
-  if (dupes.length) found.push(finding('two entries with the same name', dupes.join(', '), { worker: 'worldbook', count: dupes.length }));
+  if (dupes.length) found.push(finding('two entries with the same name', `${dupes.join(', ')} ${dupes.length > 1 ? 'are each' : 'is'} the name of more than one entry`, { worker: 'worldbook', count: dupes.length }));
   if (keyless.length) found.push(finding('an entry that can never fire', `${keyless.join(', ')} ${keyless.length > 1 ? 'have' : 'has'} no words to trigger on`, { worker: 'worldbook', count: keyless.length }));
   const text = repaired || reread ? JSON.stringify(entries, null, 2) : src;
   return { text, found, changed: text !== src };

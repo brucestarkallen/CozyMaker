@@ -1332,7 +1332,8 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
    * exceptions" — his calendar's full stamps pass; a bare year is not one, and it is assigned, never left */
   eq('his own calendar\'s full stamps pass — ordinals, "of", month names; a bare year is not a full date-time', readEvents(HIS).undated, ['e001', 'e007', 'e008']);
   const f = lint('# PLOT ESSENTIAL — Soul Society — V1.0\n\n## TIMELINE\n' + HIS + '\n', { kind: 'pe', deliverable: true }).found.find((x) => x.check === 'an event without a full date-time');
-  ok('the crew is told to assign them as the craft\'s Temporal Anchoring says', f && /e001, e007, e008 carry no full date-time/.test(f.said) && /Temporal Anchoring/.test(f.said) && /in order with the events around it/.test(f.said), f && f.said);
+  /* v2.6: said as what to do, never by the rule's name (a rule named in the room's note is a rule thought aloud) */
+  ok('the one he talks to is told how to give each one: from elapsed time, scene pacing and the calendar, in order', f && /e001, e007, e008 have no full date-time/.test(f.said) && /from elapsed time, scene pacing and the calendar, in order with the events around it/.test(f.said) && !/craft|Temporal Anchoring/.test(f.said), f && f.said);
   eq('the craft\'s own fantasy example is a full date-time', readEvents('## TIMELINE\ne001 [Moonday 15th of Highsun, 847 AK, 14:30] [SETUP]: x\n').undated, []);
   /* the rest of its Mechanical Audit, read by code from his real event lines */
   const HIS_UPLOAD = ['### Calendar', 'Months: 1-Shiratsuyu, 2-Hatsuharu, 3-Hanami, 4-Samidare, 5-Mizube,', '6-Suzushiro, 7-Momiji, 8-Kogarashi, 9-Setsugetsu, 10-Fuyubi, 11-Maboroshi,', '12-Shiraume. 7-day week (Mon–Sun).', '', '## TIMELINE',
@@ -1960,7 +1961,8 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
   /* — a reply that ran past its own end — */
   const runaway = has(run, 'endAtRunaway') ? run.endAtRunaway : (t) => t;
   eq('it ends where his label begins', runaway('Added Mira.\n\nBruce said:\nnow make her older', { you: 'Bruce' }), 'Added Mira.');
-  eq('or the house’s own note', runaway('Done.\n(From the house, not Bruce — what came of your last reply.)\nok', { you: 'Bruce' }), 'Done.');
+  eq('or the room’s own note, as it is said since 2.6, by name or not', [runaway('Done.\nEni — a note from the room, not from Bruce, on your last reply.\nok', { you: 'Bruce' }), runaway('Done.\nA note from the room, not from the author, on your last reply.\nok')], ['Done.', 'Done.']);
+  eq('or as it was said before', runaway('Done.\n(From the house, not Bruce — what came of your last reply.)\nok', { you: 'Bruce' }), 'Done.');
   eq('or his own message typed again', runaway('Sure.\nUser: make the harbour older please and add a guard at the gate', { you: 'Bruce', message: 'make the harbour older please and add a guard at the gate' }), 'Sure.');
   eq('his message typed again is found whatever its fortieth character is', runaway('Sure.\nBruce: make the harbour older please and add a guard', { you: 'Bruce', message: 'make the harbour older please and add a guard' }), 'Sure.');
   const scene = 'Rewrote it.\n\n<file name="Scene.md">\nThe hall fell quiet.\nBruce said:\nnothing\n</file>';

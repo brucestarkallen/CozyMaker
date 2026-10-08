@@ -660,7 +660,7 @@ function lookSection(house) {
 
 function underTheFloorSection() {
   const g = group('Under the floor',
-    'Your engine lives in one file, engine/generalist.md, and the one you talk to reads all of it, word for word, every time you speak. The eye reads the parts its read-back needs; the three keepers read their own crafts.');
+    'Your engine lives in one file, engine/generalist.md, and the one you talk to reads all of it, every time you speak \u2014 word for word, except that where it says \u201cthe user\u201d it reads your name (the file itself is never changed). The eye reads the parts its read-back needs; the three keepers read their own crafts, with your name the same way.');
   const detailsInner = el('div', '');
   const details = fold('what each of them reads', detailsInner, { className: 'fold thinking' });
   details.style.maxHeight = 'none';

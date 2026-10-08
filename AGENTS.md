@@ -5,11 +5,12 @@ record of what has already been got wrong once.
 
 ---
 
-## Where it stands (hand-off, 8 Oct 2026, v2.5.0)
+## Where it stands (hand-off, 9 Oct 2026, v2.6.0)
 
 **How a turn works.** The one he talks to reads his instructions, his whole
-engine (`engine/generalist.md`, word for word), "how this room works"
-(`frontBody`), every document whole, the whole talk (unless he set a window), and
+engine (`engine/generalist.md`, word for word but for "the user", which reads as
+his name), "how this room works" (`frontBody`), every document whole, the whole
+talk (unless he set a window), and
 his note at the end — built in one place (`makerSystemFor`, `makerMessagesFor`)
 for the turn and for the context line alike. It changes documents itself in its
 reply (`<edits>` / `<file>`). The house applies them, runs the checks on only what
@@ -24,6 +25,17 @@ He reads only its words (a thought it writes as a block, anywhere, goes to the
 Thinking box); the changes are cards with put it back; "What was sent" and the
 context line show the cost.
 
+**Every word as a person says it (v2.6).** What a model is handed is the voice it
+thinks in. Nothing it reads calls him "the user" (his engine and the crafts read his
+name — `inNames`, at send time; the files are untouched), and nothing the room itself
+says calls the app "the house" (it is "the room", which the room's own text
+introduces) or anyone an assistant, a persona, a worker or a system (his engine's own
+"whatever persona is defined above" is his). Between steps the room speaks
+(`fromTheRoom`: "Eni — a note from the room, not from Bruce, …"), never in his
+voice. The room's last paragraph is how it thinks: as itself, in its own voice,
+never in rule names (Cozy Tavern M335). `tests/harness.mjs` §28 reads every
+request of real turns in four voices.
+
 **Two windows, one device (v2.5).** Every save names the copy it was made from
 (`X-CozyMaker-Base`); the device refuses one made from an older copy (409, with
 its own) or for a world deleted meanwhile (410), and the page puts the two together
@@ -32,14 +44,15 @@ newer commit on the device is taken by the page itself when nothing is in progre
 Only this phone's own page reaches `/api/` (Host and Origin checked).
 
 **The gate.** `bash tests/all.sh` — thirteen runs, all green before any push. On
-8 Oct 2026, on a two-core machine: units 647, harness 185, thinking 13, saves 20,
-two pages 22, server 82, browser 103, walk 228, the house walk 37, live stream
-12 + 12, stream flows 29, launcher 21 — 1,411 checks. The browser runs need
+9 Oct 2026, on a two-core machine: units 648, harness 221, thinking 13, saves 20,
+two pages 22, server 82, browser 103, walk 229, the house walk 37, live stream
+12 + 12, stream flows 29, launcher 21 — 1,449 checks. The browser runs need
 Playwright's Chromium.
 
 **What no test here can show.** Every model in the suites is a stand-in on the
 wire. How his real models follow the room's forms (`<edits>`, `<file>`,
-`<helper>`, `<audit>`, `<verdict>`) is the one thing only his own use shows; the
+`<helper>`, `<audit>`, `<verdict>`), and whether their thinking now stays in the
+voice he gave them, is the one thing only his own use shows; the
 house is built to recover when they do not (a missed quote goes back, a block in
 the thinking still lands, an unreadable verdict goes back as notes, "I changed it"
 with no block is asked for the block).
@@ -70,7 +83,10 @@ from it is ever restated in code.** A law written twice is a law that will
 disagree with itself. The one he talks to reads it whole, every turn, under his
 own instructions — which is how the engine is written to be used ("You are also
 Generalist … whatever persona is defined above these instructions stays in
-force"). `js/engine/slices.js` still cuts it at its own headings, for the one
+force"). It is sent word for word but for one word: where it says "the user" it
+reads his name, or "the author" with none set (v2.6, `persona.js inNames`, at send
+time — the file on disk is never changed, and a form the pass does not know is left
+as written, never guessed at). The crafts the helpers read go through the same pass. `js/engine/slices.js` still cuts it at its own headings, for the one
 helper that works on it (the eye, which reads only what its read-back needs).
 
 To change the craft, edit `engine/generalist.md`. Nothing else.
@@ -97,8 +113,9 @@ coding agent is one:
 3. **It hears back.** The house applies a step's changes, runs the checks on what
    this turn brought in (`checkChanged` — never what was already there), and only
    when something needs it (a change that did not go in, a finding, a helper's
-   report, a search, parts it asked to read) sends a report — "(From the house,
-   not Bruce …)", with the documents as they stand — and asks it to carry on.
+   report, a search, parts it asked to read) sends a note — the room's, to it by
+   name, never in his voice ("Eni — a note from the room, not from Bruce, on your
+   last reply.", v2.6) — with the documents as they stand, and asks it to carry on.
    When everything went in cleanly, its reply stands: one call. `MAX_STEPS` (6)
    ends any turn.
 4. **Its helpers are its own**: `<helper name="the eye">task</helper>`. The eye,
@@ -1616,18 +1633,102 @@ it is, the open world taking a merge before the copy beside is written, a reply 
 deleted elsewhere, the house left alone while it is open) were each taken out in a scratch copy and
 their check went red.
 
+### Every word on the wire, as a person says it (v2.6.0)
+
+He asked for the wording to talk naturally, like Cozy Tavern's: he loves reading the model's thinking
+and hates "user, user, user" in it — he wants Hulk, Iron Man or Batman to think like themselves, with
+his instructions or with only a name in the box, all the way from the one he talks to down to its
+helpers. Everything every model is sent was printed from real turns (`tests/harness.mjs` §28 does it
+for good) and read line by line. What a model is handed is the voice it thinks in (Cozy Tavern M327,
+M335), and what it was handed was a briefing to an assistant:
+
+- **His engine said "user" eighty-two times, fifty-five of them "the user"** ("When the user gives a
+  command, EXECUTE IT. The user is paying to PLAY…"), and the keepers' crafts twelve more. A model reading that every turn thinks "the
+  user wants…" under any persona. It now reads his name — or, with none set, "the author", the engine's
+  own other word for him (`persona.js inNames`, at send time; the files stay word for word, which
+  `crafts.json`'s hashes still hold). Only "user" moves, and every compound is said the way a person
+  would say it: "An error Bruce REPORTED is the STRONGEST trigger", "(Bruce's approval required)",
+  "content Bruce approved", "field text Bruce wrote", "> Bruce: "Claire's age is wrong"". All 73 changed
+  lines of the three files were printed in both forms and read; a form the pass does not know is left as
+  written, never guessed at. "username" and "superuser" are not "user". A SillyTavern macro in an engine
+  or a craft is left as written too: it can be what a document is taught to say — {{user}} in a worldbook
+  entry is SillyTavern's to fill when the story runs, and read here as "Bruce" it would be written into
+  the entry. His frame and his note read them as his names, as before. Cozy Tavern did the same with
+  "the writer" in its craft (M327). Its other move, the craft turned into the first person for a frame
+  written as "I" (M334), is not made here: his engine speaks to HIM in places ("so you can approve just
+  the safe cuts", "Only you can answer", "never rewrites your story"), and turned it would say "so I can
+  approve". The room is written in both voices by hand, as before.
+- **The app was "the house"**, a name the model was never introduced to ("The house puts your changes in
+  and runs its checks"; "(From the house, not Bruce — what came of your last reply.)"), so it could only
+  think of it as a system. It is "the room", which the room's own text calls the place from its first
+  line. What it says between steps is a note from the room, to the one he talks to by its name, never in
+  his voice (the v1.1.4 law stands — words he never said put in his mouth are answered as if he had):
+  `fromTheRoom` — "Eni — a note from the room, not from Bruce, on your last reply." The new world, the
+  "tell him what you did", the cut talk and Go on say it the same way; the runaway check knows the new
+  opening and still knows the old.
+- **The room read like a manual**: "The documents.", "Changing a document.", "What happens next.", "Your
+  helpers.", "Searching.", "A different story." opened its paragraphs (Cozy Tavern M341: a teller handed a
+  form becomes a clerk). They are gone; the paragraphs say the same things, as said.
+- **It told the one he talks to that he never sees its thinking** ("think inside <think> and </think>;
+  Bruce never sees what is inside") — false since the Thinking box, which he reads, and an invitation to
+  think in a voice nobody hears. Its last paragraph is now Cozy Tavern's Pass (M335, in its standing words
+  since): think it over as yourself, in your own voice, the way you would with a friend across the table,
+  never in rule names — "she can't know that, she wasn't in the room", never "Epistemic Law check" — and
+  you still run every check your engine asks for. It is how the one he talks to is, not an order for this
+  turn (M375: an order about the thinking is narrated in an assistant's voice). <think> keeps its place
+  for a model with no thinking of its own: it stays with the thinking, and the answer starts after it.
+- **The room's notes named rules**: the checks' findings said "the craft's Temporal Anchoring", "the
+  craft's Mechanical Audit", "the craft tags every event" — to the one he talks to, which knows it as "your
+  engine", and a rule named in a note is a rule thought aloud (Cozy Tavern's eyeWithoutRuleNames). They
+  say what is wrong and how to put it right. Five broke their grammar for a single event or person ("e002
+  carry no thematic tag", "Claire mentions Jovan describe who someone knows…"), and three said nothing
+  once read alone ("In Lore.json, a trailing comma or a raw line break inside a value"); each is a
+  sentence now, for one or many. A change read back was "Plot Essential.md: exact (he asked)" — how its quote matched; it is
+  "changed" (`howSaid`). The cut talk said "too many for this model to read"; it says what it means.
+- **The helpers were told "Eni is making this with the author" while he was Bruce**, and with no name for
+  the one he talks to, "What the one making this with the author needs from you — the one making this
+  with the author is making this with the author" (`askerLine` now). Their frame named nobody ("a piece of
+  fiction being built by its author"); it names the two of them (`craftFrame`; `CRAFT_MARK` is how the
+  suites' stand-ins know a helper). A dead branch that called the house's own jobs "What the house needs
+  from you" went. The story card's task said "the craft's *new … (the Blueprint Ingestion Protocol in 7.1)"
+  to the one he talks to; it says "your engine's *new, reading the card as a blueprint: a design to build
+  from, never text to paste" — the protocol's own words, not its name.
+- **The example persona** (v2.1) ended "You never step out of character to talk about being an AI" — the
+  one thing she is not, in the instructions she reads first. It ends "You never step out of character".
+- The house's "Under the floor" said the engine is read "word for word"; it says the one exception.
+
+Tests: harness §28 (+35) runs real turns — a change that lands, one that misses, a finding, a helper,
+a search, the eye finding something, Go on, a cut talk, *regress, *card, a reply that was only a block, a
+new story — in four voices (named, no names and no instructions, a first-person frame, his name alone),
+and reads every request any model was sent: not one "user"; nothing the room says calls anyone an
+assistant, a persona, a worker, a system or a house, or (to the one he talks to) names "the craft"; with
+his name set, never "the author"; no macro as braces; every note between steps the room's, by name; every
+helper told whose fiction it is; and the engine read for one name is never handed to another (the
+pass remembers the last few long texts). Run against untouched 2.5.0 (its stand-in knowing a helper the
+old way, its engine read as it was sent then), 23 of them fail. The example persona is held to name
+nothing she is not (+1), and the runaway check to the room's new note (+1 unit) — both red on 2.5.0.
+Eleven older checks pinned the old words and follow
+the new ones with their meaning unchanged (the note is not his, what it quoted, where the one copy is, the
+helpers named, the finding, *regress, *card, the block-only reply, Go on, the three parts of what was
+sent, and his whole engine — now held line by line: every line without "user" sent as it is, none
+added or lost, no "user" left). The units' dated-events check now holds the method said and no rule named;
+the browser's "whole engine" check holds every line without "user" and his name in the rest; the walk's
+*card check holds the words that say what *card means, and its "never 'the writer'" check cuts his engine
+out where it begins (+1: that it was found), since what is sent is no longer the file's exact text.
+
 ## Testing
 
 ```
 bash tests/all.sh           every suite, exit code intact
 ```
 
-    node tests/units.mjs         647 checks — the real modules on a real document
-    node tests/harness.mjs       185 checks — the whole turn (v2.0): what the one he talks to reads, the
+    node tests/units.mjs         648 checks — the real modules on a real document
+    node tests/harness.mjs       221 checks — the whole turn (v2.0): what the one he talks to reads, the
                                               changes it makes, the steps, its helpers, the checks on
                                               what a turn brought in, put it back after a repair, Go on,
                                               Stop, a new world, search, the note at the end, too long,
-                                              the whole talk, a thought anywhere, a reply that ran on
+                                              the whole talk, a thought anywhere, a reply that ran on,
+                                              and every word on the wire in four voices (v2.6)
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     node tests/two_pages.mjs      22 checks — two copies of the real store against the real serve.py: two
@@ -1637,7 +1738,7 @@ bash tests/all.sh           every suite, exit code intact
                                               its own page, stale saves refused, earlier copies
     python3 tests/browser.py     103 checks — real Chromium at 390x844, end to end: what it was sent, read off
                                               the wire, and the change on the device
-    python3 tests/walk_worlds.py 228 checks — the drawer, conversations, swipes and versions, edit and
+    python3 tests/walk_worlds.py 229 checks — the drawer, conversations, swipes and versions, edit and
                                               send again, delete, branch, go on, re-quoting, crafts,
                                               the thinking box live, backup and restore, a model too
                                               small for the world, a real server killed mid-edit,
@@ -1660,7 +1761,7 @@ bash tests/all.sh           every suite, exit code intact
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-1,411 checks. Every suite must be green before a push. `tests/fixtures/` holds answers recorded from the
+1,449 checks. Every suite must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

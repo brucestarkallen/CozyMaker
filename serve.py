@@ -35,7 +35,7 @@ import glob
 import subprocess
 from pathlib import Path
 
-VERSION = "2.5.0"
+VERSION = "2.6.0"
 ROOT = Path(__file__).resolve().parent
 HOME = Path(os.environ.get("COZYMAKER_HOME", Path.home() / ".cozymaker"))
 PROJECTS = HOME / "projects"

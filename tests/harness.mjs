@@ -13,15 +13,15 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { cutSections, setEngineForTests } from '../js/engine/slices.js';
+import { cutSections, setEngineForTests, sliceFor } from '../js/engine/slices.js';
 import { setCraftForTests } from '../js/engine/crafts.js';
-import { runTurn, makeVisibleStream, visibleText, readHelpers, frontBody, landContinuation, landTurn, ROOM_MARK, CRAFT_FRAME, GO_ON, FRONT_ONLY, MAKER_FLOOR, MAX_STEPS, readingFor, readVerdict, asItWasSaid } from '../js/agents/run.js';
+import { runTurn, makeVisibleStream, visibleText, readHelpers, frontBody, landContinuation, landTurn, ROOM_MARK, CRAFT_MARK, GO_ON, goOnNote, FRONT_ONLY, MAKER_FLOOR, MAX_STEPS, readingFor, readVerdict, asItWasSaid } from '../js/agents/run.js';
 import { estimateTokens } from '../js/doc/index.js';
 import { undoBatch } from '../js/doc/edits.js';
 import { SEARCH_MARK } from '../js/agents/search.js';
 import { countOf } from '../js/agents/call.js';
 import { EXAMPLE_FRAME, EXAMPLE_NOTE, shouldGiveExamples } from '../js/agents/examples.js';
-import { personaOf, openingFor, noteAtTheEnd } from '../js/agents/persona.js';
+import { personaOf, openingFor, noteAtTheEnd, inNames, voiceMacros } from '../js/agents/persona.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
@@ -101,7 +101,7 @@ function stand(handlers) {
     const body = sent.body || {};
     const sys = typeof body.system === 'string' ? body.system : ((body.messages || []).find((m) => m.role === 'system') || {}).content || '';
     const msgs = (body.messages || []).filter((m) => m.role !== 'system' || m !== (body.messages || [])[0]);
-    const who = sys.includes(ROOM_MARK) ? 'maker' : sys.includes(SEARCH_MARK) ? 'searcher' : sys.includes(CRAFT_FRAME) ? 'helper' : 'other';
+    const who = sys.includes(ROOM_MARK) ? 'maker' : sys.includes(SEARCH_MARK) ? 'searcher' : sys.includes(CRAFT_MARK) ? 'helper' : 'other';
     const n = calls.filter((c) => c.who === who).length;
     const call = { who, n, sys, msgs, body, last: (msgs[msgs.length - 1] || {}).content || '' };
     calls.push(call);
@@ -131,7 +131,12 @@ const edits = (list) => `<edits>\n${JSON.stringify(list)}\n</edits>`;
   const sys = calls[0].sys;
   ok('it reads his own instructions first, word for word', sys.startsWith('You are Eni, a warm and exacting co-writer.'), sys.slice(0, 60));
   ok('it is greeted in his names', sys.includes('Hey Eni, this is Bruce.'));
-  ok('it reads his WHOLE engine, word for word', sys.includes(ENGINE), `${sys.length} chars, engine ${ENGINE.length}`);
+  /* v2.6: word for word but for "the user", which reads as his name (persona.js inNames) */
+  const voiced = inNames(ENGINE, personaOf(HOUSE()));
+  ok('it reads his WHOLE engine, word for word but for \u201cthe user\u201d, which reads as his name', sys.includes(voiced)
+    && voiced.split('\n').length === ENGINE.split('\n').length
+    && ENGINE.split('\n').filter((l) => !/user/i.test(l)).every((l) => sys.includes(l))
+    && !/\buser\b/i.test(voiced) && voiced.includes('When Bruce gives a command, EXECUTE IT.'), `${sys.length} chars, engine ${ENGINE.length}`);
   ok('his engine comes after his instructions, the room after the engine', sys.indexOf('You are Eni') < sys.indexOf(ENGINE.slice(0, 200)) && sys.indexOf(ENGINE.slice(0, 200)) < sys.indexOf(ROOM_MARK));
   const ask = calls[0].last;
   ok('it reads the plot essential whole, word for word', ask.includes(PE.trim()), ask.slice(0, 200));
@@ -164,13 +169,13 @@ const edits = (list) => `<edits>\n${JSON.stringify(list)}\n</edits>`;
   const { r, shown } = await turn({ message: 'majority fifteen please' });
   ok('a missed quote: two steps', makers().length === 2, calls.map((c) => c.who));
   const rep = calls[1].last;
-  ok('the house says it is the house, not him', rep.startsWith('(From the house, not Bruce'), rep.slice(0, 80));
-  ok('it is told exactly what it quoted and why it missed', rep.includes('you quoted: "- Majority is sixteen!"') && /not in the document as written/.test(rep), rep.slice(0, 600));
+  ok('the note is the room\u2019s, never his \u2014 said to the one he talks to by its name', rep.startsWith('Eni \u2014 a note from the room, not from Bruce'), rep.slice(0, 80));
+  ok('it is told exactly what it quoted and why it missed', rep.includes('You quoted: "- Majority is sixteen!"') && /not in the document as written/.test(rep), rep.slice(0, 600));
   ok('it is shown the documents as they stand now', rep.includes('The documents, as they stand now, whole, word for word') && rep.includes('- Majority is sixteen.'));
   const line = 'CORE: Reads a room before he speaks.';
   const copies = calls[1].msgs.reduce((k, m) => k + String(m.content).split(line).length - 1, 0);
   ok('and only one copy of the documents is in what it reads \u2014 the newest, at the end of the house\u2019s note', copies === 1 && rep.includes(line), copies);
-  ok('his message says where the only copy of the documents is \u2014 in words true whether or not a step changed them', calls[1].msgs.some((m) => m.role === 'user' && m.content.includes('The documents are shown as they stand now at the end of the house\u2019s latest note, below \u2014 the only copy to read and to quote from.') && m.content.includes('Bruce said:\nmajority fifteen please') && !m.content.includes('CORE: Reads a room')));
+  ok('his message says where the only copy of the documents is \u2014 in words true whether or not a step changed them', calls[1].msgs.some((m) => m.role === 'user' && m.content.includes('The documents are shown as they stand now at the end of the room\u2019s latest note, below \u2014 the only copy to read and to quote from.') && m.content.includes('Bruce said:\nmajority fifteen please') && !m.content.includes('CORE: Reads a room')));
   ok('its first reply is in front of it as it wrote it', calls[1].msgs.some((m) => m.role === 'assistant' && m.content.includes('- Majority is sixteen!')));
   ok('the second try lands', pe(r).includes('- Majority is fifteen.'));
   ok('no "not done" card for a miss it then put right', !r.cards.some((c) => c.status === 'refused'), r.cards);
@@ -211,7 +216,7 @@ const edits = (list) => `<edits>\n${JSON.stringify(list)}\n</edits>`;
   stand({ maker: (c) => (c.n === 0 ? '<helper name="the builder">build it</helper>' : 'I will build it myself.') });
   const { r } = await turn({ message: 'build it' });
   const rep = calls[1] ? calls[1].last : '';
-  ok('a helper that does not exist is said, with the ones that do', /There is no helper called \u201cthe builder\u201d/.test(rep) && rep.includes('the eye, the worldbook keeper, the memory auditor, the instructions writer'), rep.slice(0, 300));
+  ok('a helper that does not exist is said, with the ones that do', /There is no helper called \u201cthe builder\u201d/.test(rep) && rep.includes('the eye, the worldbook keeper, the memory auditor and the instructions writer'), rep.slice(0, 300));
   ok('and nobody was sent', !calls.some((c) => c.who === 'helper'));
   ok('the reply is what it said after', r.reply === 'I will build it myself.', r.reply);
 }
@@ -231,7 +236,7 @@ const edits = (list) => `<edits>\n${JSON.stringify(list)}\n</edits>`;
     : 'Dated it.\n\n' + edits([{ file: 'Plot Essential.md', find: 'e002 [duel]:', replace: 'e002 [Mon 14 Apr 247, 11:00] [duel]:' }])) });
   const { r } = await turn({ message: 'add that Claire challenged Jovan' });
   const rep = calls[1] ? calls[1].last : '';
-  ok('an undated event it brought in is found by the checks and handed back to it', makers().length === 2 && /without a full date-time/.test(rep), rep.slice(0, 400));
+  ok('an undated event it brought in is found by the checks and handed back to it', makers().length === 2 && /In Plot Essential\.md: e002 has no full date-time/.test(rep), rep.slice(0, 400));
   ok('it puts it right in the second step', pe(r).includes('e002 [Mon 14 Apr 247, 11:00] [duel]: Claire challenged Jovan in the east hall.'));
   ok('the only other call is the eye reading it back, once', calls.filter((c) => c.who !== 'maker').length === 1 && /Read back what was changed just now/.test(calls.find((c) => c.who !== 'maker').last));
 }
@@ -315,12 +320,12 @@ const edits = (list) => `<edits>\n${JSON.stringify(list)}\n</edits>`;
   const { r } = await turn({ message: '*regress Rukia keeps being called an unseated officer' });
   const reg = (r.project.docs || []).find((d) => d.name === 'Anti-regression registry.md');
   ok('*regress: the house keeps the line itself', reg && reg.text.includes('- Rukia keeps being called an unseated officer'));
-  ok('and the one he talks to is told it is kept', calls[0].last.includes('The house has kept that line in Anti-regression registry.md'));
+  ok('and the one he talks to is told it is kept', calls[0].last.includes('The room has kept that line in Anti-regression registry.md'));
 }
 {
   stand({ maker: 'Built.' });
   await turn({ world: WORLD([]), message: 'I play the knight.\n*card\nTitle: Her Highness Needs A Minute\nPremise: a princess hides from her own coronation.' });
-  ok('*card: the one he talks to is told what the house\u2019s own shortcut means, with the card', calls[0].last.includes("*card is this house's own shortcut") && calls[0].last.includes('Premise: a princess hides') && calls[0].last.includes('I play the knight.'));
+  ok('*card: the one he talks to is told what the room\u2019s own shortcut means, with the card', calls[0].last.includes('*card is one of this room\u2019s own shortcuts, not your engine\u2019s') && calls[0].last.includes('Premise: a princess hides') && calls[0].last.includes('I play the knight.'));
 }
 
 /* ----------------------------------------------- 11. searching, his switch */
@@ -357,7 +362,7 @@ const edits = (list) => `<edits>\n${JSON.stringify(list)}\n</edits>`;
 {
   stand({ maker: (c) => (c.n === 0 ? edits([{ file: 'Plot Essential.md', find: '- Majority is sixteen.', replace: '- Majority is fifteen.' }]) : 'Fifteen it is.') });
   const { r } = await turn({ message: 'majority fifteen' });
-  ok('a reply that was only a block: asked once to say what it did', makers().length === 2 && /Now tell Bruce, in your own voice, what you did/.test(makers()[1].last) && r.reply === 'Fifteen it is.', [calls.length, r.reply]);
+  ok('a reply that was only a block: asked once to say what it did', makers().length === 2 && /you have not said a word about them yet\. Tell Bruce what you did\./.test(makers()[1].last) && r.reply === 'Fifteen it is.', [calls.length, r.reply]);
 }
 
 /* -------------------- 14. "I changed it" with nothing changed: asked once, quietly */
@@ -399,7 +404,7 @@ const edits = (list) => `<edits>\n${JSON.stringify(list)}\n</edits>`;
   const world = WORLD();
   world.chats[0].turns = [{ role: 'writer', text: 'go', at: 1 }, { role: 'maker', text: 'Here is the first part', cut: true, cutBy: 'length', cards: [], batches: [], edits: [], at: 2 }];
   const { r } = await turn({ world, history: world.chats[0].turns, message: GO_ON, forceWorker: FRONT_ONLY });
-  ok('Go on: the house\u2019s note, no speaker', calls[0].last.trim().endsWith(GO_ON) && !calls[0].last.includes('Bruce said:'));
+  ok('Go on: the room\u2019s note, said to the one he talks to by name, never under his', calls[0].last.trim().endsWith(goOnNote(personaOf(HOUSE()))) && goOnNote(personaOf(HOUSE())).startsWith('Eni \u2014 your last reply was cut off') && !calls[0].last.includes('Bruce said:'));
   const snapshot = new Map(world.docs.map((d) => [d.name, d.text]));
   const landed = landContinuation(world, { chatId: 'c', snapshot, result: r, at: 1, words: r.reply, makerTurn: { cards: r.cards, batches: r.batches, edits: r.edits, cut: false, cutBy: '', thinking: '' } });
   const t = landed.world.chats[0].turns[1];
@@ -557,7 +562,7 @@ const edits = (list) => `<edits>\n${JSON.stringify(list)}\n</edits>`;
   ok('never his key', !JSON.stringify(sent).includes('sk-very-secret'));
   const sys = sent[0].body.messages[0].content;
   const part = (name) => (sent[0].parts || []).find((x) => x.name.startsWith(name));
-  ok('the one he talks to\u2019s reading is cut into its three parts, exactly', part('Your engine') && sys.slice(part('Your engine').start, part('Your engine').end) === ENGINE
+  ok('the one he talks to\u2019s reading is cut into its three parts, exactly', part('Your engine') && sys.slice(part('Your engine').start, part('Your engine').end) === inNames(ENGINE, personaOf(house))
     && sys.slice(part('How this room works').start, part('How this room works').end).startsWith('How this room works')
     && sys.slice(0, part('Your instructions').end).startsWith('You are Eni'), (sent[0].parts || []).map((x) => [x.name, x.start, x.end]));
   ok('the service\u2019s own count is kept when it sends one', sent[2].usage && sent[2].usage.in === 41234 && sent[2].usage.out === 56 && sent[2].usage.cached === 40000, sent[2].usage);
@@ -579,6 +584,7 @@ const edits = (list) => `<edits>\n${JSON.stringify(list)}\n</edits>`;
   const note = noteAtTheEnd({ settings: { makerName: 'Lilith', yourName: 'Bruce' }, postNote: EXAMPLE_NOTE }, p);
   ok('the example note at the end reads as the names, sent as a system message unless he says user', note && note.role === 'system' && note.content.startsWith('Stay Lilith:') && note.content.includes('Answer Bruce first'));
   ok('and as a user message when he says so', noteAtTheEnd({ settings: { noteRole: 'user' }, postNote: EXAMPLE_NOTE }, p).role === 'user');
+  ok('the example names nothing she is not \u2014 no AI, no assistant, no user (v2.6)', !/\b(?:an? AI|AI\b|assistant|language model|user)\b/i.test(voiceMacros(EXAMPLE_FRAME, p) + voiceMacros(EXAMPLE_NOTE, p)), (voiceMacros(EXAMPLE_FRAME, p).match(/.{0,40}\b(?:AI|assistant|user)\b.{0,20}/i) || [''])[0]);
   ok('a brand-new house begins with the example', shouldGiveExamples({ settings: {}, personaFrame: '', postNote: '', connections: [] }));
   ok('a house he has set up is never touched', !shouldGiveExamples({ settings: {}, personaFrame: 'You are Eni.', postNote: '', connections: [] }) && !shouldGiveExamples({ settings: {}, personaFrame: '', postNote: '', connections: [{ id: 'c' }] }) && !shouldGiveExamples({ settings: { examplesGiven: true }, connections: [] }));
 }
@@ -788,6 +794,143 @@ const edits = (list) => `<edits>\n${JSON.stringify(list)}\n</edits>`;
   const { r } = await turn({ message: '*delete Claire' });
   ok('*delete Claire, in a real turn, takes her out — never refused as a loss',
     !pe(r).includes('### Claire') && r.cards.some((c) => c.status === 'applied') && !r.cards.some((c) => c.status === 'refused'), r.cards.map((c) => [c.status, c.why]));
+}
+
+/* ------------------------------------------- 28. every word on the wire, as a person says it (v2.6) */
+/* His ask: "I love seeing the model thinking and hate user, user, user". What a model is
+ * handed is the voice it thinks in, so every request of real turns — the one he talks to at
+ * every step, its helpers, the eye reading back, the searcher — is read whole, in four voices:
+ * named, unnamed with no instructions at all, a first-person frame, and his name alone. His
+ * engine and the crafts are his and stay word for word but for "the user"; everything the room
+ * itself says is scanned for the words an assistant hears. The stand-in's own replies, his
+ * documents and his words are written here without any of those words, so what is found is the
+ * room's. */
+{
+  const WB_CRAFT = readFileSync(join(ROOT, 'engine/worldbook-maker.md'), 'utf8');
+  const EYE_SLICE = sliceFor(cutSections(ENGINE), 'eye').text;
+  const HOUSE_WORDS = /\b(?:assistant|language model|LLM|chatbot|system prompt|the system|workers?|the crew|persona|the house|this house|this model|an AI|the AI)\b/i;
+  const voices = [
+    { name: 'named, second person', settings: { makerName: 'Eni', yourName: 'Bruce', person: 'you' }, frame: 'You are {{char}}, a warm co-writer who loves {user}’s worlds.' },
+    { name: 'no names and no instructions', settings: { makerName: '', yourName: '', person: 'you' }, frame: '' },
+    { name: 'named, first person', settings: { makerName: 'Hulk', yourName: 'Bruce', person: 'first' }, frame: 'I am {{char}}. I smash plot holes for {{user}}.' },
+    { name: 'his name alone', settings: { makerName: '', yourName: 'Bruce', person: 'you' }, frame: '' },
+  ];
+  const WB = 'The Ashwood Pact.json';
+  for (const v of voices) {
+    const house = { settings: { ...v.settings, searchInternet: 'on' }, personaFrame: v.frame, postNote: 'Keep it short and warm.',
+      connections: [{ id: 'c1', name: 'good', url: 'http://stand.in/v1', model: 'm1' }, { id: 'h', name: 'Hermes', url: 'http://127.0.0.1:8642/v1', model: 'hermes-agent' }],
+      agentConnections: { keeper: 'c1' } };
+    const p = personaOf(house);
+    const all = [];
+    const keep = () => { all.push(...calls); };
+    /* A: a change that lands, one that misses, an event its change left untagged, a helper, a
+     * search; then the eye reads it back and finds something */
+    stand({
+      maker: (c) => (c.n === 0
+        ? 'On it.\n\n' + edits([
+          { file: 'Plot Essential.md', find: 'CORE: Reads a room before he speaks.', replace: 'CORE: Reads a room before he speaks, and remembers it.', reason: 'asked for' },
+          { file: 'Plot Essential.md', find: 'never in the document', replace: 'x', reason: 'a miss' },
+          { file: 'Plot Essential.md', insert_after: 'e001 [Mon 14 Apr 247, 09:00] [setup]: The showcase opened in the east hall.', replace: 'e002 [Mon 14 Apr 247, 10:00]: Claire arrived.', reason: 'asked for' },
+        ]) + '\n<helper name="the worldbook keeper">Make an entry for Claire.</helper>\n<search>the Ashwood Pact</search>'
+        : c.n === 1 ? 'Tagged it.\n\n' + edits([{ file: 'Plot Essential.md', find: 'e002 [Mon 14 Apr 247, 10:00]: Claire arrived.', replace: 'e002 [Mon 14 Apr 247, 10:00] [setup]: Claire arrived.' }])
+          : 'Done.'),
+      helper: (c) => (c.n === 0
+        ? 'One entry for Claire.\n\n' + edits([{ file: WB, entries: [{ name: 'Claire', keys: ['Claire'], content: 'A stubborn student.', strategy: 'green' }], reason: 'asked for' }])
+        : '<verdict>FOUND</verdict> e002 sits an hour after the showcase opened; that holds, but its tag is new.'),
+      searcher: 'Nothing about it online; it is his own story.',
+    });
+    await turn({ house, message: 'Claire came early, and Jovan remembers rooms.' });
+    keep();
+    /* B: Go on */
+    stand({ maker: 'and the rest of it.' });
+    const wB = WORLD();
+    wB.chats[0].turns = [{ role: 'writer', text: 'go', at: 1 }, { role: 'maker', text: 'Here is the first part', cut: true, cutBy: 'length', cards: [], batches: [], edits: [], at: 2 }];
+    await turn({ house, world: wB, history: wB.chats[0].turns, message: GO_ON, forceWorker: FRONT_ONLY });
+    keep();
+    /* C: a talk longer than the window he set */
+    stand({ maker: 'Here.' });
+    const long = [];
+    for (let i = 0; i < 20; i++) long.push({ role: i % 2 ? 'maker' : 'writer', text: `idea ${i}`, at: i });
+    await turn({ house: { ...house, settings: { ...house.settings, talkWindow: 6 } }, history: long, message: 'and now?' });
+    keep();
+    /* D: the room's own shortcuts */
+    stand({ maker: 'Kept.' });
+    await turn({ house, message: '*regress Rukia keeps being called an unseated officer' });
+    keep();
+    stand({ maker: 'Built.' });
+    await turn({ house, message: 'I play the knight.\n*card\nTitle: The Glass Crown\nPremise: a princess hides in a kitchen.' });
+    keep();
+    /* E: a reply that was only a block */
+    stand({ maker: (c) => (c.n === 0 ? edits([{ file: 'Plot Essential.md', find: '- Majority is sixteen.', replace: '- Majority is fifteen.' }]) : 'Fifteen it is.') });
+    await turn({ house, message: 'majority fifteen' });
+    keep();
+    /* F: a new story in a world with no plot essential yet */
+    stand({ maker: (c) => (c.n === 0 ? '<new_world/>' : 'Then this is where it begins.') });
+    await turn({ house, world: WORLD([]), message: 'a new story about a glass steppe' });
+    keep();
+
+    const content = (c) => [c.sys].concat((c.body.messages || []).map((m) => String(m.content || '')));
+    const userWord = [];
+    const houseWord = [];
+    const author = [];
+    const macro = [];
+    for (const c of all) {
+      const texts = content(c);
+      for (const t of texts) {
+        const m = /.{0,40}\b(?:user|users)\b.{0,40}/i.exec(t);
+        if (m) userWord.push(`${c.who}: ${m[0]}`);
+        /* his two names in SillyTavern's forms (the worldbook craft's own {{wiBefore}} is a place, not a name) */
+        const mm = /.{0,30}(?:\{\{\s*(?:user|char)\s*\}\}|\{\s*(?:user|char)\s*\}|<USER>|<BOT>).{0,30}/i.exec(t);
+        if (mm) macro.push(`${c.who}: ${mm[0]}`);
+      }
+      /* what the room itself said: everything but his engine and the crafts, which are his */
+      const own = texts.map((t) => t.split(inNames(ENGINE, p)).join(' ').split(inNames(EYE_SLICE, p)).join(' ').split(inNames(WB_CRAFT, p)).join(' ')).join('\n\n');
+      const hw = /.{0,40}\b(?:assistant|language model|LLM|chatbot|system prompt|the system|workers?|the crew|persona|the house|this house|this model|an AI|the AI)\b.{0,40}/i.exec(own);
+      if (hw) houseWord.push(`${c.who}: ${hw[0]}`);
+      if (c.who === 'maker' && /\bthe craft\b/i.test(own)) houseWord.push(`${c.who}: the craft — ${/.{0,40}\bthe craft\b.{0,40}/i.exec(own)[0]}`);
+      if (p.you && /\bthe author\b/i.test(own)) author.push(`${c.who}: ${/.{0,40}\bthe author\b.{0,40}/i.exec(own)[0]}`);
+    }
+    const whoAsked = [...new Set(all.map((c) => c.who))].sort().join(',');
+    ok(`the wire (${v.name}): every kind of request was read — the one he talks to, helpers, the searcher`, whoAsked === 'helper,maker,searcher', whoAsked);
+    eq2(`the wire (${v.name}): not one “user” in anything any of them reads — his engine and the crafts say his name`, userWord, []);
+    eq2(`the wire (${v.name}): nothing the room says calls anyone an assistant, a persona, a worker, a system or a house`, houseWord, []);
+    eq2(`the wire (${v.name}): with his name set, the room never calls him “the author”`, author, []);
+    eq2(`the wire (${v.name}): no macro reaches any of them as braces`, macro, []);
+    /* every note between steps is the room's, said to the one he talks to by its name */
+    const notes = all.filter((c) => c.who === 'maker' && c.n > 0).map((c) => c.msgs.filter((m) => m.role === 'user').pop()).filter(Boolean).map((m) => m.content);
+    const open = `${p.maker ? `${p.maker} — a` : 'A'} note from the room, not from ${p.you || 'the author'}`;
+    ok(`the wire (${v.name}): every note between steps is the room’s, to the one he talks to by name`, notes.length >= 3 && notes.every((t) => t.startsWith(open)), notes.map((t) => t.slice(0, 70)));
+    const helperSys = all.filter((c) => c.who === 'helper').map((c) => c.sys);
+    ok(`the wire (${v.name}): a helper is told whose fiction it is working on, by name`, helperSys.length >= 2 && helperSys.every((t) => t.startsWith(CRAFT_MARK) && (!p.you || t.startsWith(`${CRAFT_MARK} Bruce is building`))), helperSys.map((t) => t.slice(0, 90)));
+  }
+  /* the name pass itself: only "user" moves; every other word of his engine is sent as written */
+  const named = inNames(ENGINE, { you: 'Bruce' });
+  const lines = [ENGINE.split('\n'), named.split('\n')];
+  const moved = lines[0].map((l, i) => [l, lines[1][i]]).filter(([a, b]) => a !== b);
+  ok('the name pass changes only lines that said “user”, and keeps every line', lines[0].length === lines[1].length && moved.length > 40 && moved.every(([a]) => /user/i.test(a)), moved.length);
+  ok('and leaves none of it behind, in his engine or either craft', !/\buser\b/i.test(named) && !/\buser\b/i.test(inNames(WB_CRAFT, { you: 'Bruce' })) && !/\buser\b/i.test(inNames(readFileSync(join(ROOT, 'engine/sc-auditor.md'), 'utf8'), { you: 'Bruce' })));
+  eq2('each form reads the way a person would say it', [
+    inNames('When the user gives a command, EXECUTE IT. The user is paying to PLAY.', { you: 'Bruce' }),
+    inNames('Copy-pasting the user\'s input is a FAILURE STATE. A user building a new story arrives with GAPS.', { you: 'Bruce' }),
+    inNames('> User: "Claire\'s age is wrong."\nUser Says | Contains', { you: 'Bruce' }),
+    inNames('- PROTECTED (user approval required). A USER-REPORTED error is the STRONGEST trigger.', { you: 'Bruce' }),
+    inNames('Generalist presents plan, user approves, Generalist executes.', {}),
+    inNames('or user-approved content; and user-authored field text (an ID).', { you: 'James' }),
+  ], [
+    'When Bruce gives a command, EXECUTE IT. Bruce is paying to PLAY.',
+    'Copy-pasting Bruce\'s input is a FAILURE STATE. Bruce building a new story arrives with GAPS.',
+    '> Bruce: "Claire\'s age is wrong."\nBruce Says | Contains',
+    '- PROTECTED (Bruce\'s approval required). An error Bruce REPORTED is the STRONGEST trigger.',
+    'Generalist presents plan, the author approves, Generalist executes.',
+    'or content James approved; and field text James wrote (an ID).',
+  ]);
+  ok('a name ending in s takes its apostrophe alone', inNames('the user\'s budget', { you: 'James' }) === 'James\' budget', inNames('the user\'s budget', { you: 'James' }));
+  ok('a SillyTavern macro in an engine or a craft is left as written \u2014 it may be what a document is taught to say', inNames('Refer to the player as {{user}} in every entry.', { you: 'Bruce', maker: 'Eni' }) === 'Refer to the player as {{user}} in every entry.');
+  ok('words that only contain it are left alone', inNames('the username field and a superuser', { you: 'Bruce' }) === 'the username field and a superuser');
+  /* it is remembered between calls (the engine is long); a name is never answered with another's */
+  const asked = [inNames(ENGINE, { you: 'Bruce' }), inNames(ENGINE, { you: 'Jovan' }), inNames(ENGINE, {}), inNames(ENGINE, { you: 'Bruce' })];
+  ok('the engine read for one name is never handed to another', asked[0].includes('When Bruce gives a command') && asked[1].includes('When Jovan gives a command')
+    && asked[2].includes('When the author gives a command') && asked[3] === asked[0] && !asked[1].includes('When Bruce gives'));
 }
 
 console.log(`${pass} passed, ${fail} failed`);

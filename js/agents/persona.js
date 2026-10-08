@@ -127,6 +127,60 @@ export function unfilledMacros(p) {
   return [...found];
 }
 
+/* HIS NAME WHERE HIS ENGINE SAYS "THE USER" (v2.6, his ask; Cozy Tavern M327's "the
+ * writer" → his name). His engine says "the user" more than fifty times, and the crafts
+ * the helpers read say it too: a model handed "When the user gives a command…" over and
+ * over thinks "the user wants…", in an assistant's voice, under any persona. So where
+ * an engine or a craft speaks of the person it works with, it reads his name — or, with
+ * no name set, "the author", the engine's own other word for him. Only "user" changes:
+ * the files on disk stay word for word, every other word of them is sent as written, and
+ * a form not listed here is left as written, never guessed at. Never a document, never
+ * the talk: those are his and the story's. */
+export const possessive = (name) => name + (/s$/i.test(name) ? "'" : "'s");
+const capital = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+export function writerWord(p) { return (p && p.you) || 'the author'; }
+/* his engine is read this way for every turn and for the context line: the last few
+ * long texts are remembered (about 5ms a pass over the whole engine on a desktop) */
+const NAMED = [];
+export function inNames(text, p) {
+  const src = String(text || '');
+  const key = `${(p && p.you) || ''}\u0000${(p && p.maker) || ''}`;
+  const long = src.length > 4000;
+  if (long) { const hit = NAMED.find((x) => x.key === key && x.src === src); if (hit) return hit.out; }
+  const out = namesIn(src, p);
+  if (long) { NAMED.unshift({ key, src, out }); NAMED.length = Math.min(NAMED.length, 4); }
+  return out;
+}
+/* "the user" only. A SillyTavern macro in an engine or a craft is left as written: it can be
+ * what the craft teaches a document to say — {{user}} in a worldbook entry is SillyTavern's to
+ * fill when the story runs, and read here as "Bruce" it would be written into the entry. */
+function namesIn(t, p) {
+  if (!/user/i.test(t)) return t;
+  const n = writerWord(p);
+  const N = capital(n);
+  const ns = possessive(n);
+  return t
+    /* the compounds, each said the way a person would say it */
+    .replace(/\bA USER-REPORTED error\b/g, `An error ${n} REPORTED`)
+    .replace(/\buser-approved content\b/g, `content ${n} approved`)
+    .replace(/\buser-authored field text\b/g, `field text ${n} wrote`)
+    .replace(/\bdirect user authorship\b/g, `${ns} direct authorship`)
+    .replace(/\bdirect user commands\b/g, `${ns} direct commands`)
+    .replace(/\bEXPLICIT user command\b/g, `an EXPLICIT command from ${n}`)
+    .replace(/\bexplicit user instruction\b/g, `an explicit instruction from ${n}`)
+    .replace(/\bUser-expectation mismatch\b/g, `A mismatch with ${ns} expectations`)
+    .replace(/\bthe user\/AI\b/g, `${n}/the AI`)
+    .replace(/\buser (input|approval|decision)\b/g, `${ns} $1`)
+    /* "the user", "a user" — the person, by name */
+    .replace(/\b([Tt])he user['’]s\b/g, (m, t0) => (t0 === 'T' ? capital(ns) : ns))
+    .replace(/\b([Tt])he user\b(?![-/])/g, (m, t0) => (t0 === 'T' ? N : n))
+    .replace(/\b([Aa]) user\b(?![-/'’])/g, (m, a) => (a === 'A' ? N : n))
+    /* a line or a sentence that opens on "User" (an example's speaker, a table's head) */
+    .replace(/(^|\n|[.!?;:]\s+|>\s*)User\b(?![-'’])/g, (m, lead) => `${lead}${N}`)
+    /* "user" as the one who does something */
+    .replace(/\buser (?=(?:chooses|describes|approves|picks|must|can|runs|says|said|asks|wants|decides)\b)/g, `${n} `);
+}
+
 export function openingFor(p, body) {
   const bits = [];
   if (p.frame && p.frame.trim()) bits.push(voiceMacros(p.frame.trim(), p));
