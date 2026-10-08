@@ -5,6 +5,42 @@ record of what has already been got wrong once.
 
 ---
 
+## Where it stands (hand-off, 8 Oct 2026, v2.4.1)
+
+**How a turn works.** The one he talks to reads his instructions, his whole
+engine (`engine/generalist.md`, word for word), "how this room works"
+(`frontBody`), every document whole, the talk, and his note at the end — built in
+one place (`makerSystemFor`, `makerMessagesFor`) for the turn and for the context
+line alike. It changes documents itself in its reply (`<edits>` / `<file>`). The
+house applies them, runs the checks on only what this turn brought in
+(`checkChanged`), and asks for another step only when something needs it: a quote
+that missed, a finding, a helper's report, a search, parts it asked to read
+(`MAX_STEPS` 6). Before a turn that changed a plot essential or a continuation file
+ends, the eye reads back exactly those changes (`readBack`, a `<verdict>`, changing
+nothing itself); what it raises goes back to the one he talks to. Helpers — the
+eye, the worldbook keeper, the memory auditor, the instructions writer — are
+called by name with `<helper>` and report back to it. He reads only its words; the
+changes are cards with put it back; "What was sent" and the context line show the
+cost.
+
+**The gate.** `bash tests/all.sh` — eleven runs, all green before any push. On
+8 Oct 2026, on a two-core machine: units 594, harness 172, thinking 13, saves 20,
+server 62, browser 103, walk 227, live stream 12 + 12, stream flows 29, launcher
+21. The browser runs need Playwright's Chromium.
+
+**What no test here can show.** Every model in the suites is a stand-in on the
+wire. How his real models follow the room's forms (`<edits>`, `<file>`,
+`<helper>`, `<audit>`, `<verdict>`) is the one thing only his own use shows; the
+house is built to recover when they do not (a missed quote goes back, a block in
+the thinking still lands, an unreadable verdict goes back as notes, "I changed it"
+with no block is asked for the block).
+
+**Standing rules for this repo.** Cozy Tavern and Cozy Chat are read-only from
+here. Push to `main`; verify by commit SHA. Every fix starts at its cause, is
+proven by a test that fails without it, and the whole gate runs before a push.
+
+---
+
 ## What this is
 
 A comfortable place to build the guide to a world: the plot essential, the
@@ -68,17 +104,22 @@ coding agent is one:
 
 ### 3. If the app can see a problem, the app fixes it
 
-`js/doc/lint.js` runs on every write. It either repairs the text itself — when
-the repair is certain — or names the worker whose job it is, and `run.js` sends
-that worker without anyone being asked. A finding that only *tells* the writer
-something is wrong has handed him a chore.
+`js/doc/lint.js` runs on every write (`checkChanged` in `run.js`). It repairs the
+text itself when the repair is certain; anything that needs judgment goes to the
+one he talks to, in the house's report, and it puts it right in its next step. A
+finding that only *tells* the writer something is wrong has handed him a chore.
+Only what **this turn** brought in is raised: a finding that was already in the
+document before the turn is never raised again (the 1.x sweep raised every
+finding in a touched document on every change, and the repair jobs it started
+churned the plot essential).
 
 Repairs outright: working markers left inside a document, notes to somebody
 inside a document, bonds on the main character, scores outside 0–100, headings
-with nothing under them, worldbook settings out of range.
+with nothing under them, worldbook settings out of range. The undo record of a
+change the checks repaired is restamped (`restamp`), so put it back still works.
 
-Handed to a worker: duplicate event numbers, events out of order, events with
-no date, a name inside a character trait, a document grown too heavy.
+Raised to the one he talks to: duplicate event numbers, events out of order,
+events with no date, a name inside a character trait, a document grown too heavy.
 
 ---
 
@@ -87,9 +128,10 @@ no date, a name inside a character trait, a document grown too heavy.
 ```
 engine/generalist.md   the craft, verbatim, the only copy
 serve.py               the device: files, the store, the way out to a provider
-js/engine/slices.js    cuts the craft; SLICES decides who reads what
+js/engine/slices.js    the engine whole for the one he talks to (loadEngineText); its cut, for the eye (SLICES)
 js/agents/persona.js   the writer's names, first or second person, natural words
-js/agents/roster.js    who does what; which connection each of them rides
+js/agents/roster.js    the one he talks to (FRONT = 'keeper') and its helpers; which connection each rides
+js/agents/examples.js  the example persona and note at the end (Return to default)
 js/agents/call.js      the one way anything speaks to a model + the work channel
 js/agents/router.js    the house's own commands (*regress, *show_full_file, *next, the spoiler pair) and a new story typed as one
 js/agents/shortcuts.js every shortcut, what it does here, who does it, and the craft's own words for it (v1.4.2)
@@ -104,7 +146,9 @@ js/engine/crafts.js    the three keepers with a craft of their own; his version,
 engine/*.md            generalist (his engine), worldbook-maker, sc-auditor (the extension's)
 engine/crafts.json     where each carried craft came from, its hash, and the only words changed
 js/store.js            the open world, its conversations, backups, and the one save line
-js/ui/                 kit, app (the room), drawer, docs, settings
+js/ui/                 kit, app (the room, the context line), drawer, docs, settings
+js/ui/sent.js          What was sent: every request a reply cost, in parts and raw (v2.1)
+css/*.svg              the drawn scenes behind the tavern and lamplight looks
 js/ui/streamtext.js    the live thinking drawn line by line (Cozy Tavern's M279, as it is)
 js/ui/pace.js          Smooth streaming: how much of what arrived is drawn this frame (v1.6.0)
 docs/lineage.md        every version of Cozy Tavern, Cozy Chat and the Plot Essential Maker
@@ -129,10 +173,12 @@ never invents.
 ### Settings
 
 A value the writer set is sent exactly as set. A value he did **not** set is
-not sent at all, so the provider's own default applies. The only override is a
-floor that prevents corruption: a model that always thinks, pointed at a small
+not sent at all, so the provider's own default applies. The only overrides are
+floors that prevent corruption: a model that always thinks, pointed at a small
 reply budget, spends the budget reasoning and answers with nothing — so the
-floor raises the ceiling. It never lowers one the writer set.
+floor raises the ceiling; and a reply from the one he talks to, which may write a
+document whole, gets at least `MAKER_FLOOR` (8,000) tokens of room, as every
+worker always did. Neither ever lowers a value the writer set.
 
 ### Thinking, per house
 
@@ -179,9 +225,9 @@ world opens from its waiting copy if it has one. Deleting a world drops its
 waiting copy, so a retry can never resurrect it. Nothing inside the line may
 await the line — that is a deadlock, and one was written and caught here.
 
-**Landing a turn.** The crew works from the documents as they were when he
+**Landing a turn.** A turn works from the documents as they were when he
 pressed send. `landTurn` lands the result on the world as it stands *now*: a
-document he changed by hand meanwhile keeps his words and the crew's change to
+document he changed by hand meanwhile keeps his words and the turn's change to
 it is refused with the reason; one he deleted stays deleted; the reply goes
 into the conversation that asked, even if he has walked into another world.
 Landing twice is landing once. For a world not on screen, only "not found"
@@ -1392,6 +1438,43 @@ characters a token). Each reply keeps what the service counted for its first ste
 beside it as "last reply N counted". The harness checks that `readingFor` is the first request the turn
 really sends, word for word and message for message. Tap the line for what was sent last.
 
+### The last audit before his subscription ended (v2.4.1)
+
+He asked for everything to be checked before his subscription ended. The whole gate was run on a fresh
+clone of what was on GitHub (2.4.0): every suite green but one unit check (below). Then every product
+line changed since 1.8.0 was read again. Found and fixed:
+
+- **The eye's read-back verdict was read by its first word only.** Its craft opens with a few plain
+  sentences and its engine writes "Evidenced CLEAN", so a clean read-back was taken for a finding: a step
+  spent on nothing, and a line under the reply saying it had found something. Now it is asked for
+  `<verdict>CLEAN</verdict>` / `<verdict>FOUND</verdict>`, read by the tag, then the first word, then the
+  craft's capitals (`readVerdict`); what says neither is "unclear" and still goes back as notes; a finding
+  that names nothing ("empty") spends no step and is never called clean. The line under the reply says
+  only what happened, for every verdict and for replies kept by 2.2–2.4.0 (checked in the browser).
+- **A document written whole was kept twice in the next step**: once at the end of the house's note, and
+  again inside its own earlier reply — a copy that stopped being the document as soon as the checks or a
+  helper changed it (the 2.2 test changed with `<edits>`, never `<file>`, so it did not see it). Its own
+  earlier steps now go back without whole `<file>` elements (`asItWasSaid`); the carry-on of a document cut
+  off partway still sees what it wrote.
+- **A document he asked to be emptied was read back** by the eye (an empty document, a wasted call).
+- **A whole rewrite was read back by its first 600 characters** as "was / now"; it is now read whole.
+- His message said "The documents have changed since this was said" even when a step changed nothing
+  (a search, a report); it now says only where the one copy is.
+- **The live thinking box stayed still after a swipe carried it to its end** with no finger on it; it now
+  follows again (checked in a real browser, and the check fails on 2.4.0's file).
+- A streamed request's record kept a reference to the request rather than a copy.
+- The read-back was nudged like any worker when it said "I've fixed nothing" — told to send a change it
+  had been told not to make (`reportOnly`).
+- **The unit check "a miss on a 158k-character document is quick" timed one cold first round**: on a slow
+  two-core machine the compile alone ran past its 30ms bound (34ms) while every warm miss took about
+  10ms, on 1.8.0 and 2.4.0 alike. It is now timed warm; the bound is unchanged.
+- The report helper in `tests/browser.py` and `tests/server.py` crashed when a failing check carried a
+  dict as its detail, hiding which check failed; it prints any detail now.
+- Docs: law 3 (the checks raise to the one he talks to, never send a worker), the file map, the settings
+  floor, and the README's lines about a crew that no longer exists.
+
+Each fix has a test that fails with it reverted (checked by reverting each in a scratch copy).
+
 ## Testing
 
 ```
@@ -1399,14 +1482,14 @@ bash tests/all.sh           every suite, exit code intact
 ```
 
     node tests/units.mjs         594 checks — the real modules on a real document
-    node tests/harness.mjs       156 checks — the whole turn (v2.0): what the one he talks to reads, the
+    node tests/harness.mjs       172 checks — the whole turn (v2.0): what the one he talks to reads, the
                                               changes it makes, the steps, its helpers, the checks on
                                               what a turn brought in, put it back after a repair, Go on,
                                               Stop, a new world, search, the note at the end, too long
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     python3 tests/server.py       62 checks — the real serve.py, real files on disk, streams timed
-    python3 tests/browser.py     101 checks — real Chromium at 390x844, end to end: what it was sent, read off
+    python3 tests/browser.py     103 checks — real Chromium at 390x844, end to end: what it was sent, read off
                                               the wire, and the change on the device
     python3 tests/walk_worlds.py 227 checks — the drawer, conversations, swipes and versions, edit and
                                               send again, delete, branch, go on, re-quoting, crafts,
@@ -1425,7 +1508,7 @@ bash tests/all.sh           every suite, exit code intact
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-1,247 checks. Every suite must be green before a push. `tests/fixtures/` holds answers recorded from the
+1,265 checks. Every suite must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

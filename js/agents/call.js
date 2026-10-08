@@ -286,7 +286,7 @@ async function streamOnce(conn, opts, dropThinking) {
   if (dropThinking) req.body = withoutThinking(req.body);
   /* WHAT WAS SENT, kept for him to read: where it went and the body, word for word —
    * never the headers, which carry his key */
-  const rec = opts.onSent ? opts.onSent({ url: req.url, model: req.body && req.body.model, body: req.body, at: Date.now() }) : null;
+  const rec = opts.onSent ? opts.onSent({ url: req.url, model: req.body && req.body.model, body: JSON.parse(JSON.stringify(req.body)), at: Date.now() }) : null;
   const res = await fetch('/api/call', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

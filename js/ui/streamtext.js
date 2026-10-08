@@ -53,10 +53,14 @@ export function streamText(box) {
       if (!words || !box) return;
       if (!box.dataset.watched) {
         box.dataset.watched = '1';
-        box.addEventListener('touchstart', () => { box.dataset.held = '1'; }, { passive: true });
-        const free = () => { if (box.scrollHeight - box.scrollTop - box.clientHeight < 8) delete box.dataset.held; };
+        /* a finger inside the thinking is his; it follows again once he is at its end
+         * with no finger on it \u2014 let go there, or carried there by the swipe */
+        const atEnd = () => box.scrollHeight - box.scrollTop - box.clientHeight < 8;
+        box.addEventListener('touchstart', () => { box.dataset.held = '1'; box.dataset.touching = '1'; }, { passive: true });
+        const free = () => { delete box.dataset.touching; if (atEnd()) delete box.dataset.held; };
         box.addEventListener('touchend', free, { passive: true });
         box.addEventListener('touchcancel', free, { passive: true });
+        box.addEventListener('scroll', () => { if (!box.dataset.touching && box.dataset.held && atEnd()) delete box.dataset.held; }, { passive: true });
       }
       const follow = !box.dataset.held && box.scrollHeight - box.scrollTop - box.clientHeight < 24;
       words.split('\n').forEach((part, i) => {

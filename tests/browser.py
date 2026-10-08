@@ -38,7 +38,7 @@ def ok(name, cond, detail=""):
     if cond:
         passed += 1
     else:
-        failed.append(f"{name}{' — ' + detail if detail else ''}")
+        failed.append(f"{name}{' — ' + str(detail)[:300] if detail else ''}")
 
 
 # --------------------------------------------------------- the stand-in model
@@ -630,6 +630,62 @@ def main():
             ok("and the look goes back to Hearth when chosen", page.evaluate("document.documentElement.dataset.theme") == "hearth")
             page.wait_for_timeout(300)
             page.click("#houseSheet [data-close]")
+
+            # -- the line under a reply says how the read-back went, truly (v2.4.1) --
+            # every verdict a reply can carry, and one kept by 2.2 (no verdict field), drawn by the real room
+            lines_seen = {}
+            worlds = json.loads(urllib.request.urlopen(f"http://127.0.0.1:{PORT}/api/projects").read())
+            wl = worlds.get("projects", worlds) if isinstance(worlds, dict) else worlds
+            target = sorted(wl, key=lambda x: x.get("updated", 0))[-1]["id"] if wl else None
+            for label, review in [("clean", {"verdict": "clean", "clean": True, "found": False, "notes": ""}),
+                                  ("found", {"verdict": "found", "clean": False, "found": True, "notes": "e002 is dated before e001."}),
+                                  ("unclear", {"verdict": "unclear", "clean": False, "found": True, "notes": "It sits oddly with her bond."}),
+                                  ("empty", {"verdict": "empty", "clean": False, "found": False, "notes": ""}),
+                                  ("failed", {"verdict": "failed", "clean": False, "found": False, "notes": "", "failed": "the provider did not answer"}),
+                                  ("kept by 2.2", {"clean": False, "found": True, "notes": "A date is out of order."})]:
+                w = json.loads(urllib.request.urlopen(f"http://127.0.0.1:{PORT}/api/project/{target}").read())
+                chat = [c for c in w["chats"] if any(t.get("role") == "maker" for t in c.get("turns", []))][0]
+                t = [t for t in chat["turns"] if t.get("role") == "maker"][0]
+                t["review"] = review
+                req = urllib.request.Request(f"http://127.0.0.1:{PORT}/api/project/{target}", data=json.dumps(w).encode(), method="PUT", headers={"Content-Type": "application/json"})
+                urllib.request.urlopen(req).read()
+                page.reload(wait_until="networkidle")
+                page.wait_for_timeout(700)
+                lines_seen[label] = page.evaluate("(() => { const c = document.querySelector('.turn.maker .checks'); return c ? c.innerText.split('\\n')[0].replace(/^[\u25b8\u25be]\\s*/, '') : null; })()")
+            ok("the line under a reply says how the read-back went \u2014 nothing wrong, raised, notes, named nothing, could not \u2014 for every verdict, old replies included",
+               lines_seen.get("clean") == "The eye read back what changed \u2014 nothing wrong"
+               and (lines_seen.get("found") or "").startswith("The eye read back what changed and raised something")
+               and (lines_seen.get("unclear") or "").startswith("The eye read back what changed \u2014 its notes went back")
+               and lines_seen.get("empty") == "The eye read back what changed, but named nothing to put right"
+               and (lines_seen.get("failed") or "").startswith("The eye could not read it back: the provider did not answer")
+               and (lines_seen.get("kept by 2.2") or "").startswith("The eye read back what changed and raised something"), lines_seen)
+
+            # -- the live thinking box, under his finger (v2.4.1) -----------------
+            box = page.evaluate("""async () => {
+              const { streamText } = await import('/js/ui/streamtext.js');
+              const box = document.createElement('div');
+              box.style.cssText = 'height:120px;overflow-y:auto;position:fixed;top:0;left:0;width:300px;';
+              document.body.append(box);
+              const lines = streamText(box);
+              const end = () => box.scrollHeight - box.scrollTop - box.clientHeight;
+              for (let i = 0; i < 40; i++) lines.append(`thought ${i}\\n`);
+              const followed = end() < 2;
+              const t = (y) => new Touch({ identifier: 3, target: box, clientX: 50, clientY: y });
+              box.dispatchEvent(new TouchEvent('touchstart', { touches: [t(60)], changedTouches: [t(60)], bubbles: true }));
+              box.scrollTop = 0;
+              box.dispatchEvent(new TouchEvent('touchend', { touches: [], changedTouches: [t(90)], bubbles: true }));
+              lines.append('more thought\\n');
+              const stayed = box.scrollTop === 0;
+              /* the swipe carries it to the end after the finger is gone */
+              box.scrollTop = box.scrollHeight;
+              await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+              lines.append('and more\\n');
+              const again = end() < 2;
+              box.remove();
+              return { followed, stayed, again };
+            }""")
+            ok("the live thinking follows its words, stays where his finger left it, and follows again once a swipe carries it to the end",
+               box["followed"] and box["stayed"] and box["again"], box)
 
             # -- nothing threw the whole way through ----------------------------
             ok("nothing threw during the walk", not errors, "; ".join(errors[:4]))

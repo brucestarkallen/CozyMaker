@@ -82,12 +82,11 @@ to see what was there before and what is there now.
 
 When a model thinks, a **Thinking** box sits above its reply. It opens the moment
 the model starts thinking and fills as the thinking arrives, from its first word,
-counting the seconds — even while the house is still reading what you said. When
-the reply begins, it folds itself shut and says how long the model thought. Tap
-it to read the thinking again; **Copy the thinking** takes it away. If the house
-decides the crew has work to do after all, the reply that had started is let go
-with its thinking, and the one written after the work thinks from its own first
-word. While nothing has arrived yet, the ember keeps glowing.
+counting the seconds. When the reply begins, it folds itself shut and says how
+long the model thought. Tap it to read the thinking again; **Copy the thinking**
+takes it away. A finger on the thinking, or on the conversation, holds it where
+you put it while words keep arriving; it follows again once you are back at the
+end. While nothing has arrived yet, the ember keeps glowing.
 
 **Tap any message** for **Copy**, **Edit**, **Branch here** and **Delete**. The last
 reply has **Another answer**; ◂ ▸ walks between the answers, and only the one shown
@@ -102,7 +101,7 @@ documents — and its documents. Every world and conversation can be renamed or
 deleted from its ⋯.
 
 **Start a plot essential** (or just saying "build it") or **Start a worldbook** — whichever you are making — starts
-it with the crew: talk the world through first — nothing is written until you ask — and it is built from everything
+it: talk the world through first — nothing is written until you ask — and it is built from everything
 you said. If nothing has been said yet, you are asked what you need first. A worldbook made this way is named after
 its world, and so is the world. **Build from a story card**
 (or `*card` followed by the paste) takes a community story from Isekai Zero, AI Dungeon or the like — its
@@ -122,7 +121,8 @@ same as if you had typed it.
 A document has **Copy all** and **Export** (the file lands in your downloads) at its top, **Duplicate**, and — after you
 have edited it by hand — **Put back my edits**. **Side by side** shows two to four
 documents next to each other. Under the cog, **Save everything to a file** keeps
-every world in one file (not your connections or keys), and **Bring everything back
+every world in one file (not your connections or keys, and not the What was sent
+records, which stay on the phone that made them), and **Bring everything back
 from a file** only ever adds: nothing already here is replaced.
 
 A connection's thinking level is said the way that provider understands it —
@@ -130,7 +130,7 @@ the same words Cozy Tavern sends, checked against it. A level you have not set i
 not sent. If a provider refuses a thinking setting, the house learns what it takes
 and remembers it for that model.
 
-While the crew works, the send button becomes **Stop** and looks like it. A
+While a reply is being made, the send button becomes **Stop** and looks like it. A
 turn that failed and changed nothing offers **Try again**. If the server on the
 phone stops answering, a note says so and your work keeps trying to save until
 it lands — keep the page open.
@@ -201,14 +201,18 @@ small change never sets off a rewrite of everything around it.
 **The second pass.** Before a turn that changed a plot essential or a continuation
 file ends, the eye reads back exactly what changed — the whole document for
 context, judging only the changes and what they touch — against your engine. It
-changes nothing itself: anything it finds goes to the one you talk to, which puts it
-right before it answers. Under the reply, one line says how the read-back went
-("nothing wrong", or what it found), and the engine's own EXPERT EYE check is
-folded beside it. The message itself stays a short summary of what changed.
+changes nothing itself: anything it raises goes to the one you talk to, which puts
+it right — or says why the eye is mistaken — before it answers. Under the reply,
+one line says how the read-back went ("nothing wrong", or that it raised
+something, with its notes folded), and the engine's own EXPERT EYE check is folded
+beside it. The message itself stays a short summary of what changed. A document
+you asked to be emptied is not read back.
 
 **One copy of your documents.** What the one you talk to reads holds your documents
-once: as they stand now, labelled by name. When a step changes them, the old copy is
-taken out and the new one is the only one it can quote from.
+once: as they stand now, labelled by name. When a step changes them, the new copy
+rides at the end of the house's note and is the only one it reads or quotes from;
+its own earlier steps keep only its words and its small blocks of changes, never a
+document it wrote out whole.
 
 Their helpers, each called by name, each reporting back to them:
 
@@ -265,7 +269,7 @@ the model needs changing.
 Read `AGENTS.md` first.
 
 ```
-bash tests/all.sh    eleven runs, 1,247 checks
+bash tests/all.sh    eleven runs, 1,265 checks
 ```
 
 `docs/lineage.md` lists every version of Cozy Tavern and Cozy Chat and what

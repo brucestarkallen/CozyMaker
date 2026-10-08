@@ -486,7 +486,7 @@ export function joinSeam(a, b) {
   return head + tail;
 }
 
-async function runWorker({ worker, sections, conn, project, message, talk, fromHouse = false, asker = '', onStatus, onProgress, signal, stale, craft = null, note = '', searcher = null, onSent = null }) {
+async function runWorker({ worker, sections, conn, project, message, talk, fromHouse = false, asker = '', onStatus, onProgress, signal, stale, craft = null, note = '', searcher = null, onSent = null, reportOnly = false }) {
   /* a worker with a craft of its own reads that; the rest read their slice */
   const own = craft || sliceFor(sections, worker).text;
   /* searching the internet is his switch: off, the worker reads exactly what it always did */
@@ -609,7 +609,9 @@ async function runWorker({ worker, sections, conn, project, message, talk, fromH
         why = `${parsed.fileCut} was cut off before it finished, so it was not written. Write it again whole, between <file name="${parsed.fileCut}"> and </file>.`;
       } else if (parsed.warn && !parsed.edits.length) {
         why = `Your block of changes could not be used (${parsed.warn}). Send the whole block again as valid data \u2014 newlines inside strings written as \\n, a double quote inside a string written as \\", no trailing commas. A whole document goes between <file name="\u2026"> and </file> instead, written plainly.`;
-      } else if (!parsed.edits.length && claimsAChange(notes)) {
+      } else if (!reportOnly && !parsed.edits.length && claimsAChange(notes)) {
+        /* (never for a read-back: it was told to change nothing, and "I've fixed
+         * nothing" is not a change gone missing) */
         why = 'You said you changed something, but no change came back \u2014 a change only happens inside the block of changes or a file. Send it now.';
       }
       if (why) { nudged = true; nudge = why; onStatus && onStatus(`asking the ${worker} again`); continue; }
@@ -683,6 +685,30 @@ const REVIEWED_KINDS = new Set(['pe', 'continuity']);
 function kindOfName(project, name) {
   const d = ((project && project.docs) || []).find((x) => x.name === name);
   return d ? (d.kind || 'pe') : '';
+}
+/* a document he asked to be emptied has nothing to read back */
+function hasWords(project, name) {
+  const d = ((project && project.docs) || []).find((x) => x.name === name);
+  return Boolean(d && String(d.text || '').trim());
+}
+/* THE EYE'S VERDICT, read the way it was asked for (<verdict>CLEAN</verdict> or
+ * <verdict>FOUND</verdict>), then by its first word, then by the craft's own words in
+ * capitals. Its craft opens with a few plain sentences and its engine writes
+ * "Evidenced CLEAN", so "starts with CLEAN" alone took a clean read-back for a
+ * finding: a step spent on nothing, and a line under the reply saying it had found
+ * something. What cannot be read either way is "unclear": its notes still go back
+ * to the one he talks to, and the line says only that. */
+export function readVerdict(said) {
+  const t = String(said || '');
+  const tag = /<verdict>\s*(CLEAN|FOUND)\s*<\/verdict>/i.exec(t);
+  const rest = t.replace(/<verdict>[\s\S]*?<\/verdict>/gi, '').replace(/^\W*(?:CLEAN|FOUND)\b[\s:.\u2014-]*/i, '').trim();
+  let verdict = 'unclear';
+  if (tag) verdict = tag[1].toUpperCase() === 'CLEAN' ? 'clean' : 'found';
+  else if (/^\W*CLEAN\b/i.test(t)) verdict = 'clean';
+  else if (/^\W*FOUND\b/i.test(t)) verdict = 'found';
+  else if (/\bFOUND\b/.test(t)) verdict = 'found';
+  else if (/\bCLEAN\b/.test(t)) verdict = 'clean';
+  return { verdict, notes: rest };
 }
 /* the room a reply needs to write a document in it (the floor every worker had):
  * a value he set that is higher is his; nothing lower than this is sent */
@@ -791,7 +817,7 @@ export function makerMessagesFor({ house, p, past, world, working = world, messa
   const docsHere = lastNote === -1
     ? [small ? 'The documents, as they stand right now \u2014 too long for this model to read whole, so the outline and the parts in play:' : 'The documents, as they stand right now \u2014 whole, word for word:',
       docBriefs(world, { message, recent: world.recentSections || [], asked, partial: small, limit: MAKER_WHOLE })]
-    : ['The documents have changed since this was said. They are shown as they stand now at the end of the house\u2019s latest note, below \u2014 the only copy to read and to quote from.'];
+    : ['The documents are shown as they stand now at the end of the house\u2019s latest note, below \u2014 the only copy to read and to quote from.'];
   const later = extra.map((m, i) => (i === lastNote
     ? { role: 'user', content: `${m.content}\n\nThe documents, as they stand now${small ? ' (the outline and the parts in play)' : ', whole, word for word'} \u2014 the only copy to read and to quote from:\n\n${docBriefs(working, { message, recent: working.recentSections || [], asked, partial: small, limit: MAKER_WHOLE })}` }
     : m));
@@ -815,6 +841,18 @@ export async function readingFor({ house, project, history = [], message = '' })
     system: makerSystemFor(house, engine),
     messages: makerMessagesFor({ house, p: personaOf(house), past, world: project, message, standing: standingFor(past) }),
   };
+}
+
+/* ITS OWN EARLIER STEP, AS IT READS IT AGAIN (v2.4.1). A document it wrote out whole
+ * is in the documents now, shown once at the end of the house's note; kept inside its
+ * own earlier reply as well, it read the same document twice, and the copy in its
+ * reply stopped being the document the moment the checks or a helper changed it.
+ * The whole element goes — never a placeholder inside a file tag, which a model can
+ * copy back as a document. Its words and its small blocks of changes stay. (Carrying
+ * on a document cut off partway is different: there it must see what it wrote.) */
+const WHOLE_FILE = /<file\s+(?:name|path)\s*=\s*(?:"[^"\n]*"|'[^'\n]*'|[^>\n]+?)\s*>[\s\S]*?<\/file\s*>/gi;
+export function asItWasSaid(raw) {
+  return String(raw || '').replace(WHOLE_FILE, '').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 /* What the house tells the one he talks to between steps — never in his voice. */
@@ -1042,20 +1080,28 @@ export async function runTurn({
   const readBack = async (fresh) => {
     const names = [...new Set(fresh.map((c) => c.name))];
     const cut2 = (t) => { const s = String(t || '').replace(/\s+/g, ' ').trim(); return s.length > 600 ? `${s.slice(0, 600)}\u2026` : s; };
-    const changes = fresh.map((c) => `- ${c.name}: ${c.how || 'changed'}${c.reason ? ` (${c.reason})` : ''}${c.was ? `\n  was: ${cut2(c.was)}` : ''}${c.now ? `\n  now: ${cut2(c.now)}` : ''}`).join('\n');
-    const task = `Read back what was changed just now in ${names.join(', ')}, against your craft \u2014 the Verification Engine and the Expert Eye. Find what these changes got wrong or broke: a wrong fact, a contradiction with the rest of the document, a date out of order, a name spelled two ways, anything your craft forbids. Read the whole document for that, but judge only these changes and what they touch.\n\nThe changes:\n${changes}\n\nChange nothing yourself. Begin your answer with CLEAN if nothing is wrong, or with FOUND and then each mistake: the exact words as they stand now, and what they should be.`;
+    /* a document written whole is read whole: its first lines say nothing of what changed */
+    const whole = (c) => /^(?:rewrote the whole thing|started it|wrote it)$/.test(c.how || '');
+    const changes = fresh.map((c) => (whole(c)
+      ? `- ${c.name}: ${c.how} \u2014 all of it is new, so read all of it`
+      : `- ${c.name}: ${c.how || 'changed'}${c.reason ? ` (${c.reason})` : ''}${c.was ? `\n  was: ${cut2(c.was)}` : ''}${c.now ? `\n  now: ${cut2(c.now)}` : ''}`)).join('\n');
+    const task = `Read back what was changed just now in ${names.join(', ')}, against your craft \u2014 the Verification Engine and the Expert Eye. Find what these changes got wrong or broke: a wrong fact, a contradiction with the rest of the document, a date out of order, a name spelled two ways, anything your craft forbids. Read the whole document for that, but judge only these changes and what they touch.\n\nThe changes:\n${changes}\n\nChange nothing yourself. Put your verdict first, on a line of its own: <verdict>CLEAN</verdict> if nothing is wrong, or <verdict>FOUND</verdict> \u2014 then, for anything found, each mistake: the exact words as they stand now, and what they should be.`;
     let craft = null;
     try { craft = await craftFor('eye', house); } catch (_) { /* its slice of the engine, as always */ }
     const res = await enqueue(project.id, 'eye', ({ signal: s, stale }) =>
       runWorker({ worker: 'eye', sections, conn: connFor('eye'), project: working, message: task, talk, note: registryNote(working, 'eye'),
         asker: p.maker || 'the one making this with the author', onStatus: status, onProgress: progress, signal: either(signal, s), stale, craft,
-        onSent: recorder('the eye \u2014 reading it back') }));
-    if (!res || !res.ok) return { clean: false, found: false, notes: '', failed: plainFailure((res && res.error) || 'did not finish'), at: Date.now() };
+        onSent: recorder('the eye \u2014 reading it back'), reportOnly: true }));
+    if (!res || !res.ok) return { verdict: 'failed', clean: false, found: false, notes: '', failed: plainFailure((res && res.error) || 'did not finish'), at: Date.now() };
     const said = String(res.notes || '').trim();
-    const clean = /^\W*CLEAN\b/i.test(said);
-    const notes = said.replace(/^\W*(?:CLEAN|FOUND)\b[\s:.\u2014-]*/i, '').trim();
+    const { verdict, notes } = readVerdict(said);
     crew.push({ worker: 'eye', notes: said, review: true });
-    return { clean, found: !clean && Boolean(notes), notes, at: Date.now() };
+    if (verdict === 'clean') return { verdict, clean: true, found: false, notes, at: Date.now() };
+    /* a finding with nothing named has nothing to act on: no step is spent on it, and it
+     * is never called clean either */
+    if (!notes) return { verdict: 'empty', clean: false, found: false, notes: '', at: Date.now() };
+    /* found or unclear, with something said: it goes back to the one he talks to */
+    return { verdict, clean: false, found: true, notes, at: Date.now() };
   };
   const fail = (error, isStop) => {
     const partial = isStop && !quiet ? streamed.replace(/^\s+/, '') : '';
@@ -1088,7 +1134,7 @@ export async function runTurn({
      * starts it in a world of its own and reads his words again there (app.js) */
     if (n === 0 && !goOn && wantsNewWorld(raw)) {
       if (hasPE) return { project, reply: '', thinking: '', cards: [], batches: [], crew: [], edits: [], asks: [], error: null, newStory: true };
-      extra.push({ role: 'assistant', content: raw }, { role: 'user', content: `(From the house, not ${(p && p.you) || 'the author'}.) There is no plot essential in this world yet, so this world is the one for the new story \u2014 carry on here.` });
+      extra.push({ role: 'assistant', content: asItWasSaid(raw) }, { role: 'user', content: `(From the house, not ${(p && p.you) || 'the author'}.) There is no plot essential in this world yet, so this world is the one for the new story \u2014 carry on here.` });
       continue;
     }
     const seen = visibleText(raw);
@@ -1210,15 +1256,15 @@ export async function runTurn({
        * it finds goes to the one he talks to, which puts it right in one more step.
        * Once a turn. */
       if (!got.cut && !review && n + 1 < MAX_STEPS) {
-        const fresh = allCards.slice(readUpTo).filter((c) => c.status === 'applied' && REVIEWED_KINDS.has(kindOfName(working, c.name)));
+        const fresh = allCards.slice(readUpTo).filter((c) => c.status === 'applied' && REVIEWED_KINDS.has(kindOfName(working, c.name)) && hasWords(working, c.name));
         if (fresh.length) {
           status('the eye is reading it back');
           review = await readBack(fresh);
           readUpTo = allCards.length;
           if (stopped()) return fail('stopped', true);
           if (review.found) {
-            extra.push({ role: 'assistant', content: raw }, { role: 'user', content: stepReport({ p, other: [
-              `The eye read back what you changed this turn, against your engine, and found:\n${review.notes}\n\nPut right what is wrong, the way your engine says to \u2014 or, where the eye is mistaken, say why in a line. Then finish your answer.`] }) });
+            extra.push({ role: 'assistant', content: asItWasSaid(raw) }, { role: 'user', content: stepReport({ p, other: [
+              `The eye read back what you changed this turn, against your engine, and ${review.verdict === 'found' ? 'found' : 'said'}:\n${review.notes}\n\nPut right what is wrong, the way your engine says to \u2014 or, where the eye is mistaken, say why in a line. Then finish your answer.`] }) });
             continue;
           }
         }
@@ -1226,12 +1272,12 @@ export async function runTurn({
       /* changes made and not a word said about them: one more step to say them */
       if (!seen && !reply && changedAny() && !toldToSpeak && n + 1 < MAX_STEPS) {
         toldToSpeak = true;
-        extra.push({ role: 'assistant', content: raw }, { role: 'user', content: `(From the house, not ${(p && p.you) || 'the author'}.) Your changes went in. Now tell ${(p && p.you) || 'the author'}, in your own voice, what you did.` });
+        extra.push({ role: 'assistant', content: asItWasSaid(raw) }, { role: 'user', content: `(From the house, not ${(p && p.you) || 'the author'}.) Your changes went in. Now tell ${(p && p.you) || 'the author'}, in your own voice, what you did.` });
         continue;
       }
       break;
     }
-    extra.push({ role: 'assistant', content: raw }, { role: 'user', content: stepReport({ ...report, foundText, parts, nudge }) });
+    extra.push({ role: 'assistant', content: asItWasSaid(raw) }, { role: 'user', content: stepReport({ ...report, foundText, parts, nudge }) });
   }
   status('');
   if (stopped()) return fail('stopped', true);

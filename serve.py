@@ -35,11 +35,11 @@ import glob
 import subprocess
 from pathlib import Path
 
-VERSION = "2.4.0"
+VERSION = "2.4.1"
 ROOT = Path(__file__).resolve().parent
 HOME = Path(os.environ.get("COZYMAKER_HOME", Path.home() / ".cozymaker"))
 PROJECTS = HOME / "projects"
-# what was sent to a model, per world: his to read, never in a backup, the newest kept
+# what was sent to a model, per world: his to read, the newest kept, on this device only (not in "Save everything to a file")
 SENT = HOME / "sent"
 SENT_KEEP = 40
 BACKUPS = HOME / "backups"

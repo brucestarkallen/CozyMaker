@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { cutSections, setEngineForTests } from '../js/engine/slices.js';
 import { setCraftForTests } from '../js/engine/crafts.js';
-import { runTurn, makeVisibleStream, visibleText, readHelpers, frontBody, landContinuation, landTurn, ROOM_MARK, CRAFT_FRAME, GO_ON, FRONT_ONLY, MAKER_FLOOR, MAX_STEPS, readingFor } from '../js/agents/run.js';
+import { runTurn, makeVisibleStream, visibleText, readHelpers, frontBody, landContinuation, landTurn, ROOM_MARK, CRAFT_FRAME, GO_ON, FRONT_ONLY, MAKER_FLOOR, MAX_STEPS, readingFor, readVerdict, asItWasSaid } from '../js/agents/run.js';
 import { estimateTokens } from '../js/doc/index.js';
 import { undoBatch } from '../js/doc/edits.js';
 import { SEARCH_MARK } from '../js/agents/search.js';
@@ -170,7 +170,7 @@ const edits = (list) => `<edits>\n${JSON.stringify(list)}\n</edits>`;
   const line = 'CORE: Reads a room before he speaks.';
   const copies = calls[1].msgs.reduce((k, m) => k + String(m.content).split(line).length - 1, 0);
   ok('and only one copy of the documents is in what it reads \u2014 the newest, at the end of the house\u2019s note', copies === 1 && rep.includes(line), copies);
-  ok('his message says the documents have changed and where the only copy is', calls[1].msgs.some((m) => m.role === 'user' && m.content.includes('The documents have changed since this was said') && m.content.includes('Bruce said:\nmajority fifteen please')));
+  ok('his message says where the only copy of the documents is \u2014 in words true whether or not a step changed them', calls[1].msgs.some((m) => m.role === 'user' && m.content.includes('The documents are shown as they stand now at the end of the house\u2019s latest note, below \u2014 the only copy to read and to quote from.') && m.content.includes('Bruce said:\nmajority fifteen please') && !m.content.includes('CORE: Reads a room')));
   ok('its first reply is in front of it as it wrote it', calls[1].msgs.some((m) => m.role === 'assistant' && m.content.includes('- Majority is sixteen!')));
   ok('the second try lands', pe(r).includes('- Majority is fifteen.'));
   ok('no "not done" card for a miss it then put right', !r.cards.some((c) => c.status === 'refused'), r.cards);
@@ -306,6 +306,7 @@ const edits = (list) => `<edits>\n${JSON.stringify(list)}\n</edits>`;
   ok('the one he talks to deletes a document he asked to be deleted', !(r.project.docs || []).some((d) => d.name === 'Notes.md'));
   ok('and clears one he asked to be cleared', pe(r) === '' && (r.project.docs || []).some((d) => d.name === 'Plot Essential.md'));
   ok('both on cards, both can be put back', r.cards.filter((c) => c.status === 'applied').length === 2 && undoBatch(r.project.docs, r.batches[0]).ok);
+  ok('an emptied plot essential is not read back \u2014 there is nothing in it to read', !calls.some((c) => c.who === 'helper') && !r.review, calls.map((c) => c.who));
 }
 
 /* ---------------------------------------------- 10. *regress and *card, said by the house */
@@ -645,6 +646,71 @@ const edits = (list) => `<edits>\n${JSON.stringify(list)}\n</edits>`;
   ok('its size is the engine, the room, the documents and the talk \u2014 more than the engine alone', tokens > estimateTokens(ENGINE) && tokens < estimateTokens(ENGINE) + 6000, tokens);
   const longer = await readingFor({ house, project: world, history: world.chats[0].turns, message: 'x '.repeat(2000) });
   ok('a long draft makes it bigger by about its own size', estimateTokens(longer.system + longer.messages.map((m) => m.content).join('\n')) - tokens >= 900);
+}
+
+/* ------------------------------------------- 27. the eye's verdict, read the way it is given (v2.4.1) */
+{
+  const v = (t) => readVerdict(t).verdict;
+  ok('a verdict in its tag is read', v('<verdict>CLEAN</verdict>\nThe change holds.') === 'clean' && v('Read it.\n<verdict>FOUND</verdict>\n- "x" should be "y"') === 'found');
+  ok('a verdict as the first word is read', v('CLEAN — it holds.') === 'clean' && v('FOUND: the date is out of order') === 'found');
+  ok('a clean read-back that opens with plain sentences, in the craft’s own capitals, is clean', v('I read the changed core against her bond and the timeline. Evidenced CLEAN.') === 'clean');
+  ok('a finding said in capitals mid-answer is a finding', v('I read it. FOUND one: e002 is dated before e001.') === 'found');
+  ok('an answer that says neither is unclear — never taken for clean', v('I read the change. It sits oddly with her bond.') === 'unclear');
+  ok('the verdict never reaches the notes', readVerdict('<verdict>FOUND</verdict>\n- "a" should be "b"').notes === '- "a" should be "b"');
+}
+{
+  stand({
+    maker: 'Made her stubborn again.\n\n' + edits([{ file: 'Plot Essential.md', find: 'CORE: Stubborn, catches detail nobody else does.', replace: 'CORE: Stubborn; catches what others miss.' }]),
+    helper: 'I read the changed core against her bond to Jovan and the timeline; it matches both. Evidenced CLEAN.',
+  });
+  const { r } = await turn({ message: 'tighten Claire' });
+  ok('a clean read-back in plain sentences ends the turn: no step spent on nothing', makers().length === 1 && r.review && r.review.clean && r.review.verdict === 'clean', [makers().length, r.review]);
+  ok('the eye is asked for its verdict in its tag', calls.find((c) => c.who === 'helper').last.includes('<verdict>CLEAN</verdict> if nothing is wrong, or <verdict>FOUND</verdict>'));
+}
+{
+  stand({
+    maker: (c) => (c.n === 0 ? 'Made her softer.\n\n' + edits([{ file: 'Plot Essential.md', find: 'CORE: Stubborn, catches detail nobody else does.', replace: 'CORE: Soft-spoken.' }])
+      : 'The eye wondered about her bond; she can be soft-spoken and still refuse him, so it stands.'),
+    helper: 'I read the change. It sits oddly with her bond to Jovan.',
+  });
+  const { r } = await turn({ message: 'make Claire soft-spoken' });
+  ok('an unclear read-back still goes back to the one he talks to, which answers it', makers().length === 2 && makers()[1].last.includes('the eye read back what you changed this turn, against your engine, and said:'.replace(/^t/, 'T')) && r.review.verdict === 'unclear' && r.review.found, [makers().length, r.review]);
+}
+{
+  const NEW = PE.replace('## SCENE', '### Mira (smith | core | 30)\nID: Broad, scarred hands.\nCORE: Fixes what others throw away.\n\n## SCENE');
+  stand({ maker: { text: 'Rebuilt it whole with Mira in.\n\n<file name="Plot Essential.md">\n' + NEW + '\n</file>' } });
+  await turn({ message: 'rebuild it with Mira the smith' });
+  const task = calls.find((c) => c.who === 'helper').last;
+  ok('a document written whole is read back whole — never by its first lines', task.includes('rewrote the whole thing — all of it is new, so read all of it') && !task.includes('was: # PLOT ESSENTIAL'), task.slice(task.indexOf('The changes:'), task.indexOf('The changes:') + 300));
+}
+{
+  /* one copy, across steps, for a document written whole: the checks find something its
+   * rewrite brought in, so a second step is asked for */
+  const NEW = PE.replace('e001 [Mon 14 Apr 247, 09:00] [setup]: The showcase opened in the east hall.', 'e001 [Mon 14 Apr 247, 09:00] [setup]: The showcase opened in the east hall.\ne002 [duel]: Mira challenged the guild.');
+  stand({ maker: (c) => (c.n === 0
+    ? 'Rebuilt it, with the duel in.\n\n<file name="Plot Essential.md">\n' + NEW + '\n</file>'
+    : 'Dated the duel.\n\n' + edits([{ file: 'Plot Essential.md', find: 'e002 [duel]:', replace: 'e002 [Mon 14 Apr 247, 11:00] [duel]:' }])) });
+  const { r } = await turn({ message: 'rebuild it with a duel' });
+  const second = makers()[1];
+  const line = 'CORE: Reads a room before he speaks.';
+  const copies = second ? second.msgs.reduce((k, m) => k + String(m.content).split(line).length - 1, 0) : -1;
+  ok('after a document is written whole, the next step reads it once — at the end of the house’s note, never again inside its own earlier reply',
+    copies === 1 && second.msgs.some((m) => m.role === 'assistant' && m.content === 'Rebuilt it, with the duel in.'), copies);
+  ok('and the fix lands', pe(r).includes('e002 [Mon 14 Apr 247, 11:00] [duel]: Mira challenged the guild.'));
+  ok('its own earlier step keeps its small blocks of changes', asItWasSaid('Done.\n<edits>[{"find":"a","replace":"b"}]</edits>').includes('<edits>') && asItWasSaid('Done.\n<file name="A.md">\nwhole\n</file>\nBye.') === 'Done.\n\nBye.');
+}
+
+{
+  stand({ maker: 'Tightened.\n\n' + edits([{ file: 'Plot Essential.md', find: 'CORE: Stubborn, catches detail nobody else does.', replace: 'CORE: Stubborn; catches what others miss.' }]), helper: '<verdict>FOUND</verdict>' });
+  const { r } = await turn({ message: 'tighten Claire' });
+  ok('a finding with nothing named spends no step, and is never called clean', makers().length === 1 && r.review.verdict === 'empty' && !r.review.clean && !r.review.found, r.review);
+}
+
+{
+  stand({ maker: 'Tightened.\n\n' + edits([{ file: 'Plot Essential.md', find: 'CORE: Stubborn, catches detail nobody else does.', replace: 'CORE: Stubborn; catches what others miss.' }]),
+    helper: "I've fixed nothing, as asked; the changed core matches her bond. <verdict>CLEAN</verdict>" });
+  const { r } = await turn({ message: 'tighten Claire' });
+  ok('a read-back that says "I’ve fixed nothing" is never asked to send the change it was told not to make', calls.filter((c) => c.who === 'helper').length === 1 && r.review.clean, calls.map((c) => c.who));
 }
 
 console.log(`${pass} passed, ${fail} failed`);

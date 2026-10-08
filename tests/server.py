@@ -37,7 +37,7 @@ def ok(name, cond, detail=""):
     if cond:
         passed += 1
     else:
-        failed.append(f"{name}{' — ' + detail if detail else ''}")
+        failed.append(f"{name}{' — ' + str(detail)[:300] if detail else ''}")
 
 
 def call(path, method="GET", body=None, port=PORT, raw=False):

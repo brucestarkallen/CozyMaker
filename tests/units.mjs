@@ -880,6 +880,11 @@ ok('a block in the thinking channel is still a block', (() => {
   const twice = 'a  b\na   b';
   ok('two places that match only after spacing are ambiguous and refused', /2 times/.test(locate(twice, 'a b').why || ''), JSON.stringify(locate(twice, 'a b')));
   const big = Array.from({ length: 3000 }, (_, i) => `line ${i} of the council record, where nothing moved`).join('\n');
+  /* timed warm: the first calls compile the matcher, and on a slow two-core machine that
+   * alone ran past the bound (34ms) while every warm miss took about 10ms. The bound
+   * stays where it was \u2014 it is there to catch a search that grows with the square
+   * of the document, which would be seconds, not milliseconds. */
+  for (let i = 0; i < 5; i++) locate(big, 'a sentence that is not in the document at all, anywhere, in any form');
   const t0 = performance.now();
   for (let i = 0; i < 20; i++) locate(big, 'a sentence that is not in the document at all, anywhere, in any form');
   const ms = (performance.now() - t0) / 20;

@@ -145,7 +145,7 @@ export async function openSent(worldId, keys, when = '') {
   const requests = records.flatMap((r) => r.requests || []);
   body.textContent = '';
   if (!requests.length) {
-    body.append(el('p', 'hint', 'What was sent for this reply is not kept any more \u2014 the newest 40 replies of each world are.'));
+    body.append(el('p', 'hint', 'What was sent for this reply is not on this device. Each world keeps it for its newest 40 replies, on the device that made them \u2014 it is not in \u201cSave everything to a file\u201d.'));
     return;
   }
   body.append(el('p', 'sent-sum', sentSummary(requests) + (when ? ` \u00b7 ${when}` : '')));

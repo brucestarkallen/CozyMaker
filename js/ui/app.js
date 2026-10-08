@@ -546,9 +546,13 @@ function checksNode(t) {
   const box = el('div', 'checks');
   const r = t.review;
   if (r) {
+    /* said as it happened: what the eye raised went back before this reply, and the
+     * reply says what was done with it \u2014 put right, or why the eye was mistaken */
     const line = r.failed ? `The eye could not read it back: ${r.failed}`
       : r.clean ? 'The eye read back what changed \u2014 nothing wrong'
-        : 'The eye read back what changed and found something \u2014 put right before this reply';
+        : !r.found ? 'The eye read back what changed, but named nothing to put right'
+          : r.verdict === 'unclear' ? 'The eye read back what changed \u2014 its notes went back before this reply'
+            : 'The eye read back what changed and raised something \u2014 it went back before this reply';
     if (r.notes) box.append(fold(line, el('div', 'check-text', r.notes), { className: 'fold check-fold' }));
     else box.append(el('div', 'check-line', line));
   }
