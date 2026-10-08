@@ -308,7 +308,7 @@ the model needs changing.
 Read `AGENTS.md` first.
 
 ```
-bash tests/all.sh    thirteen runs, 1,404 checks
+bash tests/all.sh    thirteen runs, 1,407 checks
 ```
 
 `docs/lineage.md` lists every version of Cozy Tavern and Cozy Chat and what

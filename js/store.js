@@ -45,6 +45,9 @@ function inLine(step) {
 }
 
 export function watch(fn) { watchers.add(fn); return () => watchers.delete(fn); }
+/* how many parts of the page are listening: one for each part on screen — never one
+ * more with every redraw (the walk holds the documents sheet to it) */
+export function listening() { return watchers.size; }
 function tell(extra = {}) { for (const fn of watchers) { try { fn({ house, project, trouble, ...extra }); } catch (_) {} } }
 
 /* THE COPY ON THE DEVICE, AS THIS PAGE LAST KNEW IT (v2.5): per world, and for the house,

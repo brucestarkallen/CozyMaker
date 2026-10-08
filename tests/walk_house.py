@@ -286,6 +286,30 @@ def main():
                    lantern()["docs"][0]["text"][-120:])
             section("the open document follows", follows)
 
+            # ------------------------------------------------ the sheet listens once, however often it redraws
+            def one_listener():
+                listening = "async () => (await import('/js/store.js')).listening()"
+                changes = """async (n) => { const s = await import('/js/store.js');
+                  for (let i = 0; i < n; i++) { const p = s.getProject(); s.setProject({ ...p, title: p.title }); await new Promise((r) => setTimeout(r, 40)); } }"""
+                page.click("#docsBtn")
+                page.wait_for_timeout(300)
+                base = page.evaluate(listening)
+                page.evaluate(changes, 12)
+                page.wait_for_timeout(200)
+                ok("the documents list redraws as the world changes and still listens once", page.evaluate(listening) == base, (base, page.evaluate(listening)))
+                page.locator("#docsBody .row", has_text="Plot Essential.md").first.click()
+                page.wait_for_timeout(300)
+                page.evaluate(changes, 12)
+                page.wait_for_timeout(200)
+                ok("an open document listens once, in place of the list", page.evaluate(listening) == base, (base, page.evaluate(listening)))
+                page.click("#docsAction")
+                page.wait_for_timeout(300)
+                page.click('[data-close="docsSheet"]')
+                page.evaluate(changes, 2)
+                page.wait_for_timeout(200)
+                ok("and once the sheet is shut, it listens no more", page.evaluate(listening) == base - 1, (base, page.evaluate(listening)))
+            section("the sheet listens once", one_listener)
+
             # ------------------------------------------------ two windows
             def two_windows():
                 page2 = ctx.new_page()

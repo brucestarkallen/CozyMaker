@@ -33,8 +33,8 @@ Only this phone's own page reaches `/api/` (Host and Origin checked).
 
 **The gate.** `bash tests/all.sh` — thirteen runs, all green before any push. On
 8 Oct 2026, on a two-core machine: units 643, harness 185, thinking 13, saves 20,
-two pages 22, server 82, browser 103, walk 228, the house walk 34, live stream
-12 + 12, stream flows 29, launcher 21 — 1,404 checks. The browser runs need
+two pages 22, server 82, browser 103, walk 228, the house walk 37, live stream
+12 + 12, stream flows 29, launcher 21 — 1,407 checks. The browser runs need
 Playwright's Chromium.
 
 **What no test here can show.** Every model in the suites is a stand-in on the
@@ -1564,7 +1564,8 @@ fixed, each at its cause:
 - **The document open in the sheet went stale while a turn changed it, and his next key wrote the old
   words back over the turn's change**, without a word (proven on 2.4.1 in the browser). The sheet follows
   the world: the open box at once, a list a moment after; "Put back my edits" starts again from a change
-  that came in. Only the view on screen listens (one listener, stopped by the next view).
+  that came in. Only the view on screen listens (one listener, stopped by the next view): twelve changes
+  with the list open leave one listener, where this release's first version grew to fifteen.
 - **Two windows wrote over each other's whole world**, and a window that fell behind showed old work
   until reloaded — see Storage. The connection form saves onto the connection as the house holds it at
   that moment (found by its id), so a house put together meanwhile never swallows a Save.
@@ -1602,7 +1603,7 @@ fixed, each at its cause:
   square of the document is slow in every round.
 
 Tests: units (+49), harness (+13), server (+20), a new suite with two copies of the real store against
-the real server (`two_pages.mjs`, 22), and a new walk in the browser (`walk_house.py`, 34). Every new
+the real server (`two_pages.mjs`, 22), and a new walk in the browser (`walk_house.py`, 37). Every new
 check was run against untouched 2.4.1: units 32 red, harness 12 red, server 15 red, the house walk 20
 red (a part that cannot run there is reported as a failure, never thrown), and the two-page suite stops
 at its first check (2.4.1's store has no way to catch up). The fixes to this release's own new code (the house merge reading the house as
@@ -1636,8 +1637,9 @@ bash tests/all.sh           every suite, exit code intact
                                               the thinking box live, backup and restore, a model too
                                               small for the world, a real server killed mid-edit,
                                               a worldbook chosen, asked for, made and exported
-    python3 tests/walk_house.py   34 checks — the house folds, cold; a reply that only changed things; an
-                                              empty reply's reason; the open document following a turn;
+    python3 tests/walk_house.py   37 checks — the house folds, cold; a reply that only changed things; an
+                                              empty reply's reason; the open document following a turn,
+                                              and the sheet listening once however often it redraws;
                                               two windows; a newer version taken by itself; the context
                                               line read further up; earlier copies; his message deleted
                                               with its answer
@@ -1653,7 +1655,7 @@ bash tests/all.sh           every suite, exit code intact
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-1,404 checks. Every suite must be green before a push. `tests/fixtures/` holds answers recorded from the
+1,407 checks. Every suite must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.
