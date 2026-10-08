@@ -107,8 +107,10 @@ and read each one; `tests/harness.mjs` §28 holds the count of lines where his e
 make: if it speaks to him, its phrase goes into `namesIn`; if to the one he talks to, the
 count goes up. Never guessed.
 
-    node -e "import('./js/agents/persona.js').then(({inNames,engineAsRead})=>{const E=require('fs').readFileSync('engine/generalist.md','utf8'),a=inNames(E,{you:'Bruce'}).split('\n'),b=engineAsRead(E,{you:'Bruce',person:'first'}).split('\n'),o=E.split('\n');o.forEach((l,i)=>{if(l!==a[i]||a[i]!==b[i])console.log(i+1,'\n- '+l+'\n+ '+b[i])})})" `js/engine/slices.js` still cuts it at its own headings, for the one
-helper that works on it (the eye, which reads only what its read-back needs).
+    node -e "import('./js/agents/persona.js').then(({inNames,engineAsRead})=>{const E=require('fs').readFileSync('engine/generalist.md','utf8'),a=inNames(E,{you:'Bruce'}).split('\n'),b=engineAsRead(E,{you:'Bruce',person:'first'}).split('\n'),o=E.split('\n');o.forEach((l,i)=>{if(l!==a[i]||a[i]!==b[i])console.log(i+1,'\n- '+l+'\n+ '+b[i])})})"
+
+`js/engine/slices.js` still cuts it at its own headings, for the one helper that works on
+it (the eye, which reads only what its read-back needs).
 
 To change the craft, edit `engine/generalist.md`. Nothing else.
 
