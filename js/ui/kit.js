@@ -86,6 +86,14 @@ export function ask(text, worker) {
   for (const fn of askers) Promise.resolve().then(() => fn(text, worker)).catch((e) => toast(`That did not start: ${(e && e.message) || e}`));
 }
 
+/* HOW LONG IT THOUGHT, as the thinking box says it: whole seconds first, so 119.6
+ * seconds is 2m 0s — the first version rounded the seconds after taking the minutes
+ * and could say "1m 60s" (v2.5) */
+export function tookWords(ms) {
+  const s = Math.round(Math.max(0, ms || 0) / 1000);
+  return s < 60 ? s + 's' : Math.floor(s / 60) + 'm ' + (s % 60) + 's';
+}
+
 export function when(ms) {
   if (!ms) return 'not yet';
   const d = Math.floor((Date.now() - ms) / 1000);

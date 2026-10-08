@@ -406,6 +406,55 @@ export function stripThinking(text) {
  * than it did. stripThinking's wider net stays for the crew's notes, where a
  * stray thought must never reach the persona. */
 const THOUGHT_TAG = '(think|thinking|reasoning)';
+
+/* A THOUGHT WRITTEN AS A BLOCK, ANYWHERE IN A REPLY (v2.5) — one rule for what the
+ * one he talks to wrote as thinking, for the stream (run.js makeVisibleStream) and for
+ * what is kept and read again (run.js visibleText, asItWasSaid; ownWords) alike. The room
+ * tells it that it may think inside <think> and </think> and that he never sees what
+ * is inside — but only a thought at the very start of a reply, and only one written
+ * <think>, was ever kept off the screen: one written <thinking> or <reasoning>, or one
+ * written partway through the reply, reached him as the reply, was kept in it, and went
+ * back to the model as its own words.
+ *   A thought is <think>, <thinking> or <reasoning> opening a line (spaces before it on
+ * its line are fine), outside a code fence. Closed, the whole block is a thought. Never
+ * closed, it is the rest of the reply when nothing was written before it — the reading
+ * the stream's splitter gives a reply that opens with <think> — else it was words after
+ * all. A tag named inside a sentence, or shown inside a code fence (a preset's template
+ * being talked over), is words. Returns the words, and the thoughts in written order. */
+const THOUGHT_OPENER = /<(think|thinking|reasoning)>/gi;
+export function thoughtAtLineStart(before) {
+  const t = String(before || '');
+  const nl = t.lastIndexOf('\n');
+  return /^[ \t]*$/.test(t.slice(nl + 1));
+}
+export function insideFence(before) {
+  return ((String(before || '').match(/^[ \t]*```/gm) || []).length % 2) === 1;
+}
+export function withoutThoughts(text) {
+  const src = String(text || '');
+  const thoughts = [];
+  let out = '';
+  let from = 0;
+  const open = new RegExp(THOUGHT_OPENER.source, 'gi');
+  for (let m = open.exec(src); m; m = open.exec(src)) {
+    const shown = out + src.slice(from, m.index);
+    if (!thoughtAtLineStart(shown) || insideFence(shown)) continue;
+    const after = src.slice(m.index + m[0].length);
+    const close = new RegExp(`</${m[1]}\\s*>`, 'i').exec(after);
+    if (close) {
+      thoughts.push(after.slice(0, close.index));
+      out = shown;
+      from = m.index + m[0].length + close.index + close[0].length;
+      open.lastIndex = from;
+      continue;
+    }
+    /* never closed: the rest of the reply if it began it, else words after all */
+    if (!shown.trim()) { thoughts.push(after); out = shown; from = src.length; break; }
+  }
+  out += src.slice(from);
+  return { text: out, thoughts };
+}
+
 export function ownWords(text) {
   let rest = String(text || '');
   const lead = new RegExp(`^\\s*<${THOUGHT_TAG}>`, 'i');
@@ -421,7 +470,9 @@ export function ownWords(text) {
     const last = enders[enders.length - 1];
     if (!opener.test(rest.slice(0, last.index))) rest = rest.slice(last.index + last[0].length);
   }
-  return rest.trim();
+  /* and a thought written as a block partway through it (v2.5) */
+  const kept = withoutThoughts(rest);
+  return (kept.thoughts.length ? kept.text.replace(/\n{3,}/g, '\n\n') : kept.text).trim();
 }
 
 export function stripEdits(text) {
@@ -629,6 +680,9 @@ export function applyRun(docs, edits, { label = 'a change', putEntries = null } 
   const created = [];
   const cleared = [];
   const deleted = [];
+  /* the documents this run rebuilt whole: only a rebuild is held to the counts of
+   * the loss guard (run.js commit, lint.js lostSomething) */
+  const whole = new Set();
   /* where each change's card begins: a change that leaves a document exactly as
    * it was writes no card, so the cards alone cannot say which change was which */
   const marks = [];
@@ -724,6 +778,7 @@ export function applyRun(docs, edits, { label = 'a change', putEntries = null } 
         const old = String(texts.get(name) || '');
         if (old === body) continue;
         texts.set(name, body);
+        whole.add(name);
         cards.push({ status: 'applied', name, reason: e.reason || '', how: old.trim() ? 'rewrote the whole thing' : 'wrote it', was: clip(old), now: clip(body) });
         continue;
       }
@@ -760,6 +815,7 @@ export function applyRun(docs, edits, { label = 'a change', putEntries = null } 
     const out = applyEdit(texts.get(name), e);
     if (!out.ok) { cards.push({ status: 'refused', name, reason: e.reason || '', why: out.why, find: e.find || e.insert_after || '' }); continue; }
     texts.set(name, out.text);
+    if (e.replace_all === true) whole.add(name);
     cards.push({ status: 'applied', name, reason: e.reason || '', how: out.how, find: e.find || e.insert_after || '', was: clip(out.was), now: clip(out.now) });
   }
 
@@ -780,7 +836,7 @@ export function applyRun(docs, edits, { label = 'a change', putEntries = null } 
    * the wrong change — a change that landed was then taken for one that had not,
    * and repeated in a re-quote, came back as a false "not done". */
   const perEdit = marks.map((from, i) => ((i + 1 < marks.length ? marks[i + 1] : cards.length) > from ? cards[from] : null));
-  return { texts, cards, batch, created, cleared, deleted, perEdit };
+  return { texts, cards, batch, created, cleared, deleted, perEdit, whole };
 }
 
 /* Put it back — unless something newer is there, in which case say so and do

@@ -109,6 +109,20 @@ export function setCallTimeoutForTests(ms) { CALL_TIMEOUT_MS = ms; }
 
 /* ---------------------------------------------------------------- calling */
 
+/* WHAT WAS SENT, KEPT AS IT WENT: the request's own lists and objects copied, its words
+ * shared (a string never changes). A copy through JSON walked every character of his
+ * engine and his documents a second time, on the main thread, the moment he pressed
+ * send — the heaviest frame of a turn on a phone (v2.5, measured in perf_stream). */
+export function snapshotBody(body) {
+  const out = {};
+  for (const [k, v] of Object.entries(body || {})) {
+    if (Array.isArray(v)) out[k] = v.map((m) => (m && typeof m === 'object' ? { ...m } : m));
+    else if (v && typeof v === 'object') out[k] = JSON.parse(JSON.stringify(v));
+    else out[k] = v;
+  }
+  return out;
+}
+
 function asWorkerConnection(conn, { maxTokens }) {
   /* THE CONNECTION THE WRITER CHOSE IS THE CONNECTION THAT ANSWERS. Its
    * temperature, its top-p, its thinking are its own; this copy changes
@@ -152,7 +166,7 @@ export async function callModel(conn, opts = {}) {
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     if (opts.stale && opts.stale()) return { ok: false, text: '', thinking: '', error: 'let go' };
     try {
-      const rec = opts.onSent ? opts.onSent({ url: req.url, model: req.body && req.body.model, body: JSON.parse(JSON.stringify(req.body)), at: Date.now() }) : null;
+      const rec = opts.onSent ? opts.onSent({ url: req.url, model: req.body && req.body.model, body: snapshotBody(req.body), at: Date.now() }) : null;
       const res = await fetch('/api/call', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -286,7 +300,7 @@ async function streamOnce(conn, opts, dropThinking) {
   if (dropThinking) req.body = withoutThinking(req.body);
   /* WHAT WAS SENT, kept for him to read: where it went and the body, word for word —
    * never the headers, which carry his key */
-  const rec = opts.onSent ? opts.onSent({ url: req.url, model: req.body && req.body.model, body: JSON.parse(JSON.stringify(req.body)), at: Date.now() }) : null;
+  const rec = opts.onSent ? opts.onSent({ url: req.url, model: req.body && req.body.model, body: snapshotBody(req.body), at: Date.now() }) : null;
   const res = await fetch('/api/call', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -300,7 +314,7 @@ async function streamOnce(conn, opts, dropThinking) {
    * wrong in the middle of an answer (or a line that dropped) left what had
    * arrived looking finished — no failure, no Go on, a truncated answer passing
    * for a whole one. It is kept as what it is: cut, by the provider. */
-  if (out.finish === 'error' && out.text) return { text: out.text, thinking: out.thinking || '', cut: true, cutBy: 'provider' };
+  if (out.finish === 'error' && out.text) return { text: out.text, thinking: out.thinking || '', cut: true, cutBy: 'provider', reason: out.reason || '' };
   if (out.finish === 'error' && !out.text) {
     const err = new Error(out.error || 'the provider was not happy with that');
     err.status = Number(out.status) || 0;
@@ -312,7 +326,8 @@ async function streamOnce(conn, opts, dropThinking) {
     err.body = req.body;
     throw err;
   }
-  return { text: out.text || '', thinking: out.thinking || '', cut: out.finish === 'length' };
+  /* cut at its limit, in either house's word — an answer sent whole says max_tokens (v2.5) */
+  return { text: out.text || '', thinking: out.thinking || '', cut: /^(?:length|max_tokens)$/i.test(out.finish || ''), reason: out.reason || '' };
 }
 
 /* ONE READER FOR EVERY ANSWER, streamed or not.
@@ -434,6 +449,8 @@ export async function readReply(house, res, { onText, onThinking, onProgress } =
     }
     const a = readAnswer(house, data);
     a.usage = countOf(data.usage);
+    /* the provider's own word for why it stopped, kept for an empty reply (v2.5) */
+    a.reason = typeof a.finish === 'string' ? a.finish : '';
     const cut = splitThink(a.text);
     if (cut.thinking) { a.text = cut.text; a.thinking = [a.thinking, cut.thinking].filter(Boolean).join('\n\n'); }
     if (a.text && onText) onText(a.text);
@@ -446,7 +463,7 @@ export async function readReply(house, res, { onText, onThinking, onProgress } =
     return whole(data);
   }
   const decoder = new TextDecoder();
-  let buffer = '', raw = '', sse = false, text = '', thinking = '', cut = false, ended = false, midError = null, told = 0, usage = null;
+  let buffer = '', raw = '', sse = false, text = '', thinking = '', cut = false, ended = false, midError = null, told = 0, usage = null, reason = '';
   const split = makeThinkSplitter((kind, s) => {
     if (kind === 'thinking') { thinking += s; if (onThinking) onThinking(s); } else { text += s; if (onText) onText(s); }
   });
@@ -466,9 +483,10 @@ export async function readReply(house, res, { onText, onThinking, onProgress } =
      * chunk, Anthropic's at the start (in) and the end (out) */
     if (obj.usage && typeof obj.usage === 'object') usage = { ...(usage || {}), ...obj.usage };
     if (obj.type === 'message_start' && obj.message && obj.message.usage) usage = { ...(usage || {}), ...obj.message.usage };
-    if (obj.type === 'message_stop' || (obj.type === 'message_delta' && obj.delta && obj.delta.stop_reason)) ended = true;
+    if (obj.type === 'message_stop') ended = true;
+    if (obj.type === 'message_delta' && obj.delta && obj.delta.stop_reason) { ended = true; reason = String(obj.delta.stop_reason); }
     const choice = obj.choices && obj.choices[0];
-    if (choice && choice.finish_reason) ended = true;
+    if (choice && choice.finish_reason) { ended = true; reason = String(choice.finish_reason); }
     const part = readChunk(house, obj);
     if (!part) return;
     if (part.text) split.feed(part.text);
@@ -498,9 +516,9 @@ export async function readReply(house, res, { onText, onThinking, onProgress } =
   const late = splitThink(text);
   if (late.thinking) { text = late.text; thinking = [thinking, late.thinking].filter(Boolean).join('\n\n'); }
   if (onProgress) onProgress({ text, thinking });
-  if (midError) { const e = errorOf(midError); return { finish: 'error', error: e.message, status: e.status, midStream: true, text, thinking }; }
+  if (midError) { const e = errorOf(midError); return { finish: 'error', error: e.message, status: e.status, midStream: true, text, thinking, reason }; }
   if (!text && !thinking && !ended) return { finish: 'error', error: 'the answer stopped before anything came', status: 0, text: '', thinking: '' };
-  return { text, thinking, finish: cut ? 'length' : 'stop', thinkTokens: 0, hiddenThought: false, usage: countOf(usage) };
+  return { text, thinking, finish: cut ? 'length' : 'stop', thinkTokens: 0, hiddenThought: false, usage: countOf(usage), reason };
 }
 
 /* A service's own count of a request, in one shape: tokens in (with what was read

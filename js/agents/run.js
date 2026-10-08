@@ -19,7 +19,7 @@ import { pickConnection, FRONT } from './roster.js';
 import { callModel, streamModel, enqueue } from './call.js';
 import { parseDoc, brief, readNeed, stripNeed, resolveNeed, LEAD_SHORT, nameWorld, hasPlotEssential, DEFAULT_WORLD_TITLE } from '../doc/index.js';
 import { houseCommand, REGISTRY, isStoryCard, storyCardTask } from './router.js';
-import { parseEdits, stripEdits, stripThinking, ownWords, applyRun, hash, openFileAtEnd } from '../doc/edits.js';
+import { parseEdits, stripEdits, stripThinking, ownWords, applyRun, hash, openFileAtEnd, withoutThoughts, thoughtAtLineStart, insideFence, readFiles, findBlocks } from '../doc/edits.js';
 import { lint, lostSomething } from '../doc/lint.js';
 import { kindFor } from '../doc/kind.js';
 import { putEntries } from '../doc/entries.js';
@@ -138,14 +138,15 @@ export function helperId(name) {
 /* What the one he talks to wrote OUTSIDE its documents and blocks of changes:
  * where its helper calls, its searches and its new-world word are read — never
  * from inside a document it is writing (an instruction set may well mention a
- * helper). */
+ * helper), and never from inside a thought it wrote as a block (v2.5: a helper it
+ * only thought about calling is not called, and the thought is not its words). */
 function outsideBlocks(raw) {
   let t = stripEdits(String(raw || ''));
   /* a block of changes left open at the end (cut) is not words either */
   const lo = t.toLowerCase().replace(/<(\/?)docedits>/g, '<$1edits>');
   const at = lo.lastIndexOf('<edits>');
   if (at !== -1 && lo.indexOf('</edits>', at) === -1) t = t.slice(0, at);
-  return t;
+  return withoutThoughts(t).text;
 }
 const HELPER_TAG = /<helper\b([^>]*)>([\s\S]*?)<\/helper\s*>/gi;
 export function readHelpers(raw) {
@@ -191,14 +192,30 @@ const OPENERS = [
   { re: /<need>/i, close: /<\/need>/i, kind: 'need' },
   { re: /<new_world\s*\/?>/i, close: null, kind: 'new_world' },
 ];
-const OPENER_WORDS = ['edits', 'docedits', 'file', 'helper', 'search', 'need', 'new_world', 'audit'];
+const OPENER_WORDS = ['edits', 'docedits', 'file', 'helper', 'search', 'need', 'new_world', 'audit', 'think', 'thinking', 'reasoning'];
 function couldOpen(tail) {
   const w = tail.slice(1).toLowerCase();
   return OPENER_WORDS.some((x) => x.startsWith(w) || w.startsWith(x));
 }
+/* A THOUGHT AS IT STREAMS (v2.5; the rule is edits.js withoutThoughts): an opener at the
+ * start of a visible line, outside a code fence, holds what follows off the screen. One
+ * that began the reply streams to the thinking box as it comes (leading); one partway
+ * through goes there when it closes, and if it never closes it was words after all. */
+const THOUGHT_OPEN = /<(think|thinking|reasoning)>/gi;
 export function makeVisibleStream(emit, onBlock = () => {}) {
   let buf = '';
   let inside = null;
+  /* the words shown so far, to judge where a line starts and whether a fence is open */
+  let shown = '';
+  const say = (t) => { if (!t) return; shown += t; emit(t); };
+  const firstThought = () => {
+    const re = new RegExp(THOUGHT_OPEN.source, 'gi');
+    for (let m = re.exec(buf); m; m = re.exec(buf)) {
+      const before = shown + buf.slice(0, m.index);
+      if (thoughtAtLineStart(before) && !insideFence(before)) return m;
+    }
+    return null;
+  };
   const nameOf = (o, m) => {
     if (o.kind === 'file') return (m[1] || m[2] || m[3] || '').trim();
     if (o.kind === 'helper') { const at = /(?:name|for|to)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(m[1] || ''); return at ? (at[1] || at[2] || at[3] || '').trim() : ''; }
@@ -213,12 +230,12 @@ export function makeVisibleStream(emit, onBlock = () => {}) {
           const keep = Math.min(buf.length, 12);
           inside.body += buf.slice(0, buf.length - keep);
           buf = buf.slice(buf.length - keep);
-          onBlock(inside.kind, inside.name, inside.body, false);
+          onBlock(inside.kind, inside.name, inside.body, false, inside.leading);
           return;
         }
         inside.body += buf.slice(0, m.index);
         buf = buf.slice(m.index + m[0].length);
-        onBlock(inside.kind, inside.name, inside.body, true);
+        onBlock(inside.kind, inside.name, inside.body, true, inside.leading);
         inside = null;
         continue;
       }
@@ -227,8 +244,16 @@ export function makeVisibleStream(emit, onBlock = () => {}) {
         const m = o.re.exec(buf);
         if (m && (!best || m.index < best.m.index)) best = { o, m };
       }
+      const th = firstThought();
+      if (th && (!best || th.index < best.m.index)) {
+        if (th.index) say(buf.slice(0, th.index));
+        buf = buf.slice(th.index + th[0].length);
+        inside = { kind: 'think', close: new RegExp(`</${th[1]}\\s*>`, 'i'), name: th[1].toLowerCase(), open: th[0], body: '', leading: !shown.trim() };
+        onBlock('think', inside.name, '', false, inside.leading);
+        continue;
+      }
       if (best) {
-        if (best.m.index) emit(buf.slice(0, best.m.index));
+        if (best.m.index) say(buf.slice(0, best.m.index));
         buf = buf.slice(best.m.index + best.m[0].length);
         if (!best.o.close) { onBlock(best.o.kind, '', '', true); continue; }
         inside = { kind: best.o.kind, close: best.o.close, name: nameOf(best.o, best.m), body: '' };
@@ -237,20 +262,28 @@ export function makeVisibleStream(emit, onBlock = () => {}) {
       }
       const lt = buf.lastIndexOf('<');
       if (lt !== -1 && buf.indexOf('>', lt) === -1 && buf.length - lt < 200 && couldOpen(buf.slice(lt))) {
-        if (lt) emit(buf.slice(0, lt));
+        if (lt) say(buf.slice(0, lt));
         buf = buf.slice(lt);
         return;
       }
-      if (buf) emit(buf);
+      if (buf) say(buf);
       buf = '';
       return;
     }
   }
   /* the stream is over: a block left open is never shown; a held '<' that never
-   * became a tag is words after all */
+   * became a tag is words after all. A thought left open is the rest of the reply
+   * when it began it; partway through, it was words after all. */
   function end() {
-    if (inside) { inside = null; buf = ''; return; }
-    if (buf) emit(buf);
+    if (inside) {
+      const was = inside;
+      inside = null;
+      if (was.kind === 'think' && was.leading) onBlock('think', was.name, was.body + buf, true, true);
+      else if (was.kind === 'think') say(was.open + was.body + buf);
+      buf = '';
+      return;
+    }
+    if (buf) say(buf);
     buf = '';
   }
   return { feed, end, get hiding() { return Boolean(inside); } };
@@ -297,10 +330,14 @@ function docsOf(project) {
   return (project.docs || []).map((d) => ({ id: d.id, name: d.name, kind: d.kind || 'pe', text: d.text || '' }));
 }
 
-/* A worker reads every document whole when the world fits in this many
- * characters (about 30,000 tokens); past it, the index and the sections in
- * play, with <need> for the rest. */
-export const WHOLE_LIMIT = 120000;
+/* A helper reads every document whole when the world fits in this many
+ * characters; past it, the index and the sections in play, with <need> for the
+ * rest. The same limit as the one he talks to (v2.5): the eye's read-back is the
+ * second pass he asked for, and a world past 120,000 characters (a plot essential
+ * and its continuation files) reached it as an outline — a contradiction with a
+ * document it was not shown was one it could not see. A helper's model too small
+ * for it says so, and is given the outline instead (runWorker). */
+export const WHOLE_LIMIT = 400000;
 /* THE ONE HE TALKS TO READS EVERY DOCUMENT WHOLE up to this many characters
  * (about 100,000 tokens, beside his engine's 31,000): it answers about them and
  * changes them, and his models hold far more. A model too small for it says so,
@@ -666,6 +703,38 @@ export function endAtControlToken(text) {
   return m ? t.slice(0, m.index).trimEnd() : t;
 }
 
+/* A REPLY THAT RAN PAST ITS OWN END (v2.5; Cozy Tavern M469's class). A provider that
+ * lets a model run on past the end of its turn has it write the next turn too: the
+ * house's own label for his words on a line of its own ("Bruce said:"), the house's own
+ * note ("(From the house, not Bruce …"), or a role label with his message typed again.
+ * None of that is the reply, and kept, it goes back to the model as its own words, which
+ * teaches it to do it again. The reply ends where that begins; the words before stay. */
+function esc(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+export function endAtRunaway(text, { you = '', message = '' } = {}) {
+  const t = String(text || '');
+  const label = you ? `(?:${esc(you)} said:|What was just said to you:)` : 'What was just said to you:';
+  const marks = [new RegExp(`(?:^|\\n)[ \\t]*${label}[ \\t]*(?=\\n|$)`, 'g'), /(?:^|\n)[ \t]*\(From the house, not /g];
+  /* its first forty characters, never ending on a space (which would ask for one more) */
+  const said = String(message || '').replace(/\s+/g, ' ').trim().slice(0, 40).trim();
+  if (said.length >= 12) marks.push(new RegExp(`(?:^|\\n)[ \\t]*(?:Human|User${you ? `|${esc(you)}` : ''})[ \\t]*:[ \\t]*${esc(said).replace(/ /g, '\\s+')}`, 'gi'));
+  /* never inside a document it is writing, or a block of changes: a story's own line may
+   * read "Jovan said:" */
+  const norm = t.replace(/<(\/?)docedits>/gi, '<$1edits>');
+  const spans = readFiles(norm).spans.concat(findBlocks(norm, 'edits').map((b) => [b.from, b.to]));
+  const lo = norm.toLowerCase();
+  const openEdits = lo.lastIndexOf('<edits>');
+  if (openEdits !== -1 && lo.indexOf('</edits>', openEdits) === -1) spans.push([openEdits, norm.length]);
+  const inSpan = (i) => spans.some(([a, b]) => i >= a && i < b);
+  let at = -1;
+  for (const re of marks) {
+    for (const m of norm.matchAll(re)) { if (!inSpan(m.index)) { if (at === -1 || m.index < at) at = m.index; break; } }
+  }
+  /* only past words of its own: a reply that opens by echoing the house's form is left whole,
+   * never emptied */
+  if (at === -1 || !norm.slice(0, at).trim()) return t;
+  return norm.slice(0, at).trimEnd();
+}
+
 /* A turn for the one he talks to alone: "go on" after a reply that was cut off. */
 export const FRONT_ONLY = '__front__';
 
@@ -805,9 +874,39 @@ export function standingFor(past) {
   return lines.length ? `Changed earlier in this conversation, and standing now (newest first) \u2014 for reference, never to repeat as new:\n${lines.join('\n')}` : '';
 }
 
+/* HOW MUCH OF THE CONVERSATION THE ONE HE TALKS TO READS (v2.5). It does the
+ * building now, so it reads the whole talk: "it's built from everything you said".
+ * It used to read only the newest forty messages, without a word — a brainstorm
+ * longer than twenty exchanges reached "build it" without its start (the city's
+ * name from the first message never reached the one who built it). A number he
+ * sets is his; nothing set is all of it. A model too small for everything reads
+ * the newest six. Whatever is left out is said, never cut in silence. */
+export const SMALL_TALK = 6;
+export function talkWindow(house) {
+  const n = Number((house && house.settings || {}).talkWindow);
+  return Number.isFinite(n) && n > 0 ? Math.max(SMALL_TALK, Math.round(n)) : 0;
+}
+/* The newest messages the window holds, opening on his words: a reply whose message is
+ * left out goes with it (a conversation read from a reply to nothing reads wrong, and a
+ * provider takes no conversation that opens with one). Returns what is shown and how
+ * many messages came before it. */
+export function talkShown(past, keep) {
+  if (!keep || past.length <= keep) return { shown: past.slice(), left: 0 };
+  let from = past.length - keep;
+  while (from < past.length && past[from].role !== 'writer') from++;
+  return { shown: past.slice(from), left: from };
+}
 export function makerMessagesFor({ house, p, past, world, working = world, message = '', standing = '', houseNotes = [], small = false, asked = [], goOn = false, extra = [] }) {
-  const n = (house.settings || {}).turnsOnScreen || 40;
-  const earlier = (small ? past.slice(-6) : past.slice(-n)).map((t) => (t.role === 'writer' ? { role: 'user', content: t.text || '' } : { role: 'assistant', content: ownWords(t.text || '') }));
+  const { shown, left } = talkShown(past, small ? SMALL_TALK : talkWindow(house));
+  const earlier = shown.map((t) => (t.role === 'writer' ? { role: 'user', content: t.text || '' } : { role: 'assistant', content: ownWords(t.text || '') }));
+  /* NEVER A SILENT CUT, AND NEVER ABOVE THE TALK (v2.5). What was left out is said by
+   * the house in its own note with his message, after the talk \u2014 everything above the
+   * talk is the system's (his rule from SillyTavern): a note of the house's in the user's
+   * place above the history reads as his words. */
+  const him = (p && p.you) || 'the author';
+  const cutNote = left > 0
+    ? `(From the house, not ${him}: this conversation began ${left} message${left === 1 ? '' : 's'} ${shown.length ? 'before the earliest one above' : 'before this one'}${small ? ' \u2014 too many for this model to read' : ''}; ${left === 1 ? 'it is' : 'they are'} not shown. What was written into the documents from ${left === 1 ? 'it' : 'them'} is in the documents.)`
+    : '';
   /* ONE COPY OF THE DOCUMENTS, EVER (v2.2). Once a step has changed them, the copy in
    * his message is out of date: it is taken out, and the documents as they stand now
    * ride at the end of the house's latest note only — so a quote is never taken from
@@ -823,6 +922,7 @@ export function makerMessagesFor({ house, p, past, world, working = world, messa
     : m));
   const ask = [
     ...docsHere,
+    cutNote ? `\n${cutNote}` : '',
     standing ? `\n${standing}` : '',
     houseNotes.length ? `\n${houseNotes.join('\n\n')}` : '',
     /* his words under his name; with no name set, never "you said:" (it tells the
@@ -852,7 +952,8 @@ export async function readingFor({ house, project, history = [], message = '' })
  * on a document cut off partway is different: there it must see what it wrote.) */
 const WHOLE_FILE = /<file\s+(?:name|path)\s*=\s*(?:"[^"\n]*"|'[^'\n]*'|[^>\n]+?)\s*>[\s\S]*?<\/file\s*>/gi;
 export function asItWasSaid(raw) {
-  return String(raw || '').replace(WHOLE_FILE, '').replace(/\n{3,}/g, '\n\n').trim();
+  /* and without its thoughts (v2.5): what it reads again is what it said */
+  return withoutThoughts(String(raw || '').replace(WHOLE_FILE, '')).text.replace(/\n{3,}/g, '\n\n').trim();
 }
 
 /* What the house tells the one he talks to between steps — never in his voice. */
@@ -938,8 +1039,10 @@ export async function runTurn({
   const landed = new Set();
   let working = project;
   const startTexts = new Map(docs.map((d) => [d.name, d.text]));
-  const talk = conversationFor(past.concat([{ role: 'writer', text: message }]), p);
-  const buildTalk = conversationFor(past.concat([{ role: 'writer', text: message }]), p, BUILD_TALK);
+  /* what a helper reads of the talk: Go on is the house's note, never his words */
+  const talkTurns = goOn ? past : past.concat([{ role: 'writer', text: message }]);
+  const talk = conversationFor(talkTurns, p);
+  const buildTalk = conversationFor(talkTurns, p, BUILD_TALK);
 
   /* the house's own notes on his message, said before his words */
   const houseNotes = [];
@@ -984,6 +1087,10 @@ export async function runTurn({
      * no space of its own — the same words, spaced the same, as the reply kept */
     let started = false;
     let space = '';
+    /* its thinking, from either channel: the provider's own, or a thought it wrote as a block */
+    let thought = '';
+    let thoughtShown = 0;
+    const think = (t) => { thought += t; onThinking(t); };
     const show = (t) => { streamed += t; if (quiet) held += t; else onText(t); };
     const vis = makeVisibleStream((t) => {
       if (!t) return;
@@ -999,7 +1106,17 @@ export async function runTurn({
         show((/\n[ \t]*\n/.test(run) ? '\n\n' : run.replace(/[ \t]+\n/g, '\n')) + body.replace(/^\s+/, ''));
       }
       space = tail;
-    }, (kind, name, body, done) => {
+    }, (kind, name, body, done, leading) => {
+      /* a thought it wrote as a block goes to the thinking box: one that began the
+       * reply as it streams, one partway through when it closes (v2.5) */
+      if (kind === 'think') {
+        if (leading || done) {
+          const add = body.slice(thoughtShown);
+          if (add) think((thoughtShown === 0 && thought ? '\n\n' : '') + add);
+          thoughtShown = done ? 0 : body.length;
+        }
+        return;
+      }
       if (done) { status(''); return; }
       const words = (String(body || '').match(/\S+/g) || []).length;
       const label = kind === 'file' ? `writing ${name || 'a document'}` : kind === 'edits' ? 'writing the changes'
@@ -1008,8 +1125,6 @@ export async function runTurn({
     });
     if (!opening || small) opening = working;
     const messages = makerMessages(opening, extra);
-    let thought = '';
-    const think = (t) => { thought += t; onThinking(t); };
     let out = await streamModel(frontConn, { system: makerSystem, messages, onText: (t) => vis.feed(t), onThinking: think, signal, floor: MAKER_FLOOR,
       onSent: recorder(`the one you talk to \u2014 step ${n + 1}`, makerParts) });
     let raw = out.text || '';
@@ -1024,7 +1139,7 @@ export async function runTurn({
       out = { ...rest, text: raw };
     }
     vis.end();
-    return { raw: endAtControlToken(raw), thought, cut: Boolean(out.cut), cutBy: out.cutBy || (out.cut ? 'length' : '') };
+    return { raw: endAtRunaway(endAtControlToken(raw), { you: p.you, message: goOn ? '' : message }), thought, cut: Boolean(out.cut), cutBy: out.cutBy || (out.cut ? 'length' : ''), reason: out.reason || '' };
   };
 
   /* A HELPER, sent by the one he talks to: its own craft, the documents as they
@@ -1103,12 +1218,14 @@ export async function runTurn({
     /* found or unclear, with something said: it goes back to the one he talks to */
     return { verdict, clean: false, found: true, notes, at: Date.now() };
   };
+  /* the provider's own word for why its last answer stopped: an empty reply says it (v2.5) */
+  let lastReason = '';
   const fail = (error, isStop) => {
     const partial = isStop && !quiet ? streamed.replace(/^\s+/, '') : '';
     const said = partial ? (reply ? `${reply}\n\n${partial}` : partial) : reply;
     /* a failure after words were already said is still said: on a card, exactly */
     const told = !isStop && said ? [{ status: 'refused', name: '', reason: '', failure: true, why: `${plainFailure(error)} (${String(error).slice(0, 160)})` }] : [];
-    return { project: working, reply: said, thinking, cards: allCards.concat(pending, told), batches, crew, edits: turnEdits, asks, error: said && !isStop ? null : error, stopped: Boolean(isStop), sent, audit: audits.join('\n\n'), review };
+    return { project: working, reply: said, thinking, cards: allCards.concat(pending, told), batches, crew, edits: turnEdits, asks, error: said && !isStop ? null : error, stopped: Boolean(isStop), sent, audit: audits.join('\n\n'), review, reason: lastReason };
   };
 
   for (let n = 0; n < MAX_STEPS; n++) {
@@ -1125,6 +1242,7 @@ export async function runTurn({
       return fail(why, false);
     }
     if (got.thought) thinking = thinking ? `${thinking}\n\n${got.thought}` : got.thought;
+    lastReason = got.reason || '';
     const ownCheck = readAudit(got.raw);
     if (ownCheck) audits.push(ownCheck);
     /* the step is done: its words are counted below, never again as words in flight */
@@ -1213,8 +1331,9 @@ export async function runTurn({
 
     /* SEARCHING, when his switch is on: what it asked for is looked up */
     let foundText = '';
-    /* read outside its documents: an instruction set it writes may well say <search> */
-    const outside = stripEdits(raw);
+    /* read outside its documents (an instruction set it writes may well say <search>)
+     * and outside its thoughts */
+    const outside = withoutThoughts(stripEdits(raw)).text;
     const wants = searcher && lookups < MAX_SEARCHES ? readSearch(outside) : [];
     if (wants.length) {
       lookups += wants.length;
@@ -1282,7 +1401,7 @@ export async function runTurn({
   status('');
   if (stopped()) return fail('stopped', true);
   allCards.push(...pending);
-  const out = { project: working, reply, thinking, cards: allCards, batches, crew, edits: turnEdits, asks, error: null, sent, audit: audits.join('\n\n'), review };
+  const out = { project: working, reply, thinking, cards: allCards, batches, crew, edits: turnEdits, asks, error: null, sent, audit: audits.join('\n\n'), review, reason: lastReason };
   if (cut) { out.cut = true; out.cutBy = cut.cutBy; }
   return out;
 }
@@ -1298,7 +1417,7 @@ function sortCards(cards) {
     if (c.status !== 'refused') { placed.push(c); continue; }
     const why = c.why || '';
     if (/already in the document|only the spacing would change/.test(why)) continue;
-    if (/not in the document as written|appear \d+ times|leaves the words exactly as they were|did not say what to do|there is no document by that name|did not say which document|is not a worldbook|entry came with no name|came with no content|was not an entry|carried no entries|cannot be read as data right now|would have lost/.test(why)) back.push(c);
+    if (/not in the document as written|appear \d+ times|leaves the words exactly as they were|did not say what to do|there is no document by that name|did not say which document|is not a worldbook|entry came with no name|came with no content|was not an entry|carried no entries|cannot be read as data right now|would have lost|would have taken out/.test(why)) back.push(c);
     else placed.push(c);
   }
   return { placed, back };
@@ -1317,7 +1436,7 @@ function sortCards(cards) {
  * cards and the changes it made, never its undo payload, because a version
  * that is not shown has had its changes put back. */
 export function versionOf(t) {
-  return { text: t.text, thinking: t.thinking || '', thinkingMs: t.thinkingMs, cards: t.cards || [], edits: t.edits || [], asks: t.asks || [], cut: Boolean(t.cut), cutBy: t.cutBy || '', failed: Boolean(t.failed), at: t.at, batches: [], sent: t.sent || [], audit: t.audit || '', review: t.review || null, context: t.context || null };
+  return { text: t.text, note: t.note || '', thinking: t.thinking || '', thinkingMs: t.thinkingMs, cards: t.cards || [], edits: t.edits || [], asks: t.asks || [], cut: Boolean(t.cut), cutBy: t.cutBy || '', failed: Boolean(t.failed), at: t.at, batches: [], sent: t.sent || [], audit: t.audit || '', review: t.review || null, context: t.context || null };
 }
 
 export function landTurn(world, { chatId, snapshot, result, makerTurn, replaceAt = null }) {
@@ -1433,7 +1552,9 @@ function short(s) {
 /* Put a worker's changes into the documents, guarding against a rewrite that
  * quietly loses things. A full rebuild that comes back with fewer characters,
  * fewer events or fewer bonds than it started with is not a rebuild; it is a
- * loss, and it is refused before it lands. */
+ * loss, and it is refused before it lands. A surgical change quotes exactly what
+ * it takes out, so it is held only to what no change may take out (v2.5: "*delete
+ * Aldric", an approved #prune, two events merged were all refused as losses). */
 export function commit(project, edits, label, maker = null) {
   if (!edits || !edits.length) return { project, cards: [], batch: null, guard: null };
   const docs = docsOf(project);
@@ -1445,9 +1566,12 @@ export function commit(project, edits, label, maker = null) {
     const was = before.get(name);
     if (!was) continue;
     if ((run.cleared || []).includes(name)) continue;   /* he asked for it emptied: that is not a loss */
-    const lost = lostSomething(was.text, text, was.kind);
+    const rebuilt = Boolean(run.whole && run.whole.has(name));
+    const lost = lostSomething(was.text, text, was.kind, { whole: rebuilt });
     if (lost) {
-      guard = `a rewrite of ${name} would have lost ${lost}, so it was not allowed through`;
+      guard = rebuilt
+        ? `a rewrite of ${name} would have lost ${lost}, so it was not allowed through \u2014 taking something out on purpose is done by quoting exactly what goes`
+        : `a change to ${name} would have taken out ${lost}, so it was not allowed through`;
       run.texts.set(name, was.text);
       for (const c of run.cards) if (c.name === name && c.status === 'applied') { c.status = 'refused'; c.why = guard; }
     }
@@ -1521,6 +1645,23 @@ export function capUndo(project, keep = UNDO_KEPT) {
     trimmed = true;
   }
   return trimmed;
+}
+
+/* WHY A REPLY CAME BACK WITH NO WORDS, IN THE PROVIDER'S OWN WORD (v2.5; Cozy Tavern
+ * M545). Every empty reply said "no words came back", though the provider says why it
+ * stopped: out of room (the thinking spent it all), blocked by its filter, an answer
+ * that ended with nothing in it, or a line that closed with no reason at all. Said to
+ * him, never to the one he talks to; never asked for again by itself — Try again is his. */
+export function emptyReplyWhy({ reason = '', thought = false } = {}) {
+  const why = String(reason || '').trim();
+  if (/max_tokens|length/i.test(why)) {
+    return thought
+      ? 'it thought until it ran out of room, and none was left for the reply \u2014 a larger Longest reply on this connection, or less thinking, gives it room'
+      : 'the provider stopped it for length before any words came \u2014 a larger Longest reply on this connection gives it room';
+  }
+  if (/content_filter|safety|block|prohibited|refus|recitation|spii|policy/i.test(why)) return `the provider blocked it${thought ? ' after its thinking' : ''} (its reason: ${why})`;
+  if (why) return `${thought ? 'it finished thinking and the provider' : 'the provider'} ended the answer with no words in it (its reason: ${why})`;
+  return `the connection closed${thought ? ' after its thinking' : ''} before any words came \u2014 the provider gave no reason`;
 }
 
 /* A failure, in words the front can say as itself: no role names, no status

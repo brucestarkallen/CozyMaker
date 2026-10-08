@@ -3,7 +3,7 @@
  * place looks. */
 
 import * as store from '../store.js';
-import { $, el, openSheet, toast, applyTheme, redraw, field, input, select, group, fold, downloadText, copyText } from './kit.js';
+import { $, el, openSheet, closeSheet, toast, applyTheme, redraw, field, input, select, group, fold, downloadText, copyText } from './kit.js';
 import { WORKERS, FRONT } from '../agents/roster.js';
 import { personaOf, unfilledMacros } from '../agents/persona.js';
 import { testConnection, listModels } from '../agents/call.js';
@@ -35,22 +35,65 @@ const THINKING = [
   ['max', 'Max'],
 ];
 
-export function openHouse() {
+/* THE HOUSE FOLDS (v2.5; Cozy Tavern M468, his ask there: "so many opened subsections
+ * make my head hurt"). Every section folds to its name; the first is open the first
+ * time; what he opens and shuts is remembered in this browser; a way in that points at
+ * one section (Set up a connection first) opens it for that visit only. */
+const FOLDS_KEY = 'cozymaker:houseOpen';
+const FIRST_OPEN = ['who'];
+function openSections() {
+  try { const v = JSON.parse(localStorage.getItem(FOLDS_KEY) || 'null'); if (Array.isArray(v)) return new Set(v); } catch (_) { /* a browser that keeps nothing */ }
+  return new Set(FIRST_OPEN);
+}
+function keepSections(set) { try { localStorage.setItem(FOLDS_KEY, JSON.stringify([...set])); } catch (_) { /* kept for this visit only */ } }
+let visitOpen = new Set();
+function foldable(g, key) {
+  const head = g.querySelector(':scope > h3');
+  if (!head) return g;
+  const title = head.textContent;
+  const button = el('button', 'section-head', title);
+  button.type = 'button';
+  head.textContent = '';
+  head.append(button);
+  const inner = el('div', 'section-body');
+  for (const n of [...g.childNodes]) if (n !== head) inner.append(n);
+  g.append(inner);
+  g.dataset.section = key;
+  const show = (open) => { inner.hidden = !open; button.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+  show(openSections().has(key) || visitOpen.has(key));
+  button.addEventListener('click', () => {
+    const open = inner.hidden;
+    show(open);
+    const kept = openSections();
+    if (open) kept.add(key); else { kept.delete(key); visitOpen.delete(key); }
+    keepSections(kept);
+  });
+  return g;
+}
+
+export function openHouse({ open = '' } = {}) {
+  visitOpen = new Set(open ? [open] : []);
   draw();
   openSheet('houseSheet');
+  if (open) {
+    const g = $('houseBody').querySelector(`[data-section="${open}"]`);
+    if (g) setTimeout(() => g.scrollIntoView({ block: 'start' }), 0);
+  }
 }
 
 function draw() {
   const house = store.getHouse();
   const body = $('houseBody');
   body.innerHTML = '';
-  body.append(whoSection(house));
-  body.append(connectionsSection(house));
-  body.append(crewSection(house));
-  body.append(searchSection(house));
-  body.append(shortcutsSection(house));
-  body.append(lookSection(house));
-  body.append(underTheFloorSection());
+  /* with no connection yet, that is where to begin: open, for this visit */
+  if (!(house.connections || []).length) visitOpen.add('connections');
+  body.append(foldable(whoSection(house), 'who'));
+  body.append(foldable(connectionsSection(house), 'connections'));
+  body.append(foldable(crewSection(house), 'crew'));
+  body.append(foldable(searchSection(house), 'search'));
+  body.append(foldable(shortcutsSection(house), 'shortcuts'));
+  body.append(foldable(lookSection(house), 'look'));
+  body.append(foldable(underTheFloorSection(), 'floor'));
   body.append(versionLine());
 }
 
@@ -242,7 +285,12 @@ function connectionsSection(house) {
       const out = await testConnection(c);
       test.textContent = 'Try it';
       test.disabled = false;
-      c.tested = { at: Date.now(), words: out.words, ok: out.ok, thinks: Boolean(out.thinks) };
+      /* kept on the connection as the house holds it NOW \u2014 the house may have been put
+       * together with another window's while it was tried (v2.5) */
+      const tested = { at: Date.now(), words: out.words, ok: out.ok, thinks: Boolean(out.thinks) };
+      c.tested = tested;
+      const live = (store.getHouse().connections || []).find((x) => x.id === c.id);
+      if (live) live.tested = tested;
       result.textContent = `Last tried just now: ${out.words}`;
       result.hidden = false;
       toast(out.words.split(' \u2014 ')[0].slice(0, 90));
@@ -311,9 +359,10 @@ function hostOf(url) {
 }
 
 function editConnection(id) {
-  const house = store.getHouse();
-  const existing = house.connections.find((c) => c.id === id);
-  const c = existing || {
+  const existing = store.getHouse().connections.find((x) => x.id === id);
+  /* what this form was opened on: its boxes start from it, and Save finds the
+   * connection again by its id */
+  const draft = existing ? { ...existing } : {
     id: 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
     name: '', url: '', model: '', key: '',
   };
@@ -322,17 +371,17 @@ function editConnection(id) {
   body.innerHTML = '';
   const g = group(existing ? 'This connection' : 'A new connection', '');
 
-  const name = input(c.name, 'What to call it');
-  const url = input(c.url, 'https://api.deepseek.com');
-  const model = input(c.model, 'deepseek-chat');
-  const key = input(c.key, 'the key', 'password');
-  const temp = input(c.temperature, 'leave empty for the provider\'s own', 'number');
+  const name = input(draft.name, 'What to call it');
+  const url = input(draft.url, 'https://api.deepseek.com');
+  const model = input(draft.model, 'deepseek-chat');
+  const key = input(draft.key, 'the key', 'password');
+  const temp = input(draft.temperature, 'leave empty for the provider\'s own', 'number');
   temp.step = '0.05';
-  const topP = input(c.topP, 'leave empty for the provider\'s own', 'number');
+  const topP = input(draft.topP, 'leave empty for the provider\'s own', 'number');
   topP.step = '0.05';
-  const maxTok = input(c.maxTokens, 'leave empty for the provider\'s own', 'number');
-  const thinking = select(THINKING, c.thinking === undefined || c.thinking === null ? '' : String(c.thinking));
-  const budget = input(c.thinkingBudget, '4000', 'number');
+  const maxTok = input(draft.maxTokens, 'leave empty for the provider\'s own', 'number');
+  const thinking = select(THINKING, draft.thinking === undefined || draft.thinking === null ? '' : String(draft.thinking));
+  const budget = input(draft.thinkingBudget, '4000', 'number');
 
   g.append(field('Name', name));
   g.append(field('Address', url));
@@ -341,7 +390,7 @@ function editConnection(id) {
    * a model is kept with what it is — the weights behind an alias, the levels
    * of thinking it takes — so thinking is spoken to it right without guessing. */
   let offered = [];
-  let picked = c.modelHf || c.modelEfforts ? { id: c.model, hf: c.modelHf || '', efforts: c.modelEfforts || null } : null;
+  let picked = draft.modelHf || draft.modelEfforts ? { id: draft.model, hf: draft.modelHf || '', efforts: draft.modelEfforts || null } : null;
   const listBtn = el('button', 'btn quiet small', 'Show the models on offer');
   const pick = document.createElement('select');
   pick.hidden = true;
@@ -351,7 +400,7 @@ function editConnection(id) {
     listBtn.disabled = true;
     listNote.hidden = false;
     listNote.textContent = 'Asking what\u2019s on offer\u2026';
-    const r = await listModels({ ...c, url: url.value.trim(), key: key.value.trim(), model: model.value.trim() });
+    const r = await listModels({ ...draft, url: url.value.trim(), key: key.value.trim(), model: model.value.trim() });
     listBtn.disabled = false;
     if (!r.ok) { listNote.textContent = `The list did not come: ${r.error}. The model name above still stands.`; return; }
     if (!r.models.length) { listNote.textContent = 'The list came back empty \u2014 the model name above still stands.'; return; }
@@ -383,6 +432,13 @@ function editConnection(id) {
   const row = el('div', 'btnrow');
   const saveBtn = el('button', 'btn', 'Save');
   saveBtn.addEventListener('click', async () => {
+    /* THE CONNECTION AS THE HOUSE HOLDS IT NOW (v2.5). The house is put together with
+     * another window's when both saved, and comes back new when this window returns to
+     * the front; the copy this form was opened on may no longer be in it, and a change
+     * written there was saved nowhere — "Saved." over nothing. It is found again by its
+     * id; a new one, or one removed meanwhile, goes in as this form has it. */
+    const house = store.getHouse();
+    const c = house.connections.find((x) => x.id === draft.id) || draft;
     /* what the last "Try it" said was said of this address, this model, this
      * key, this thinking — change any of them and it no longer describes this
      * connection, so it goes rather than stand there looking current */
@@ -403,7 +459,7 @@ function editConnection(id) {
     if (thinking.value === '') delete c.thinking; else c.thinking = thinking.value;
     setNumberOrDrop(c, 'thinkingBudget', budget.value);
     if (tried() !== before) delete c.tested;
-    if (!existing) house.connections.push(c);
+    if (!house.connections.includes(c)) house.connections.push(c);
     if (!house.agentConnections[FRONT]) house.agentConnections[FRONT] = c.id;
     await store.saveHouse(house);
     draw();
@@ -415,12 +471,14 @@ function editConnection(id) {
   if (existing) {
     const del = el('button', 'btn danger', 'Remove');
     del.addEventListener('click', async () => {
-      /* like every other delete here, it asks first — and this one keeps no copy:
-       * keys are never put in a backup, so the key goes with it */
-      if (!confirm(`Remove the connection \u201c${c.name || c.model || 'unnamed'}\u201d? Its key goes with it \u2014 keys are never kept in a backup.`)) return;
-      house.connections = house.connections.filter((x) => x.id !== c.id);
+      /* like every other delete here, it asks first — and this one keeps no copy on
+       * this phone: only a file saved with Save everything to a file still holds it */
+      if (!confirm(`Remove the connection \u201c${draft.name || draft.model || 'unnamed'}\u201d? Its key goes with it \u2014 only a file saved with Save everything to a file still holds it.`)) return;
+      /* the house as it is now, the connection by its id (the form's copy may be gone from it) */
+      const house = store.getHouse();
+      house.connections = house.connections.filter((x) => x.id !== draft.id);
       for (const k of Object.keys(house.agentConnections)) {
-        if (house.agentConnections[k] === c.id) delete house.agentConnections[k];
+        if (house.agentConnections[k] === draft.id) delete house.agentConnections[k];
       }
       await store.saveHouse(house);
       draw();
@@ -566,9 +624,23 @@ function lookSection(house) {
   theme.addEventListener('change', () => save('theme', theme.value));
   g.append(field('Coat of paint', theme));
 
-  const turns = input(house.settings.turnsOnScreen || 40, '40', 'number');
-  turns.addEventListener('change', () => save('turnsOnScreen', Math.max(6, Number(turns.value) || 40)));
+  /* empty is all of it (v2.5): the one he talks to builds from everything he said */
+  const turns = input(house.settings.talkWindow || '', 'all of it', 'number');
+  turns.addEventListener('change', () => {
+    const n = Number(turns.value);
+    if (!String(turns.value).trim() || !Number.isFinite(n) || n <= 0) {
+      const h = store.getHouse();
+      delete h.settings.talkWindow;
+      turns.value = '';
+      store.saveHouse(h).then(redraw);
+      return;
+    }
+    const kept = Math.max(6, Math.round(n));
+    turns.value = String(kept);
+    save('talkWindow', kept);
+  });
   g.append(field('How much of the conversation they are given each time', turns));
+  g.append(el('p', 'hint', 'Empty: all of it, every time \u2014 what they build is built from everything you said. A number: only that many of the newest messages, and they are told the rest is not shown.'));
 
   /* SMOOTH STREAMING (SillyTavern's name for it). A provider sends words in
    * clumps; on, a clump flows in over the next moment instead of landing at once,
@@ -610,7 +682,7 @@ function underTheFloorSection() {
   g.append(details);
 
   /* everything in one file, and back again by adding only */
-  const keep = group('Everything, in one file', 'Every world with its documents and conversations, and how you set the house up \u2014 their instructions, the names, your settings and your own crafts. Not your connections or keys \u2014 those stay on this device. Bringing a file back only ever adds: worlds come back beside yours, and a setting comes back only where this house has none.');
+  const keep = group('Everything, in one file', 'Every world with its documents and conversations, and how you set the house up \u2014 their instructions, the names, your settings, your own crafts, and your connections with their keys, so a new phone needs nothing typed in again. Keep the file somewhere only you can reach. Bringing a file back only ever adds: worlds come back beside yours, a connection comes back only if this house does not have it, and a setting only where this house has none. What was sent stays on the phone that made it.');
   const krow = el('div', 'btnrow');
   const out = el('button', 'btn quiet', 'Save everything to a file');
   out.addEventListener('click', async () => {
@@ -642,6 +714,59 @@ function underTheFloorSection() {
   krow.append(out, inn, file);
   keep.append(krow);
   g.append(keep);
+  g.append(earlierCopies());
 
   return g;
+}
+
+/* EARLIER COPIES ON THIS DEVICE (v2.5). Every save keeps the copy before it — the newest
+ * eight, the newest of each hour for two days, of each day for a month — and a world he
+ * deletes keeps its last one. The delete questions said "a copy stays on the device", and
+ * the only way to it was Termux. Here each world's copies are listed, newest first, and
+ * any one comes back as a world of its own beside what is here. */
+function earlierCopies() {
+  const box = group('Earlier copies on this device', 'Every save keeps the copy before it, and a world you delete keeps its last one. Any copy comes back as a world of its own, beside what is here \u2014 nothing here is replaced.');
+  const list = el('div', 'copies');
+  const show = el('button', 'btn quiet', 'Show the earlier copies');
+  show.addEventListener('click', async () => {
+    show.disabled = true;
+    list.textContent = 'Reading what the device keeps\u2026';
+    let worlds = [];
+    try { worlds = (await (await fetch('/api/copies', { cache: 'no-store' })).json()).worlds || []; }
+    catch (_) { list.textContent = 'The little server did not answer, so the copies could not be read.'; show.disabled = false; return; }
+    list.textContent = '';
+    if (!worlds.length) list.append(el('p', 'hint', 'There are no earlier copies yet \u2014 they are kept as you work.'));
+    for (const w of worlds) {
+      const rows = el('div', 'copy-rows');
+      for (const c of w.copies) {
+        const when = new Date(c.at).toLocaleString();
+        const row = el('div', 'row');
+        const grow = el('div', 'grow');
+        grow.append(el('b', '', when), el('small', '', `${Math.max(1, Math.round(c.size / 1024)).toLocaleString()} KB, packed`));
+        const back = el('button', 'btn quiet small', 'Bring this copy back');
+        back.addEventListener('click', async () => {
+          back.disabled = true;
+          try {
+            const res = await fetch('/api/copies/' + encodeURIComponent(c.file), { cache: 'no-store' });
+            if (!res.ok) throw new Error('the copy could not be read');
+            const made = await store.restoreCopy(await res.json(), when);
+            await store.flush();
+            await store.openProject(made.id);
+            redraw();
+            closeSheet('houseSheet');
+            toast(`\u201c${made.title}\u201d is back, beside the rest \u2014 you are in it now.`);
+          } catch (e) { back.disabled = false; toast('That copy could not be brought back: ' + ((e && e.message) || e)); }
+        });
+        row.append(grow, back);
+        rows.append(row);
+      }
+      const newest = new Date(w.copies[0].at).toLocaleString();
+      list.append(fold(`${w.title}${w.here ? '' : ' (deleted)'} \u2014 ${w.copies.length} cop${w.copies.length === 1 ? 'y' : 'ies'}, the newest ${newest}`, rows, { className: 'fold copy-fold' }));
+    }
+    show.disabled = false;
+  });
+  const row = el('div', 'btnrow');
+  row.append(show);
+  box.append(row, list);
+  return box;
 }

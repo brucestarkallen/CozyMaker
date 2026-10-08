@@ -39,3 +39,22 @@ was read; a finding is **fixed** only with a law in the suites that fails on the
 | css/cozy.css | 455 | done | **fixed** (v1.6.3) — in the tavern-at-night coat the reply carries a shadow so it reads over the drawn scene (measured 17.0:1); the thinking did not, and since v1.6.0 it streams open at the bottom of the screen over the scene's brightest part — it carries the same shadow now (its own contrast is not separately measured) |
 
 **Every file is read whole.** Fixed across the audit: 4 in v1.6.1, 6 in v1.6.2, 4 in v1.6.3 — each held by a law that fails on the version before it, but the tavern coat's thinking shadow, which has no measurement of its own.
+
+## v2.5.0 — the last audit before his subscription ended (8 Oct 2026)
+
+Every file under `js/`, `serve.py`, `cozymaker.sh`, `install.sh`, `index.html`, `sw.js` and the css was read
+whole again, with the engine's 7.4, 7.6, 7.7 and 8.2 beside them. Each suspicion was proven with a probe on the
+real code first; each finding is fixed at its cause and held by a check that fails on 2.4.1 (AGENTS.md, v2.5.0).
+
+| file | what was found |
+|---|---|
+| js/doc/lint.js | **fixed** — every change was counted like a rebuild, so `*delete`, an approved `#prune`, merged events and an ended bond were refused as losses; **fixed** — a story line opening "Unresolved…" was taken for a chore marker and deleted with its heading |
+| js/doc/edits.js | **fixed** — a thought written mid-reply, or as `<thinking>`/`<reasoning>`, was kept as words (one rule now: `withoutThoughts`) |
+| js/agents/run.js | **fixed** — the talk cut to the newest 40 in silence; a thought block's helper call was made; a reply that ran on was kept; helpers read an outline past 120k; Go on reached a helper as his words; an empty reply had no reason |
+| js/agents/call.js | **fixed** — the provider's stop reason was dropped; an Anthropic `max_tokens` on a whole answer was not a cut; the request record walked everything through JSON again |
+| js/providers.js | **fixed** — an Anthropic-shaped address paid a refused call for the note at the end |
+| js/store.js, serve.py | **fixed** — two windows wrote over each other's whole world; a page that fell behind never caught up; any web page could reach `/api/`; the backup left out the connections; earlier copies were unreachable |
+| js/ui/app.js | **fixed** — a reply with changes and no words was a failure; typed words lost when a send could not go; the context line stale when scrolled up; "1m 60s"; his message deleted without its answer; updates needed a reload |
+| js/ui/docs.js | **fixed** — the open document went stale under a turn and the next key wrote the old words back |
+| js/ui/settings.js | **fixed** — the house was one long page; the conversation window showed the server's 40 as his |
+| js/merge.js | new — two copies of a world put together |

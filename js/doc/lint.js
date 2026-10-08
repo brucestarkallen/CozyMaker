@@ -27,10 +27,18 @@ import { parseWorldbook } from './worldbook.js';
  * (7.4), a template says [TITLE], and his own document may mark [FLASHBACK] or
  * [SECRET]. The first version removed every capitalised tag, [HIDDEN] with it. */
 const ALERT_TAG = /\[[A-Z][A-Z0-9]*_[A-Z0-9_]+\]/g;
+/* THE CRAFT'S OWN CHORE MARKERS, AND ONLY THEM (8.2: never "UNRESOLVED" or "TBD" or
+ * "needs verification" in a deliverable). The first reading took any line opening with
+ * the word, in any case, so a story line the turn wrote — "Unresolved tension between
+ * the brothers simmers…" — was deleted as a note, and its heading after it as empty
+ * (v2.5). A marker is the word in capitals, TBD, "needs verification", or "Unresolved"
+ * used as a label with its colon. */
 const CHORE_LINES = [
-  /^\s*add to NEW CHARACTERS\s*$/gim,
-  /^\s*(UNRESOLVED|TBD|needs verification)\s*:?.*$/gim,
-  /^\s*Step \d+ found.*$/gim,
+  /^[ \t]*add to NEW CHARACTERS[ \t]*$/gim,
+  /^[ \t]*(?:UNRESOLVED|TBD)\b.*$/gm,
+  /^[ \t]*(?:tbd|unresolved)[ \t]*:.*$/gim,
+  /^[ \t]*needs verification\b.*$/gim,
+  /^[ \t]*Step \d+ found.*$/gim,
 ];
 const EVENT_LINE = /^(\s*)(e\d{3,})(\s*[-–]\s*(\d{3,}))?\s*(\[[^\]]*\])?/;
 /* A FULL DATE-TIME, IN THE CRAFT'S OWN SHAPE (3.1, Temporal Standard: "Every
@@ -135,8 +143,17 @@ export function anchorsOf(text, kind = 'pe') {
   return (ANCHORS[kind] || []).filter(([, re]) => re.test(src)).map(([name]) => name);
 }
 
-/* Did this write lose something it should not have? Returns null when fine. */
-export function lostSomething(beforeText, afterText, kind = 'pe') {
+/* Did this write lose something it should not have? Returns null when fine.
+ *
+ * WHOLE OR SURGICAL (v2.5). The counts — people, events, bonds, worldbook entries —
+ * guard a document REBUILT whole, where a model that forgets a dossier loses it without
+ * a word; that is the accident this guard exists for. A surgical change names, word for
+ * word, the very text it takes out: "*delete Aldric", a #prune he approved, two events
+ * merged into a range, a bond that ended. Counted like a rebuild, every one of them was
+ * refused as a loss, and *delete — a command his engine and the Shortcuts promise — could
+ * never land. A surgical change is held only to what no change may ever take out: the
+ * parts the craft requires (anchorsOf) and a transplant's markers. */
+export function lostSomething(beforeText, afterText, kind = 'pe', { whole = true } = {}) {
   /* A TRANSPLANT LOSES DATA THROUGH ITS MARKERS. Its importer reads markers
    * exactly and silently drops what a broken one holds, so a change that
    * leaves more broken markers than it found is a loss, whatever it deleted
@@ -148,12 +165,14 @@ export function lostSomething(beforeText, afterText, kind = 'pe') {
   }
   /* instructions and notes have no shape code can count */
   if (kind === 'instructions' || kind === 'notes') return null;
-  const a = countOf(beforeText, kind);
-  const b = countOf(afterText, kind);
   const lost = [];
-  for (const key of Object.keys(a)) {
-    if (a[key] < 0 || b[key] < 0) continue;
-    if (b[key] < a[key]) lost.push(`${a[key] - b[key]} ${key}`);
+  if (whole) {
+    const a = countOf(beforeText, kind);
+    const b = countOf(afterText, kind);
+    for (const key of Object.keys(a)) {
+      if (a[key] < 0 || b[key] < 0) continue;
+      if (b[key] < a[key]) lost.push(`${a[key] - b[key]} ${key}`);
+    }
   }
   const kept = new Set(anchorsOf(afterText, kind));
   for (const name of anchorsOf(beforeText, kind)) if (!kept.has(name)) lost.push(name);

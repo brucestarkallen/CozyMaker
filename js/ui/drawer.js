@@ -87,7 +87,7 @@ export async function draw() {
       }],
       ['Delete', async () => {
         if (busyElsewhere()) return toast('Still working — this can go when it is done.');
-        if (!confirm(`Delete "${w.title}" — every document and conversation in it? A copy stays in the backups folder on the device.`)) return;
+        if (!confirm(`Delete "${w.title}" — every document and conversation in it? Its last copy stays on the device, and The house → Under the floor → Earlier copies brings it back.`)) return;
         await store.deleteProject(w.id);
         if (!store.getProject()) {
           const left = (await store.listProjects()).sort((a, b) => (b.updated || 0) - (a.updated || 0));
@@ -142,7 +142,7 @@ function openWorldParts(world) {
         await store.renameChat(c.id, t.trim()); redraw(); draw();
       }],
       ['Delete', async () => {
-        if (!confirm(`Delete the conversation "${c.title}"? The documents stay exactly as they are — only the talk goes. A copy stays in the backups folder on the device.`)) return;
+        if (!confirm(`Delete the conversation "${c.title}"? The documents stay exactly as they are — only the talk goes. The world's earlier copies on the device still hold it (The house → Under the floor → Earlier copies).`)) return;
         await store.deleteChat(c.id); redraw(); draw();
       }],
     ]));

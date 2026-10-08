@@ -14,6 +14,7 @@
  */
 
 import { nameWorld, DEFAULT_WORLD_TITLE } from './doc/index.js';
+import { mergeWorlds, merge3 } from './merge.js';
 
 const SAVE_AFTER_MS = 900;
 
@@ -44,8 +45,21 @@ function inLine(step) {
 }
 
 export function watch(fn) { watchers.add(fn); return () => watchers.delete(fn); }
-function tell() { for (const fn of watchers) { try { fn({ house, project, trouble }); } catch (_) {} } }
+function tell(extra = {}) { for (const fn of watchers) { try { fn({ house, project, trouble, ...extra }); } catch (_) {} } }
+
+/* THE COPY ON THE DEVICE, AS THIS PAGE LAST KNEW IT (v2.5): per world, and for the house,
+ * its stamp and its words. A save names the stamp (X-CozyMaker-Base); the device refuses
+ * one made from an older copy and hands back its own, and the two are put together from
+ * this one (merge.js) — so a tab that fell behind never writes over newer work. */
+const bases = new Map();
+let houseBase = null;
+/* worlds deleted in another window: never saved again from this one */
+const goneIds = new Set();
+function knowWorld(id, at, json) { bases.set(id, { at: Number(at) || 0, json }); }
+function baseHeader(base) { return base ? { 'X-CozyMaker-Base': String(base.at) } : {}; }
 export function saveTrouble() { return trouble; }
+/* anything of this page's not yet on the device */
+export function hasUnsaved() { return dirty || pending.size > 0; }
 export function unsavedWorlds() { return [...pending.keys()]; }
 
 async function api(path, opts) {
@@ -53,6 +67,8 @@ async function api(path, opts) {
   if (!res.ok) {
     const e = new Error(`${path} came back ${res.status}`);
     e.status = res.status;
+    /* what the device said with it: a refused save carries the newer copy */
+    try { e.body = await res.json(); } catch (_) { e.body = null; }
     throw e;
   }
   return res.json();
@@ -62,6 +78,7 @@ async function api(path, opts) {
 
 export async function loadHouse() {
   house = await api('/api/house');
+  houseBase = { at: Number(house.updated) || 0, json: JSON.stringify(house) };
   house.settings = house.settings || {};
   house.connections = house.connections || [];
   house.agentConnections = house.agentConnections || {};
@@ -72,8 +89,28 @@ export async function loadHouse() {
   for (const c of house.connections) {
     if (c.thinking === 'minimal') { c.thinking = 'low'; repaired = true; }
   }
+  /* THE CONVERSATION WINDOW IS HIS, UNDER A NAME OF ITS OWN (v2.5). The server wrote
+   * "turnsOnScreen": 40 into every house, and the box showed 40 whether or not he had
+   * set it; read as his, it cut a long brainstorm's start out of what the builder reads.
+   * The old name is read once and goes: a number other than that default was his and
+   * moves to the new name; the default goes, and nothing set is the whole conversation.
+   * A 40 he sets from now on is kept under the new name, and stays. */
+  if (moveTalkWindow(house.settings)) repaired = true;
   if (repaired) await saveHouse(house);
   return house;
+}
+
+/* the old name's number, as the new name holds it — or nothing, for the old default */
+function oldTalkWindow(v) {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 && n !== 40 ? Math.max(6, Math.round(n)) : undefined;
+}
+function moveTalkWindow(settings) {
+  if (!settings || !Object.prototype.hasOwnProperty.call(settings, 'turnsOnScreen')) return false;
+  const his = oldTalkWindow(settings.turnsOnScreen);
+  if (settings.talkWindow === undefined && his !== undefined) settings.talkWindow = his;
+  delete settings.turnsOnScreen;
+  return true;
 }
 
 export function getHouse() { return house; }
@@ -84,16 +121,41 @@ export function getHouse() { return house; }
  * Each save waits for the one before it and is written from the house as it
  * is when it goes, so the last to land is always the newest. */
 let houseLine = Promise.resolve();
+/* the house, put in place: every part of the app holds this one object, so it is
+ * filled again rather than replaced */
+function adoptHouse(next) {
+  for (const k of Object.keys(house)) delete house[k];
+  Object.assign(house, next);
+  house.settings = house.settings || {};
+  house.connections = house.connections || [];
+  house.agentConnections = house.agentConnections || {};
+}
 export function saveHouse(next) {
-  house = next || house;
+  if (next && next !== house) { if (house) adoptHouse(next); else house = next; }
   const step = houseLine.catch(() => {}).then(async () => {
-    await api('/api/house', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(house),
-    });
-    tell();
-    return house;
+    for (let tries = 0; ; tries++) {
+      const body = JSON.stringify(house);
+      try {
+        const r = await api('/api/house', { method: 'PUT', headers: { 'Content-Type': 'application/json', ...baseHeader(houseBase) }, body });
+        houseBase = { at: Number(r.updated) || 0, json: body };
+        house.updated = houseBase.at;
+        tell();
+        return house;
+      } catch (e) {
+        /* the house was saved from another page since this one read it: the two are put
+         * together, this page's change on top, and saved again */
+        if (e.status === 409 && e.body && e.body.house && tries < 4) {
+          const remote = e.body.house;
+          /* this page's side is the house as it is NOW: a change made while the refused
+           * save was on its way is in it, and is not lost to the merge */
+          const merged = merge3(houseBase ? JSON.parse(houseBase.json) : {}, JSON.parse(JSON.stringify(house)), remote);
+          houseBase = { at: Number(remote.updated) || 0, json: JSON.stringify(remote) };
+          adoptHouse(merged);
+          continue;
+        }
+        throw e;
+      }
+    }
   });
   houseLine = step;
   return step;
@@ -166,8 +228,11 @@ export async function openProject(id) {
    * what the device holds, so the world opens from it. And no write already
    * queued may land after this read and leave the screen behind it. */
   await saving;
-  const raw = pending.has(id) ? JSON.parse(pending.get(id)) : await api('/api/project/' + id);
+  const waiting = pending.has(id);
+  const raw = waiting ? JSON.parse(pending.get(id)) : await api('/api/project/' + id);
   const before = JSON.stringify(raw);
+  /* the copy on the device, as read: what this page's saves are made from */
+  if (!waiting) knowWorld(id, raw.updated, before);
   project = upgradeWorld(raw);
   try { localStorage.setItem('cozymaker:open', id); } catch (_) {}
   /* A world that had to be moved into the new shape is written back at once.
@@ -185,6 +250,9 @@ export async function openProject(id) {
  * A world deleted in the meantime stays deleted: nothing is written back and
  * the caller is told (Cozy Tavern M185 — a page let go must stay gone). */
 export async function updateWorld(id, mutate) {
+  /* deleted — here, or in another window while this one still showed it (v2.5): what
+   * would land is let go and the caller told, never kept on a screen that saves nowhere */
+  if (goneIds.has(id)) return { ok: false, gone: true };
   if (project && project.id === id) {
     let next;
     try { next = mutate(project); } catch (e) { return { ok: false, gone: false, error: e.message }; }
@@ -213,7 +281,9 @@ export async function updateWorld(id, mutate) {
       }
       let w;
       try {
-        w = pending.has(id) ? JSON.parse(pending.get(id)) : await api('/api/project/' + id);
+        const waiting = pending.has(id);
+        w = waiting ? JSON.parse(pending.get(id)) : await api('/api/project/' + id);
+        if (!waiting) knowWorld(id, w.updated, JSON.stringify(w));
       } catch (e) {
         if (e.status === 404) { resolve({ ok: false, gone: true }); return; }
         trouble = true; tell();
@@ -258,6 +328,95 @@ export async function createProject(title) {
   return openProject(id);
 }
 
+/* A COPY BESIDE IT, WHEN TWO PAGES CHANGED THE SAME THING DIFFERENTLY (v2.5). This page's
+ * version stands in the world; the other page's whole copy is kept as a world of its own,
+ * so nothing either of them did is lost. */
+async function keepBeside(world) {
+  const id = 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+  const when = new Date().toLocaleString();
+  const title = `${String(world.title || DEFAULT_WORLD_TITLE)} (from another window, ${when})`;
+  await api('/api/project/' + id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...world, id, title }) });
+  return title;
+}
+
+/* THE DEVICE HOLDS A NEWER COPY THAN THE ONE THIS SAVE WAS MADE FROM: the newest copy
+ * this page holds and the device's are put together, the open world takes the result,
+ * and it goes out again. A true conflict keeps the device's copy beside it as a world of
+ * its own. Returns the copy to save next. */
+async function settleWorld(id, sent, remote) {
+  if (project && project.id === id && dirty) { pending.set(id, JSON.stringify(project)); dirty = false; }
+  const latest = pending.has(id) ? pending.get(id) : sent;
+  const base = bases.get(id);
+  const { world, conflicts } = mergeWorlds(base ? JSON.parse(base.json) : {}, JSON.parse(latest), remote);
+  knowWorld(id, remote.updated, JSON.stringify(remote));
+  const next = JSON.stringify(world);
+  pending.set(id, next);
+  /* the open world takes the result at once — nothing he does can fall between the
+   * copy read for the merge and the copy put on screen */
+  const open = Boolean(project && project.id === id);
+  if (open) project = upgradeWorld(JSON.parse(next));
+  let beside = '';
+  if (conflicts.length) { try { beside = await keepBeside(remote); } catch (_) { beside = ''; } }
+  if (open) tell({ reloaded: true, merged: { conflicts: conflicts.length, beside } });
+  else if (conflicts.length) tell({ merged: { conflicts: conflicts.length, beside } });
+  /* anything typed meanwhile is a newer copy of its own, saved after this one */
+  return next;
+}
+
+/* A WORLD DELETED IN ANOTHER WINDOW STAYS DELETED: its waiting copy goes, and the page is told. */
+function goneWorld(id) {
+  goneIds.add(id);
+  pending.delete(id);
+  bases.delete(id);
+  if (project && project.id === id) dirty = false;
+  tell({ gone: id });
+}
+
+/* BACK TO A PAGE THAT FELL BEHIND (v2.5). When the page comes back into view (another
+ * app, another browser, a tab left for days) with nothing of its own still unsaved, it
+ * reads whether the device has moved on, and takes the newer copy of the open world and
+ * of the house before he can act on an old one. Returns what changed. */
+export async function refreshFromDevice({ house: takeHouse = true } = {}) {
+  const out = { world: false, house: false, gone: false };
+  await saving;
+  /* the house — not while he has it open in front of him: what he is changing there is
+   * saved over the device's copy by the merge, never under his hands */
+  if (takeHouse) {
+    try {
+      const h = await api('/api/house');
+      if (house && houseBase && Number(h.updated || 0) !== houseBase.at) {
+        await houseLine.catch(() => {});
+        if (Number(h.updated || 0) !== houseBase.at) {
+          houseBase = { at: Number(h.updated) || 0, json: JSON.stringify(h) };
+          adoptHouse(h);
+          out.house = true;
+        }
+      }
+    } catch (_) { /* the device is away: nothing to compare with */ }
+  }
+  /* the open world, when nothing of this page's is still on its way to the device */
+  const takeWorld = async () => {
+    if (!project || dirty || pending.has(project.id)) return;
+    const id = project.id;
+    let stamp;
+    try { stamp = await api('/api/stamp/' + id); }
+    catch (e) { if (e.status === 404) { out.gone = true; goneWorld(id); } return; }
+    const base = bases.get(id);
+    if (!base || Number(stamp.updated || 0) === base.at) return;
+    let raw;
+    try { raw = await api('/api/project/' + id); } catch (_) { return; }
+    /* he may have started typing while it was read: his words win, and his save will
+     * be put together with the device's copy if it has to be */
+    if (dirty || pending.has(id) || !project || project.id !== id) return;
+    knowWorld(id, raw.updated, JSON.stringify(raw));
+    project = upgradeWorld(raw);
+    out.world = true;
+  };
+  await takeWorld();
+  if (out.house || out.world) tell({ reloaded: true });
+  return out;
+}
+
 export async function deleteProject(id) {
   /* A deleted world is never put back by a save still waiting to retry —
    * nor by one already going out: the delete goes in the save line, after any
@@ -268,6 +427,8 @@ export async function deleteProject(id) {
   let failed = null;
   await inLine(async () => { try { await api('/api/project/' + id, { method: 'DELETE' }); } catch (e) { failed = e; } });
   if (failed) throw failed;
+  bases.delete(id);
+  goneIds.add(id);
   if (project && project.id === id) project = null;
   try { if (localStorage.getItem('cozymaker:open') === id) localStorage.removeItem('cozymaker:open'); } catch (_) {}
   tell();
@@ -291,7 +452,8 @@ export function flush() {
    * clone — walks everything twice on the main thread on every save, which is
    * exactly what made the other frontend stutter on a long story. The string
    * is the snapshot: nothing can mutate it while the save is in flight. */
-  if (project && dirty) { pending.set(project.id, JSON.stringify(project)); dirty = false; }
+  if (project && dirty && !goneIds.has(project.id)) pending.set(project.id, JSON.stringify(project));
+  dirty = false;
   if (!pending.size) return saving;
   return inLine(drain);
 }
@@ -303,11 +465,24 @@ export function flush() {
  * next run, so the newest always wins. */
 async function drain() {
   for (const [id] of [...pending]) {
-    const body = pending.get(id);
+    let body = pending.get(id);
     if (body === undefined) continue;        /* deleted while an earlier one saved */
+    if (goneIds.has(id)) { pending.delete(id); continue; }
     try {
-      await api('/api/project/' + id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body });
-      if (pending.get(id) === body) pending.delete(id);
+      for (let tries = 0; ; tries++) {
+        try {
+          const r = await api('/api/project/' + id, { method: 'PUT', headers: { 'Content-Type': 'application/json', ...baseHeader(bases.get(id)) }, body });
+          knowWorld(id, r.updated, body);
+          if (pending.get(id) === body) pending.delete(id);
+          break;
+        } catch (e) {
+          /* made from an older copy than the device's: put together, and out again */
+          if (e.status === 409 && e.body && e.body.world && tries < 4) { body = await settleWorld(id, body, e.body.world); continue; }
+          /* deleted in another window meanwhile: it stays deleted */
+          if (e.status === 410) { goneWorld(id); break; }
+          throw e;
+        }
+      }
     } catch (e) {
       trouble = true;
       tell();
@@ -366,8 +541,12 @@ export function newChat(title) {
 
 /* EVERYTHING IN ONE FILE (the Plot Essential Maker's v0.13.0, "Backup all").
  * Every world whole, with its documents and conversations, and how he set the
- * house up to write. Not the connections: they belong to this device, and a
- * file can travel where a key should not. */
+ * house up to write — his connections too, keys and all, and who rides which
+ * (v2.5, his own standard for a copy: "like Mac Time Machine" — brought back on a new
+ * phone it is the house as it was, with nothing to set up again). The first version
+ * left the connections out, so a copy brought back could not answer a word until every
+ * key was typed in again. What was sent stays on the phone that made it: forty replies a
+ * world, each holding his whole engine, is far too much for one file. */
 export const BACKUP_FORMAT = 'cozymaker-backup';
 export async function exportEverything() {
   await flush();
@@ -379,7 +558,8 @@ export async function exportEverything() {
   const h = house || {};
   return {
     format: BACKUP_FORMAT, v: 1, at: Date.now(), worlds,
-    house: { settings: h.settings || {}, personaFrame: h.personaFrame || '', postNote: h.postNote || '', instructionsCraft: h.instructionsCraft || '', crafts: h.crafts || {} },
+    house: { settings: h.settings || {}, personaFrame: h.personaFrame || '', postNote: h.postNote || '', instructionsCraft: h.instructionsCraft || '', crafts: h.crafts || {},
+      connections: (h.connections || []).map((c) => ({ ...c })), agentConnections: { ...(h.agentConnections || {}) } },
   };
 }
 
@@ -397,7 +577,11 @@ export function fillHouse(current, saved) {
   const blank = (v) => v === undefined || v === null || (typeof v === 'string' && !v.trim());
   if (blank(h.personaFrame) && !blank(s.personaFrame)) { h.personaFrame = s.personaFrame; filled.push('their instructions'); }
   if (blank(h.postNote) && !blank(s.postNote)) { h.postNote = s.postNote; filled.push('the note at the end'); }
-  for (const [k, v] of Object.entries(s.settings || {})) {
+  for (const [k0, v0] of Object.entries(s.settings || {})) {
+    /* a file from before v2.5: its conversation window under the old name — the old
+     * default is nothing, his own number is his, under the new name */
+    let k = k0, v = v0;
+    if (k0 === 'turnsOnScreen') { v = oldTalkWindow(v0); if (v === undefined) continue; k = 'talkWindow'; }
     if (blank(h.settings[k]) && !blank(v)) { h.settings[k] = v; if (k === 'makerName' || k === 'yourName') { if (!filled.includes('the names')) filled.push('the names'); } }
   }
   for (const [w, text] of Object.entries(s.crafts || {})) {
@@ -405,6 +589,32 @@ export function fillHouse(current, saved) {
   }
   if (blank(h.instructionsCraft) && !blank(s.instructionsCraft) && blank(h.crafts.instructions)) { h.instructionsCraft = s.instructionsCraft; if (!filled.includes('your own crafts')) filled.push('your own crafts'); }
   if (!Object.keys(h.crafts).length) delete h.crafts;
+  /* HIS CONNECTIONS COME BACK BESIDE HIS OWN (v2.5): one this house already has — the same
+   * one, or one at the same address with the same model and key — is never doubled, and
+   * nothing here is replaced; who rides which comes back only where nothing is chosen */
+  const conns = (current && current.connections || []).map((c) => ({ ...c }));
+  const sameOne = (a, b) => a.id === b.id || (String(a.url || '') === String(b.url || '') && String(a.model || '') === String(b.model || '') && String(a.key || '') === String(b.key || ''));
+  /* the file's connection, as this house holds it: itself, or the one here it matches */
+  const here = new Map();
+  let added = 0;
+  for (const c of Array.isArray(s.connections) ? s.connections : []) {
+    if (!c || typeof c !== 'object' || !String(c.url || '').trim()) continue;
+    const twin = conns.find((x) => sameOne(x, c));
+    if (twin) { here.set(c.id, twin.id); continue; }
+    conns.push({ ...c });
+    here.set(c.id, c.id);
+    added++;
+  }
+  if (added) { h.connections = conns; filled.push(added === 1 ? 'a connection' : `${added} connections`); }
+  const picks = { ...((current && current.agentConnections) || {}) };
+  let picked = 0;
+  for (const [who, saidId] of Object.entries((s.agentConnections && typeof s.agentConnections === 'object') ? s.agentConnections : {})) {
+    const id = here.get(saidId) || saidId;
+    if (picks[who] || !(h.connections || conns).some((c) => c.id === id)) continue;
+    picks[who] = id;
+    picked++;
+  }
+  if (picked) { h.agentConnections = picks; if (!filled.includes('who rides which connection')) filled.push('who rides which connection'); }
   return { house: h, filled };
 }
 
@@ -438,6 +648,16 @@ export async function restoreEverything(backup) {
     if (r.filled.length) { filled = r.filled; Object.assign(house, r.house); if (!r.house.crafts) delete house.crafts; await saveHouse(house); }
   }
   return { added, filled };
+}
+
+/* AN EARLIER COPY OF A WORLD, BROUGHT BACK (v2.5): beside what is here, never over it,
+ * under a fresh id, its title saying when it is from. */
+export async function restoreCopy(raw, when) {
+  const w = upgradeWorld(JSON.parse(JSON.stringify(raw || {})));
+  const id = 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  const title = `${String(w.title || DEFAULT_WORLD_TITLE).replace(/ \(as it was [^)]*\)$/, '')} (as it was ${when})`;
+  await api('/api/project/' + id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...w, id, title }) });
+  return { id, title };
 }
 
 export function newChatWith(title, turns) {

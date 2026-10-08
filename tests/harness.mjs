@@ -713,5 +713,82 @@ const edits = (list) => `<edits>\n${JSON.stringify(list)}\n</edits>`;
   ok('a read-back that says "I’ve fixed nothing" is never asked to send the change it was told not to make', calls.filter((c) => c.who === 'helper').length === 1 && r.review.clean, calls.map((c) => c.who));
 }
 
+/* ============================ v2.5: the last audit before his subscription ended */
+
+/* a long brainstorm reaches the one he talks to whole */
+{
+  const long = [];
+  for (let i = 0; i < 30; i++) {
+    long.push({ role: 'writer', text: i === 0 ? 'The city is called Varrow, built inside a sleeping leviathan.' : `idea ${i}`, at: i * 2 + 1 });
+    long.push({ role: 'maker', text: `noted ${i}`, at: i * 2 + 2 });
+  }
+  stand({ maker: 'Built from all of it.' });
+  await turn({ message: 'build it', history: long });
+  const first = makers()[0];
+  ok('a brainstorm of sixty messages reaches the one he talks to whole: its very first is read', first.msgs.some((m) => m.role === 'user' && m.content.includes('The city is called Varrow')), first.msgs.length);
+  ok('and nothing is said to be missing', !first.msgs.some((m) => /began \d+ messages/.test(m.content)));
+  stand({ maker: 'Built from what I was shown.' });
+  await turn({ message: 'build it', history: long, house: HOUSE({ settings: { talkWindow: 10 } }) });
+  const windowed = makers()[0];
+  ok('a window he set opens on his words, and nothing of the house’s sits above the talk', windowed.msgs[0].role === 'user' && windowed.msgs[0].content === 'idea 25', windowed.msgs[0]);
+  ok('what was left out is said by the house with his message, after the talk', /began 50 messages before the earliest one above/.test(windowed.last) && windowed.last.indexOf('began 50') < windowed.last.indexOf('Bruce said:\nbuild it'), windowed.last.slice(-400));
+}
+
+/* a thought written anywhere in a reply is its thinking */
+{
+  stand({ maker: 'Here is the plan.\n<thinking>\nI should add Mira, and maybe <helper name="the eye">check Mira</helper>.\n</thinking>\nI added Mira.' });
+  const { r, shown } = await turn({ message: 'add Mira' });
+  ok('a thought written partway through a reply never reaches the screen', !shown.includes('I should add Mira') && shown.includes('I added Mira.'), shown);
+  ok('nor the words that are kept', r.reply === 'Here is the plan.\n\nI added Mira.', r.reply);
+  ok('it is kept as its thinking', /I should add Mira/.test(r.thinking || ''), r.thinking);
+  ok('and a helper it only thought about calling is never called', !calls.some((c) => c.who === 'helper'), calls.map((c) => c.who));
+}
+
+/* a reply that ran past its own end */
+{
+  stand({ maker: 'Added the guard.\n\nBruce said:\nnow make the harbour older' });
+  const { r } = await turn({ message: 'add a guard' });
+  ok('a reply that ran on into his next turn is kept only as far as its own end', r.reply === 'Added the guard.', r.reply);
+}
+
+/* the eye reads a world past 120,000 characters whole */
+{
+  const bigText = '# CONTINUATION — The Ashwood Pact — Part 2\n\n' +
+    Array.from({ length: 2000 }, (_, i) => `- Line ${i}: the archive keeps another ledger of the harbour tolls.`).join('\n') + '\n\nTHE LAST LINE: Mira keeps the seventh key.\n';
+  const big = WORLD([{ id: 'd1', name: 'Plot Essential.md', kind: 'pe', text: PE }, { id: 'd2', name: 'Continuation.md', kind: 'continuity', text: bigText }]);
+  stand({ maker: (c) => (c.n === 0 ? '<helper name="the eye">Read back the continuation file against the plot essential.</helper>' : 'It holds.'), helper: 'Read it all; it holds.' });
+  await turn({ world: big, message: 'check the continuation' });
+  const eye = calls.find((c) => c.who === 'helper');
+  ok(`the eye reads a world of ${Math.round((PE.length + bigText.length) / 1000)}k characters whole — the end of the longest document too`,
+    Boolean(eye) && eye.last.includes('THE LAST LINE: Mira keeps the seventh key.'), eye ? `${eye.last.length} chars read` : 'no helper call');
+}
+
+/* after Go on, a helper reads the talk as it was */
+{
+  const goWorld = WORLD();
+  goWorld.chats[0].turns = [{ role: 'writer', text: 'tell me about the harbour', at: 1 }, { role: 'maker', text: 'The harbour wall was built by', cut: true, cutBy: 'length', cards: [], batches: [], edits: [], at: 2 }];
+  stand({ maker: (c) => (c.n === 0 ? 'the guild.\n<helper name="the eye">Read back the scene.</helper>' : 'Done.'), helper: 'Fine.' });
+  await turn({ world: goWorld, history: goWorld.chats[0].turns, message: GO_ON, forceWorker: FRONT_ONLY });
+  const eye = calls.find((c) => c.who === 'helper');
+  ok('after Go on, a helper reads the talk as it was — Go on is the house’s note, never put in his mouth',
+    Boolean(eye) && eye.last.includes('Bruce: tell me about the harbour') && !eye.last.includes(GO_ON), eye ? eye.last.slice(0, 600) : 'no helper call');
+}
+
+/* a reply with no words keeps the provider's own reason */
+{
+  stand({ maker: { text: '', thinking: 'a very long think about the harbour', finish: 'length' } });
+  const { r } = await turn({ message: 'think hard about the harbour' });
+  ok('a reply that came back with no words keeps the provider’s own reason for stopping', !r.reply && r.reason === 'length', { reply: r.reply, reason: r.reason, error: r.error });
+}
+
+/* *delete, in a real turn */
+{
+  const claire = PE.slice(PE.indexOf('### Claire'), PE.indexOf('## TIMELINE'));
+  stand({ maker: 'Claire is gone.\n\n' + edits([{ file: 'Plot Essential.md', find: claire, replace: '', reason: '*delete Claire' }]) });
+  const { r } = await turn({ message: '*delete Claire' });
+  ok('*delete Claire, in a real turn, takes her out — never refused as a loss',
+    !pe(r).includes('### Claire') && r.cards.some((c) => c.status === 'applied') && !r.cards.some((c) => c.status === 'refused'), r.cards.map((c) => [c.status, c.why]));
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 if (fail) { for (const f of failures) console.log('  FAIL ' + f); process.exit(1); }

@@ -53,6 +53,27 @@ def call(path, method="GET", body=None, port=PORT, raw=False):
         return r.status, json.loads(payload.decode())
 
 
+def raw_call(path, method="GET", body=None, headers=None):
+    """A request with headers of its own (a Host, an Origin, the copy a save was made
+    from); a refusal comes back as its status and what it said, never as an error."""
+    url = f"http://127.0.0.1:{PORT}{path}"
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(url, data=data, method=method)
+    if data:
+        req.add_header("Content-Type", "application/json")
+    for k, v in (headers or {}).items():
+        req.add_header(k, v)
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            text = r.read().decode()
+            return r.status, (json.loads(text) if text else None)
+    except urllib.error.HTTPError as e:
+        try:
+            return e.code, json.loads(e.read().decode() or "null")
+        except Exception:
+            return e.code, None
+
+
 # ------------------------------------------------------- a real provider
 
 class FakeProvider(http.server.BaseHTTPRequestHandler):
@@ -425,6 +446,85 @@ def main():
         code, h2 = call("/api/house")
         ok("an unreadable house is put back from its backup, never replaced by an empty one", h2.get("personaFrame") == "I am Eni, first save.", str(h2)[:120])
         ok("and the house on disk is whole again", json.loads((home / "_house.json").read_text()).get("personaFrame") == "I am Eni, first save.")
+
+        # --- v2.5: only this phone's own page ------------------------------------
+        here = f"http://127.0.0.1:{PORT}"
+        code, got = raw_call("/api/house", headers={"Host": f"evil.example:{PORT}"})
+        ok("a page that renamed itself to this address (DNS rebinding) cannot read the house, keys and all",
+           code == 403 and "connections" not in (got or {}), (code, got))
+        code, got = raw_call("/api/version", headers={"Host": "evil.example"})
+        ok("nor anything else of the store", code == 403, code)
+        code, got = raw_call("/api/project/p_evil", "PUT", {"id": "p_evil", "docs": []}, headers={"Origin": "http://evil.example"})
+        code2, _ = raw_call("/api/project/p_evil")
+        ok("another web page open in the browser cannot write a world", code == 403 and code2 == 404, (code, code2))
+        code, _ = raw_call("/api/call", "POST", {"url": f"http://127.0.0.1:{FAKE_PROVIDER_PORT}/v1/chat/completions", "headers": {}, "body": {"model": "x"}},
+                           headers={"Origin": "http://evil.example"})
+        ok("nor send requests anywhere through it", code == 403, code)
+        call("/api/project/p_mine", "PUT", {"id": "p_mine", "title": "Mine", "docs": []})
+        code, _ = raw_call("/api/project/p_mine", "DELETE", headers={"Origin": "http://evil.example"})
+        code2, _ = raw_call("/api/project/p_mine")
+        ok("nor delete a world", code == 403 and code2 == 200, (code, code2))
+        c1, _ = raw_call("/api/project/p_mine", "PUT", {"id": "p_mine", "title": "Mine 2", "docs": []}, headers={"Origin": here})
+        c2, _ = raw_call("/api/project/p_mine", "PUT", {"id": "p_mine", "title": "Mine 3", "docs": []}, headers={"Origin": f"http://localhost:{PORT}", "Host": f"localhost:{PORT}"})
+        ok("its own page, by either name, writes as before", c1 == 200 and c2 == 200 and call("/api/project/p_mine")[1]["title"] == "Mine 3", (c1, c2))
+
+        # --- v2.5: a page that fell behind never writes over newer work -------------
+        _, first = call("/api/project/p_two", "PUT", {"id": "p_two", "title": "Two", "docs": [{"id": "d1", "name": "PE.md", "kind": "pe", "text": "one"}]})
+        u1 = first["updated"]
+        _, st = raw_call("/api/stamp/p_two")
+        ok("the stamp of a world is read without reading the world", (st or {}).get("updated") == u1, (st, u1))
+        code, a = raw_call("/api/project/p_two", "PUT", {"id": "p_two", "title": "Two", "docs": [{"id": "d1", "name": "PE.md", "kind": "pe", "text": "two, from window A"}]},
+                           headers={"X-CozyMaker-Base": str(u1)})
+        ok("a save made from the copy on the device lands, with a newer stamp", code == 200 and a["updated"] > u1, (code, a))
+        code, b = raw_call("/api/project/p_two", "PUT", {"id": "p_two", "title": "Two", "docs": [{"id": "d1", "name": "PE.md", "kind": "pe", "text": "from window B, made from the old copy"}]},
+                           headers={"X-CozyMaker-Base": str(u1)})
+        ok("one made from an older copy is refused, and handed the copy here", code == 409 and (b or {}).get("error") == "newer" and ((b or {}).get("world") or {}).get("docs", [{}])[0].get("text") == "two, from window A", (code, b))
+        ok("and the newer work is still on the device", call("/api/project/p_two")[1]["docs"][0]["text"] == "two, from window A")
+        code, c = raw_call("/api/project/p_two", "PUT", {"id": "p_two", "title": "Two", "docs": [{"id": "d1", "name": "PE.md", "kind": "pe", "text": "an older page, no stamp"}]})
+        ok("a save that names no copy (a page from before v2.5) still lands", code == 200, code)
+        stamps = []
+        for i in range(3):
+            stamps.append(call("/api/project/p_two", "PUT", {"id": "p_two", "title": "Two", "docs": [{"id": "d1", "name": "PE.md", "kind": "pe", "text": f"quick {i}"}]})[1]["updated"])
+        ok("saves a moment apart each get their own stamp, always forward", stamps[0] < stamps[1] < stamps[2], stamps)
+        call("/api/project/p_two", "DELETE")
+        code, _ = raw_call("/api/stamp/p_two")
+        ok("a deleted world has no stamp", code == 404, code)
+        code, d = raw_call("/api/project/p_two", "PUT", {"id": "p_two", "title": "Two", "docs": []}, headers={"X-CozyMaker-Base": str(stamps[2])})
+        code2, _ = raw_call("/api/project/p_two")
+        ok("a save for a world deleted in another window is told it is gone, and never brings it back", code == 410 and code2 == 404, (code, d, code2))
+        _, hh = call("/api/house")
+        h0 = int(hh.get("updated") or 0)
+        code, r1 = raw_call("/api/house", "PUT", {**hh, "personaFrame": "from window A"}, headers={"X-CozyMaker-Base": str(h0)})
+        code2, r2 = raw_call("/api/house", "PUT", {**hh, "personaFrame": "from window B, old copy"}, headers={"X-CozyMaker-Base": str(h0)})
+        ok("the house too: a save from an older copy is refused and handed the newer one",
+           code == 200 and code2 == 409 and ((r2 or {}).get("house") or {}).get("personaFrame") == "from window A" and call("/api/house")[1].get("personaFrame") == "from window A", (code, code2, (r2 or {}).get("error")))
+
+        # --- v2.5: earlier copies, reachable without Termux -------------------------
+        _, listed = raw_call("/api/copies")
+        two = next((w for w in (listed or {}).get("worlds", []) if w["id"] == "p_two"), None)
+        ok("every world's earlier copies are listed, a deleted one too, named from its newest copy",
+           two is not None and two["title"] == "Two" and two["here"] is False and len(two["copies"]) >= 1, two)
+        ok("the house's own copies are not a world", bool((listed or {}).get("worlds")) and not any(w["id"].startswith("_") for w in listed["worlds"]))
+        newest = two["copies"][0]["file"] if two else ""
+        code, copy = raw_call("/api/copies/" + newest)
+        ok("a copy is read whole", code == 200 and copy and copy.get("id") == "p_two" and isinstance(copy.get("docs"), list), (code, str(copy)[:120]))
+        code, _ = raw_call("/api/copies/..%2F_house.json")
+        code2, _ = raw_call("/api/copies/p_none.20260101-000000.json.gz")
+        ok("a name that is not a copy's is refused; one never kept is not found", code == 400 and code2 == 404, (code, code2))
+
+        # last of the page's own checks, since a server that is stopped stops the rest: it
+        # is started again, so the suite reports this failure and goes on
+        try:
+            code, _ = raw_call("/api/quit", "POST", {}, headers={"Origin": "http://evil.example"})
+        except Exception as e:
+            code = str(e)
+        time.sleep(0.5)
+        alive = wait_for(PORT, 2)
+        ok("another web page cannot stop it", code == 403 and alive, (code, alive))
+        if not alive:
+            server = subprocess.Popen([sys.executable, str(ROOT / "serve.py")], env=env,
+                                      stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            wait_for(PORT)
 
         # --- backups are kept across time, not only the last few seconds -------
         sys.path.insert(0, str(ROOT))

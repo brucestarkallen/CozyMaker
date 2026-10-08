@@ -35,9 +35,20 @@ stops whatever is on its own port (8090), and only by asking it to leave.
 If something else is on 8090: `COZYMAKER_PORT=8091 cozymaker`.
 
 Everything you make lives on the device, in `~/.cozymaker`. The browser holds
-only the world that is open. There is no syncing between browsers — close every
-tab, open a different browser, reboot the phone, and the work is exactly where
-it was.
+only the world that is open — close every tab, open a different browser, reboot
+the phone, and the work is exactly where it was.
+
+**Two windows at once** — two tabs, or Chrome and Opera — never write over each
+other's work. Come back to a window and it takes what the other one did. Two that
+saved at the same moment are put together: what each changed stands, and a
+conversation talked on in both keeps every message of both. Where both changed the
+same thing differently, the window you saved from stands, the other's whole copy is
+kept beside it as a world of its own, and you are told its name. A world deleted
+in one window stays deleted in the other.
+
+**Updates land by themselves.** After `cozymaker` brings in a new version, a page
+already open takes it the moment nothing is in progress — no reply being made,
+nothing unsaved, nothing half-typed, no sheet open.
 
 Every document is also written as plain markdown under `~/.cozymaker/exports/`,
 so you can reach it from the shell without opening the app.
@@ -92,7 +103,20 @@ end. While nothing has arrived yet, the ember keeps glowing.
 reply has **Another answer**; ◂ ▸ walks between the answers, and only the one shown
 is in the documents. Edit one of your messages and **Send again from here**: whatever
 the later replies changed is put back first. Deleting a reply that changed something
-puts that back too. A reply cut off at the limit offers **Go on**.
+puts that back too. Deleting one of your messages takes the reply that answered it
+with it, and puts back what that reply changed. A reply cut off at the limit offers
+**Go on**.
+
+A reply that changed the documents and said nothing about it is still a reply: the
+house says in its place what went in, and the cards are underneath. A reply that
+came back with no words at all says why, in the provider's own word — it thought
+until it ran out of room (and a larger **Longest reply** gives it room), it was
+blocked, or the line closed with no reason. If what you typed cannot go yet — no
+connection set up, or a reply still being made — it stays in the box.
+
+They may think out loud inside `<think>`, `<thinking>` or `<reasoning>` anywhere in
+a reply: it goes to the Thinking box, never into their words, and is never read back
+to them as something they said.
 
 **Your worlds and conversations** are on the left: tap ☰ at the top left, or
 swipe in from the left edge. Worlds are listed newest first. Inside the open
@@ -120,10 +144,25 @@ same as if you had typed it.
 
 A document has **Copy all** and **Export** (the file lands in your downloads) at its top, **Duplicate**, and — after you
 have edited it by hand — **Put back my edits**. **Side by side** shows two to four
-documents next to each other. Under the cog, **Save everything to a file** keeps
-every world in one file (not your connections or keys, and not the What was sent
-records, which stay on the phone that made them), and **Bring everything back
-from a file** only ever adds: nothing already here is replaced.
+documents next to each other. A document open while a reply changes it shows the
+change as it lands, and what you type next is added to it.
+
+Under the cog, **Save everything to a file** keeps every world in one file, with how
+you set the house up — your connections too, keys and all, so a new phone needs
+nothing typed in again (keep the file where only you can reach it; the What was sent
+records stay on the phone that made them). **Bring everything back from a file**
+only ever adds: worlds come back beside yours, a connection only if this house does
+not have it, a setting only where this house has none. **Earlier copies on this
+device**, under the floor, lists every copy the device keeps of every world — the
+newest eight saves, the newest of each hour for two days, of each day for a month,
+and a deleted world's last — and **Bring this copy back** returns any one as a world
+of its own, beside what is here.
+
+The house's sections fold to their names; the first is open the first time, and
+whatever you open stays open next time. **How much of the conversation they are
+given each time** is empty unless you set it: empty means all of it, so what they
+build is built from everything you said. A number means only that many of the newest
+messages, and they are told the rest is not shown.
 
 A connection's thinking level is said the way that provider understands it —
 the same words Cozy Tavern sends, checked against it. A level you have not set is
@@ -269,7 +308,7 @@ the model needs changing.
 Read `AGENTS.md` first.
 
 ```
-bash tests/all.sh    eleven runs, 1,265 checks
+bash tests/all.sh    thirteen runs, 1,404 checks
 ```
 
 `docs/lineage.md` lists every version of Cozy Tavern and Cozy Chat and what

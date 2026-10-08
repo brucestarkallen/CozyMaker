@@ -427,6 +427,9 @@ def main():
             browser = pw.chromium.launch()
             ctx = browser.new_context(viewport={"width": 390, "height": 844}, device_scale_factor=2,
                                       is_mobile=True, has_touch=True, accept_downloads=True)
+            # the house's sections fold to their names (v2.5); these walks reach into every one of
+            # them, so they start open here — the folding itself is walked on its own, cold
+            ctx.add_init_script("try { if (!localStorage.getItem('cozymaker:houseOpen')) localStorage.setItem('cozymaker:houseOpen', JSON.stringify(['who','connections','crew','search','shortcuts','look','floor'])); } catch (e) {}")
             page = ctx.new_page()
             errors = []
             page.on("pageerror", lambda e: errors.append(str(e)))
@@ -1257,10 +1260,17 @@ def main():
             backup = json.loads(saved_text)
             ok("everything goes into one file", backup.get("format") == "cozymaker-backup" and len(backup["worlds"]) == len(worlds_before),
                (backup.get("format"), len(backup.get("worlds", [])), len(worlds_before)))
-            ok("with none of the connection keys in it", '"key": "k"' not in saved_text and '"key":"k"' not in saved_text and '"key":"nope"' not in saved_text)
+            # v2.5 (his standard for a copy, "like Mac Time Machine"): the connections ride in it,
+            # keys and all — the old law said the opposite, and a copy brought back to a new phone
+            # could not answer a word until every key was typed again
+            house_now = api("/api/house")
+            ok("with every connection in it, keys and all", sorted((c["id"], c.get("key")) for c in backup.get("house", {}).get("connections", []))
+               == sorted((c["id"], c.get("key")) for c in house_now["connections"]), backup.get("house", {}).get("connections"))
             page.locator("#houseBody input[type=file]").set_input_files(saved_path)
             page.wait_for_timeout(2500)
             after = api("/api/projects")["projects"]
+            ok("and bringing it back never doubles a connection this house already has",
+               sorted(c["id"] for c in api("/api/house")["connections"]) == sorted(c["id"] for c in house_now["connections"]))
             restored = [x for x in after if "(restored" in x["title"]]
             ok("bringing it back adds every world beside the ones here", len(after) == 2 * len(worlds_before) and len(restored) == len(worlds_before),
                (len(worlds_before), len(after), len(restored)))

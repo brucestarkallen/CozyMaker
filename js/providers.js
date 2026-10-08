@@ -393,7 +393,12 @@ export function hasLateSystem(messages) {
 export function lateSystemFitted(conn, messages) {
   const list = (messages || []).map((m) => ({ ...m }));
   const facts = learnedFacts(conn);
-  if (!facts || !facts.noLateSystem || !hasLateSystem(list)) return list;
+  /* An Anthropic-shaped address (Anthropic's own, and the ones other houses publish
+   * under /anthropic) takes no system message among the messages at all — its system
+   * is a field of its own — so the note is folded at once there, never paid for with a
+   * refused first call (v2.5) */
+  const never = houseOf(conn && conn.url) === 'anthropic';
+  if (!hasLateSystem(list) || (!never && !(facts && facts.noLateSystem))) return list;
   const out = [];
   for (const m of list) {
     const last = out[out.length - 1];

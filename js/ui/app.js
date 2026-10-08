@@ -2,7 +2,7 @@
  * The room: the conversation that is open, and the way into everything else. */
 
 import * as store from '../store.js';
-import { runTurn, capUndo, landTurn, landContinuation, commit, versionOf, FRONT_ONLY, GO_ON, readingFor } from '../agents/run.js';
+import { runTurn, capUndo, landTurn, landContinuation, commit, versionOf, FRONT_ONLY, GO_ON, readingFor, emptyReplyWhy } from '../agents/run.js';
 import { estimateTokens } from '../doc/index.js';
 import { openSent, saveSent } from './sent.js';
 import { EXAMPLE_FRAME, EXAMPLE_NOTE, shouldGiveExamples } from '../agents/examples.js';
@@ -12,7 +12,7 @@ import { undoBatch } from '../doc/edits.js';
 import { rollBackTo } from '../doc/branch.js';
 import { DEFAULT_WORLD_TITLE, hasPlotEssential, hasWorldbook } from '../doc/index.js';
 import { personaOf, names } from '../agents/persona.js';
-import { $, el, escape, closeSheet, toast, applyTheme, onRedraw, onAsk, fold, copyText } from './kit.js';
+import { $, el, escape, closeSheet, toast, applyTheme, onRedraw, onAsk, fold, copyText, tookWords } from './kit.js';
 import { openDocs, openDoc, tidyOnLeaving, currentDocId, bringIn, startChoices } from './docs.js';
 import { openHouse } from './settings.js';
 import { openDrawer, closeDrawer, drawerIsOpen, wireSwipe, setBusyCheck, draw as drawDrawer } from './drawer.js';
@@ -34,6 +34,8 @@ const STOP_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="current
 /* ------------------------------------------------------------------ boot */
 
 async function boot() {
+  /* the code this page was loaded from: a newer one on the device is taken by itself */
+  try { bootCommit = (await (await fetch('/api/version', { cache: 'no-store' })).json()).commit || ''; } catch (_) { bootCommit = ''; }
   const house = await store.loadHouse();
   if (shouldGiveExamples(house)) {
     house.personaFrame = EXAMPLE_FRAME;
@@ -49,6 +51,28 @@ async function boot() {
   else await store.createProject(DEFAULT_WORLD_TITLE);
   wire();
   draw();
+  setInterval(() => { if (document.visibilityState === 'visible') takeNewVersion(); }, NEW_VERSION_EVERY_MS);
+}
+
+/* AN UPDATE LANDS IN THE OPEN PAGE BY ITSELF (v2.5; Cozy Chat v5.28.0, and his standing
+ * order for Cozy Tavern: updates land without a manual refresh). "cozymaker" pulls the new
+ * code and relights the server, but a page already open kept running the old code until he
+ * thought to reload it — so a fix he had just been told about looked as if it had never
+ * been made. The page asks the device which code it is running; when it is newer than the
+ * page's own, the page takes it the moment nothing is in progress: no reply being made,
+ * nothing unsaved, no sheet or drawer open, nothing half-typed. */
+let bootCommit = '';
+const NEW_VERSION_EVERY_MS = 30000;
+async function takeNewVersion() {
+  let now = '';
+  try { now = (await (await fetch('/api/version', { cache: 'no-store' })).json()).commit || ''; } catch (_) { return; }
+  /* the device did not answer when this page started: what it says first is this page's */
+  if (!bootCommit) { bootCommit = now; return; }
+  if (!now || now === bootCommit) return;
+  const busy = running || store.hasUnsaved() || say.value.trim() || drawerIsOpen() ||
+    document.querySelector('.sheet.open') || stream.querySelector('.edit-area');
+  if (busy) return;
+  location.reload();
 }
 
 function wire() {
@@ -91,10 +115,25 @@ function wire() {
   /* The turn says what the crew is doing, in words ("the builder is on it"). The
    * channel's own announcement carries only a worker's id, and used to land a
    * moment later and write "builder" or "listener" over those words. */
-  store.watch(({ trouble }) => {
+  store.watch(({ trouble, reloaded, merged, gone }) => {
     drawHeader();
     $('saveNote').hidden = !trouble;
+    /* THE DEVICE MOVED ON WHILE THIS WINDOW WAS AWAY, OR TWO WINDOWS SAVED AT ONCE (v2.5):
+     * the newer copy is on screen now, put together with anything of this window's — its
+     * coat of paint too */
+    if (reloaded) { applyTheme((store.getHouse().settings || {}).theme); draw(); if (drawerIsOpen()) drawDrawer(); }
+    if (merged && merged.conflicts) {
+      toast(merged.beside
+        ? `Another window changed the same thing at the same time. This window's version stands; the other's is kept as its own world, \u201c${merged.beside}\u201d.`
+        : 'Another window changed the same thing at the same time. This window\u2019s version stands.');
+    }
+    if (gone) worldGone(gone);
   });
+  /* coming back to this window: take what the device holds now, before he acts on an old copy */
+  const comeBack = () => { if (document.visibilityState === 'visible') freshen(); };
+  document.addEventListener('visibilitychange', comeBack);
+  window.addEventListener('focus', comeBack);
+  window.addEventListener('pageshow', comeBack);
   onRedraw(() => draw());
   onAsk((text, worker) => send(text, worker));
   setBusyCheck(() => Boolean(running));
@@ -115,6 +154,32 @@ function wire() {
     store.saveHouse(h);
   });
   wireSwipe();
+}
+
+/* WHAT THE DEVICE HOLDS NOW, read when he comes back to this window — never while a reply
+ * is being made (it lands on the world as it stands), and at most once a moment */
+let freshAt = 0;
+async function freshen() {
+  if (running || Date.now() - freshAt < 1500) return;
+  freshAt = Date.now();
+  /* the house is not taken while he has it open: what he changes there is put together
+   * with the device's copy when it saves */
+  const houseOpen = $('houseSheet').classList.contains('open');
+  try { await store.refreshFromDevice({ house: !houseOpen }); } catch (_) { /* the device is away; the save line says so */ }
+  takeNewVersion();
+}
+
+/* THE WORLD THAT WAS OPEN WAS DELETED IN ANOTHER WINDOW: said, and he is taken to the
+ * newest one left. A reply still being made there is told when it lands. */
+async function worldGone(id, { quiet = false } = {}) {
+  const p = store.getProject();
+  if (!p || p.id !== id || (running && running.worldId === id)) return;
+  if (!quiet) toast(`\u201c${p.title}\u201d was deleted in another window.`);
+  const left = (await store.listProjects()).sort((a, b) => (b.updated || 0) - (a.updated || 0));
+  if (left.length) await store.openProject(left[0].id);
+  else await store.createProject(DEFAULT_WORLD_TITLE);
+  draw();
+  if (drawerIsOpen()) drawDrawer();
 }
 
 function grow() {
@@ -178,10 +243,14 @@ export function draw() {
     if (statusEl) stream.append(statusEl);
   }
   drawComposer();
+  /* the context line follows every redraw — scrolled up or not (v2.5: a reply that landed
+   * while he read further up left the old number standing) — a moment after it, never in
+   * the same frame as the redraw itself */
+  clearTimeout(contextTimer);
+  contextTimer = setTimeout(drawContext, 120);
   if (keepAt !== null) { stream.scrollTop = keepAt; return; }
   pinned = true;
   follow();
-  drawContext();
 }
 
 function emptyRoom(p) {
@@ -223,6 +292,8 @@ async function drawContext() {
   const p = store.getProject();
   const house = store.getHouse();
   if (!line || !p || !house) return;
+  /* while a reply is being made the next message is not his to send yet: measured once it lands */
+  if (running) return;
   const seq = ++contextSeq;
   const chat = store.openChat();
   const history = (chat && chat.turns) || [];
@@ -285,10 +356,6 @@ function drawComposer() {
  * (streamtext.js), from its first word, says "Thinking… 7s" while it runs, and
  * folds itself shut when the reply's words reach the screen. A tap still opens
  * or shuts it whenever he likes; Copy takes everything thought so far. */
-function tookWords(ms) {
-  const sec = Math.max(0, ms || 0) / 1000;
-  return sec < 60 ? Math.round(sec) + 's' : Math.floor(sec / 60) + 'm ' + Math.round(sec % 60) + 's';
-}
 function thinkingBox(text, ms, { live = false, since = 0, source = null } = {}) {
   const box = el('div', 'thinking-box');
   const head = el('button', 'thinking-head');
@@ -468,6 +535,8 @@ function turnNode(t, index) {
   }
   const bubble = el('div', 'bubble' + (t.failed ? ' failed' : ''));
   bubble.textContent = t.text || '';
+  /* a reply that changed things and said nothing shows the house's line, not words of its own */
+  if (!t.text && t.note) { bubble.textContent = t.note; bubble.classList.add('note'); }
   /* a tap on a message shows what can be done with it */
   bubble.addEventListener('click', () => { if (!running) wrap.classList.toggle('acting'); });
   if (t.thinking) wrap.append(thinkingBox(t.thinking, t.thinkingMs).node);
@@ -781,15 +850,30 @@ async function deleteTurn(index) {
   const chat = store.openChat();
   const t = chat.turns[index];
   if (!t) return;
+  /* HIS MESSAGE GOES WITH WHAT ANSWERED IT (v2.5; his own word in Cozy Tavern, M635: "when
+   * I delete my message, its output should be gone too"). Here his message went alone, and
+   * the reply to it stayed, answering nothing \u2014 read on by the one he talks to as a second
+   * reply run into the one before it. Every reply after his message, up to his next one,
+   * now goes with it; a reply's own Delete still lets that one reply go. */
+  const gone = [index];
+  if (t.role === 'writer') for (let i = index + 1; i < chat.turns.length && chat.turns[i].role !== 'writer'; i++) gone.push(i);
+  const replies = gone.length - 1;
+  /* never keep changes whose way back has been thrown away: they are put back first,
+   * newest first, as one step \u2014 or nothing is deleted */
+  const changed = gone.filter((i) => liveBatches(chat.turns[i]).length);
+  const question = t.role !== 'writer'
+    ? (changed.length ? 'This reply changed the documents. Put those changes back and delete it?' : 'Delete this reply?')
+    : !replies ? 'Delete this message of yours?'
+      : `Delete this message of yours, and the ${replies === 1 ? 'reply' : `${replies} replies`} that answered it?${changed.length ? ` What ${replies === 1 ? 'it' : 'they'} changed in the documents is put back.` : ''}`;
+  if (!confirm(question)) return;
   let world = store.getProject();
-  if (liveBatches(t).length) {
-    /* never keep changes whose way back has been thrown away */
-    if (!confirm('This reply changed the documents. Put those changes back and delete it?')) return;
-    const r = putBackTurns(world, chat.id, [index]);
-    if (!r.ok) return toast(`Its changes can't be put back \u2014 ${r.why}.`);
+  if (changed.length) {
+    const r = putBackTurns(world, chat.id, changed);
+    if (!r.ok) return toast(`${t.role === 'writer' ? `What the ${replies === 1 ? 'reply' : 'replies'} changed` : 'Its changes'} can't be put back \u2014 ${r.why}, so nothing was deleted.`);
     world = r.world;
-  } else if (!confirm(t.role === 'writer' ? 'Delete this message of yours?' : 'Delete this reply?')) return;
-  const chats = world.chats.map((c) => (c.id !== chat.id ? c : { ...c, turns: c.turns.filter((x, i) => i !== index) }));
+  }
+  const drop = new Set(gone);
+  const chats = world.chats.map((c) => (c.id !== chat.id ? c : { ...c, turns: c.turns.filter((x, i) => !drop.has(i)) }));
   await store.setProject({ ...world, chats }, { now: true });
   draw();
 }
@@ -848,7 +932,7 @@ function onSendButton() {
   if (!text) return;
   say.value = ''; grow();
   if (atOnce(text)) return;
-  send(text, null);
+  send(text, null, { typed: true });
 }
 
 /* THE CRAFT'S COMMANDS FOR A CHAT WINDOW, AS THEY ARE HERE (router.js houseCommand).
@@ -883,9 +967,11 @@ function atOnce(text) {
  * message sent again from where it stands (from), another answer to it
  * (from + replaceAt), or the rest of a reply that was cut off (continueAt). */
 async function send(text, forceWorker, opts = {}) {
-  if (running) { toast('Still working \u2014 this can go when it is done.'); return; }
+  /* what he typed is never lost to a send that cannot go yet: it goes back in the box (v2.5) */
+  const giveBack = () => { if (opts.typed && !say.value.trim()) { say.value = text; grow(); } };
+  if (running) { giveBack(); toast('Still working \u2014 this can go when it is done.'); return; }
   const house = store.getHouse();
-  if (!house.connections.length) { openHouse(); toast('Set up a connection first \u2014 in the house, under Connections.'); return; }
+  if (!house.connections.length) { giveBack(); openHouse({ open: 'connections' }); toast('Set up a connection first \u2014 in the house, under Connections.'); return; }
   closeDrawer();
   /* A NEW STORY GETS A WORLD OF ITS OWN — a story card, or *new, *source_new,
    * *hybrid_new typed in a world that already has a plot essential: built there,
@@ -986,14 +1072,27 @@ async function send(text, forceWorker, opts = {}) {
   }
   const stoppedByHim = result.stopped || abort.signal.aborted;
   const words = result.reply || '';
+  /* NO WORDS IS NOT ALWAYS NOTHING (v2.5). A reply whose changes went in but that wrote
+   * no words about them was kept as a failure: no Another answer, left out of what the
+   * one he talks to reads next, so it never knew those changes stood. It is a reply with
+   * its cards, and the house's line says what happened — never put in its mouth (its
+   * words stay empty, so nothing of the line is sent back to it as its own). A reply
+   * with neither words nor changes is a failure, and says the provider's own reason. */
+  const changed = (result.batches || []).length > 0;
+  const quietWhy = words || stoppedByHim || result.error ? '' : emptyReplyWhy({ reason: result.reason, thought: Boolean(thinking || result.thinking) });
   /* what this reply cost, every request of it, kept on the device for him to read */
   const sentKey = (result.sent || []).length ? `${chatId}-${Date.now().toString(36)}` : null;
   if (sentKey) saveSent(worldId, sentKey, { at: Date.now(), chat: chatId, requests: result.sent });
   const makerTurn = {
     role: 'maker',
-    text: words || (stoppedByHim ? '(stopped)' : result.error ? `That did not go through \u2014 ${result.error}`
-      : thinking ? '(no words came back \u2014 only their thinking, kept below)' : '(no words came back)'),
-    failed: !words,
+    text: words || (changed ? '' : stoppedByHim ? '(stopped)' : result.error ? `That did not go through \u2014 ${result.error}`
+      : `(No words came back \u2014 ${quietWhy}.${thinking || result.thinking ? ' Its thinking is kept below.' : ''})`),
+    note: !words && changed
+      ? (stoppedByHim ? 'Stopped before any words came. The changes it made before that went in \u2014 they are on the cards below.'
+        : result.error ? `No words came \u2014 ${result.error}. The changes it made before that went in \u2014 they are on the cards below.`
+          : `No words came back \u2014 ${quietWhy}. The changes it made went in \u2014 they are on the cards below.`)
+      : undefined,
+    failed: !words && !changed,
     /* a thought the reader moved off the words once they were all in is kept too */
     thinking: (result.thinking || '').length > thinking.length ? result.thinking : thinking,
     thinkingMs: thinkingMs || undefined,
@@ -1055,8 +1154,11 @@ async function send(text, forceWorker, opts = {}) {
     toast(result.error ? `That did not go through \u2014 ${result.error}` : stoppedByHim ? 'Stopped.' : 'Nothing more came back.');
   }
   if (where.error) toast(`The reply could not be put away: ${where.error}`);
-  if (!where.ok && where.gone) toast('That world was deleted while the work went on, so what was done was let go.');
-  else if (landed && !landed.landed) toast('That conversation was deleted while the work went on \u2014 the documents still got the changes.');
+  if (!where.ok && where.gone) {
+    toast('That world was deleted while the work went on, so what was done was let go.');
+    /* deleted in another window while this one showed it: this one moves off it too */
+    await worldGone(worldId, { quiet: true });
+  } else if (landed && !landed.landed) toast('That conversation was deleted while the work went on \u2014 the documents still got the changes.');
   draw();
   if (drawerIsOpen()) drawDrawer();
 }

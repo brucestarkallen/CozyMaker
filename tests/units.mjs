@@ -885,9 +885,16 @@ ok('a block in the thinking channel is still a block', (() => {
    * stays where it was \u2014 it is there to catch a search that grows with the square
    * of the document, which would be seconds, not milliseconds. */
   for (let i = 0; i < 5; i++) locate(big, 'a sentence that is not in the document at all, anywhere, in any form');
-  const t0 = performance.now();
-  for (let i = 0; i < 20; i++) locate(big, 'a sentence that is not in the document at all, anywhere, in any form');
-  const ms = (performance.now() - t0) / 20;
+  /* the best of five rounds (v2.5): one round on a shared two-core machine counted another
+   * process's burst against the code — 32ms and 52ms seen on 8 Oct with locate unchanged,
+   * against 18–21ms a round otherwise. A search that grows with the square of the document
+   * is slow in every round, so the bound still catches it. */
+  let ms = Infinity;
+  for (let round = 0; round < 5; round++) {
+    const t0 = performance.now();
+    for (let i = 0; i < 20; i++) locate(big, 'a sentence that is not in the document at all, anywhere, in any form');
+    ms = Math.min(ms, (performance.now() - t0) / 20);
+  }
   ok(`a miss on a ${Math.round(big.length / 1000)}k-character document is quick (${ms.toFixed(1)}ms)`, ms < 30, ms.toFixed(1));
 }
 
@@ -1076,7 +1083,9 @@ eq('"I" overrules a second-person frame', personaOf({ settings: { person: 'first
   try {
     const b = await store.exportEverything();
     ok('a backup holds every world whole', b.format === store.BACKUP_FORMAT && b.worlds.length === 1 && b.worlds[0].docs[0].text === 'x');
-    ok('and no connections or keys', !('connections' in (b.house || {})) && !JSON.stringify(b).includes('"key"'));
+    /* v2.5: his connections ride in it, keys and all (the old law left them out, so a copy
+     * brought back to a new phone could not answer until every key was typed in again) */
+    ok('and the connections, keys and all', Array.isArray((b.house || {}).connections));
     ok('a file that is not a backup is refused with the reason', !store.readBackup('{"a":1}').ok && !store.readBackup('not json').ok);
     const r = await store.restoreEverything(b);
     ok('bringing it back adds a new world beside the old one', r.added === 1 && Object.keys(worlds).length === 2);
@@ -1856,6 +1865,186 @@ eq('a SillyTavern export pasted in is a worldbook', guessKind('x.md', '{"entries
   ok('a steady stream is followed at its own speed, about PACE_MS behind', backlog <= 6 * (PACE_MS / 16) + 6 && drawn >= 600 * 6 - backlog, JSON.stringify({ backlog, drawn }));
   eq('a long frame (a busy or hidden page) catches up rather than stretching', revealCount(400, 1000), 400);
   eq('a character in two halves is never split', [takeChars('ab\ud83d\ude00cd', 3), takeChars('ab\ud83d\ude00cd', 2), takeChars('abc', 9)], ['ab\ud83d\ude00', 'ab', 'abc']);
+}
+
+/* ============================ v2.5: THE LAST AUDIT BEFORE HIS SUBSCRIPTION ENDED
+ * Each check runs the real thing. They read what they need from the modules as they
+ * find them, so run against an older copy every one of them reports, none of them
+ * crashes the suite — that is how each was shown to fail without its fix. */
+{
+  const run = await import('../js/agents/run.js');
+  const editsMod = await import('../js/doc/edits.js');
+  const providers = await import('../js/providers.js');
+  const callMod = await import('../js/agents/call.js');
+  const kit = await import('../js/ui/kit.js');
+  const merge = await import('../js/merge.js').catch(() => ({}));
+  const store = await import('../js/store.js');
+  const { FRONT } = await import('../js/agents/roster.js');
+  const has = (m, name) => typeof m[name] === 'function';
+
+  /* — the loss guard: a rebuild is counted, a surgical change is held to the craft's parts — */
+  const world = { id: 'p25', docs: [{ id: 'd1', name: 'Plot Essential.md', kind: 'pe', text: PE }], chats: [] };
+  const emilia = PE.slice(PE.indexOf('### Emilia'), PE.indexOf('## MINOR CHARACTERS'));
+  const gone = commit(world, [{ file: 'Plot Essential.md', find: emilia, replace: '', reason: '*delete Emilia' }], 'as you asked');
+  ok('*delete takes a person out: a change quoting exactly what it takes out is never refused as a loss',
+    !gone.project.docs[0].text.includes('### Emilia') && !gone.guard && gone.cards.some((c) => c.status === 'applied'), gone.guard);
+  const two = 'e001 [Mon 14 Apr 247, 09:00] [setup]: The showcase opened in the east hall.\ne002 [Mon 14 Apr 247, 11:30] [decisive]: Alaric\'s arm broke in the third bout.';
+  const merged = commit(world, [{ file: 'Plot Essential.md', find: two, replace: 'e001-002 [Mon 14 Apr 247, 09:00] [setup]: The showcase opened; Alaric\'s arm broke in the third bout.', reason: 'one event' }], 'merge');
+  ok('two events merged into one line land', !merged.guard && merged.project.docs[0].text.includes('e001-002'), merged.guard);
+  const ended = commit(world, [{ file: 'Plot Essential.md', find: '→ Jovan: wary of him (P:30 R:0 S:0)\n', replace: '', reason: 'the bond ended' }], 'bond');
+  ok('a bond that ended is taken out', !ended.guard && !ended.project.docs[0].text.includes('wary of him'), ended.guard);
+  const rebuilt = commit(world, [{ file: 'Plot Essential.md', whole: true, replace: PE.replace(emilia, '') }], 'rebuild');
+  ok('a rebuild that forgets a person is still refused, and says how to take one out on purpose',
+    rebuilt.project.docs[0].text.includes('### Emilia') && /would have lost 1 dossiers/.test(rebuilt.guard || '') && /quoting exactly what goes/.test(rebuilt.guard || ''), rebuilt.guard);
+  const noScene = commit(world, [{ file: 'Plot Essential.md', find: PE.slice(PE.indexOf('## SCENE')), replace: '' }], 'x');
+  ok('no change, surgical or not, takes out what the craft requires', noScene.project.docs[0].text.includes('## SCENE') && /would have taken out the SCENE/.test(noScene.guard || ''), noScene.guard);
+
+  /* — the craft's chore markers, and only them — */
+  const story = PE.replace('## SCENE', '## THREADS\nUnresolved tension between the brothers simmers under every council vote.\n\n## SCENE');
+  const kept = lint(story, { kind: 'pe', deliverable: true });
+  ok('a story line that opens with "Unresolved" is the story, never taken for a note', kept.text.includes('Unresolved tension between the brothers'), kept.found.map((f) => f.said));
+  const chores = lint(PE.replace('## SCENE', '## THREADS\nUNRESOLVED: who paid the guard\nUnresolved: the second key\nTBD\nneeds verification: her age\n\n## SCENE'), { kind: 'pe', deliverable: true });
+  ok('the craft’s own chore markers still go', !/UNRESOLVED: who|Unresolved: the second|^TBD$|needs verification/m.test(chores.text), chores.text.slice(chores.text.indexOf('## MINOR'), chores.text.indexOf('## SCENE')));
+
+  /* — an empty reply says the provider's own reason — */
+  const why = has(run, 'emptyReplyWhy') ? run.emptyReplyWhy : () => '';
+  ok('cut for length after only thinking: it ran out of room, and a larger Longest reply gives it room',
+    /ran out of room/.test(why({ reason: 'length', thought: true })) && /Longest reply/.test(why({ reason: 'max_tokens', thought: true })), why({ reason: 'length', thought: true }));
+  ok('blocked says blocked, with the provider’s own reason', /blocked it \(its reason: content_filter\)/.test(why({ reason: 'content_filter' })) && /blocked/.test(why({ reason: 'BLOCKLIST' })) && /blocked/.test(why({ reason: 'refusal' })));
+  ok('an answer that ended with nothing in it gives the reason it gave', /ended the answer with no words in it \(its reason: stop\)/.test(why({ reason: 'stop' })));
+  ok('a line that closed with no reason says so, never a guess', /gave no reason/.test(why({})));
+
+  /* — the note at the end on an Anthropic-shaped address — */
+  const late = [{ role: 'user', content: 'hi' }, { role: 'system', content: 'NOTE' }];
+  const anth = providers.buildRequest({ url: 'https://api.anthropic.com/v1', model: 'claude-x', key: 'k' }, { system: 'S', messages: late });
+  ok('on an Anthropic-shaped address the note rides at the end of his message at once — never a system message among the messages, which it refuses',
+    anth.body.messages.every((m) => m.role !== 'system') && anth.body.messages[anth.body.messages.length - 1].content.endsWith('NOTE'), anth.body.messages);
+  const elsewhere = providers.buildRequest({ url: 'https://api.deepseek.com/v1', model: 'deepseek-chat', key: 'k' }, { system: 'S', messages: late });
+  ok('elsewhere it stays a system message after his, until a model refuses one', elsewhere.body.messages.some((m, i) => i > 0 && m.role === 'system' && m.content === 'NOTE'));
+
+  /* — an answer sent whole that stopped at its limit is a cut answer, in Anthropic's word too — */
+  {
+    const before = globalThis.fetch;
+    globalThis.fetch = async () => new Response(JSON.stringify({ content: [{ type: 'text', text: 'The harbour wall was built by' }], stop_reason: 'max_tokens' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    try {
+      const got = await callMod.streamModel({ id: 'ca', url: 'https://api.anthropic.com/v1', model: 'claude-x', key: 'k' }, { system: 'S', messages: [{ role: 'user', content: 'hi' }] });
+      ok('an answer sent whole that stopped at its limit is cut, so Go on is offered — in Anthropic’s word (max_tokens) too',
+        got.cut === true && got.reason === 'max_tokens' && got.text === 'The harbour wall was built by', got);
+    } catch (e) { ok('an answer sent whole that stopped at its limit is cut', false, String((e && e.stack) || e)); } finally { globalThis.fetch = before; }
+  }
+
+  /* — what was sent is kept as it went — */
+  if (has(callMod, 'snapshotBody')) {
+    const engineText = 'E'.repeat(1000);
+    const body = { model: 'm', messages: [{ role: 'system', content: engineText }, { role: 'user', content: 'hi' }], thinking: { type: 'enabled', budget_tokens: 100 } };
+    const snap = callMod.snapshotBody(body);
+    body.messages[1].content = 'changed'; body.messages.push({ role: 'user', content: 'more' }); body.thinking.budget_tokens = 5;
+    eq('later changes to a request never reach the record of what was sent', snap, { model: 'm', messages: [{ role: 'system', content: engineText }, { role: 'user', content: 'hi' }], thinking: { type: 'enabled', budget_tokens: 100 } });
+  } else ok('later changes to a request never reach the record of what was sent', false, 'no snapshotBody');
+
+  /* — how long it thought — */
+  const took = has(kit, 'tookWords') ? kit.tookWords : () => '';
+  eq('how long it thought: whole seconds first, never "1m 60s"', [took(119600), took(59400), took(59600), took(61000)], ['2m 0s', '59s', '1m 0s', '1m 1s']);
+
+  /* — a thought written anywhere in a reply is a thought — */
+  eq('a thought partway through a reply is not its words', editsMod.ownWords('Here is the plan.\n<thinking>\nshould I add Mira?\n</thinking>\nI added Mira.'), 'Here is the plan.\n\nI added Mira.');
+  eq('a tag named inside a sentence is words', editsMod.ownWords('I never write <think> tags in a reply.'), 'I never write <think> tags in a reply.');
+  ok('and one shown inside a code fence is words', editsMod.ownWords('The template:\n```\n<think>\n{{thought}}\n</think>\n```\nUse it.').includes('{{thought}}'));
+  ok('a thought left open partway through was words after all', editsMod.ownWords('Done.\n<think>\nand then').includes('and then'));
+
+  /* — a reply that ran past its own end — */
+  const runaway = has(run, 'endAtRunaway') ? run.endAtRunaway : (t) => t;
+  eq('it ends where his label begins', runaway('Added Mira.\n\nBruce said:\nnow make her older', { you: 'Bruce' }), 'Added Mira.');
+  eq('or the house’s own note', runaway('Done.\n(From the house, not Bruce — what came of your last reply.)\nok', { you: 'Bruce' }), 'Done.');
+  eq('or his own message typed again', runaway('Sure.\nUser: make the harbour older please and add a guard at the gate', { you: 'Bruce', message: 'make the harbour older please and add a guard at the gate' }), 'Sure.');
+  eq('his message typed again is found whatever its fortieth character is', runaway('Sure.\nBruce: make the harbour older please and add a guard', { you: 'Bruce', message: 'make the harbour older please and add a guard' }), 'Sure.');
+  const scene = 'Rewrote it.\n\n<file name="Scene.md">\nThe hall fell quiet.\nBruce said:\nnothing\n</file>';
+  eq('never inside a document it is writing — a story may say "Bruce said:"', runaway(scene, { you: 'Bruce' }), scene);
+  eq('and never emptied: a reply that opens by echoing the form is left whole', runaway('Bruce said:\nhello', { you: 'Bruce' }), 'Bruce said:\nhello');
+
+  /* — the conversation window: all of it unless he says, opening on his words, said after the talk — */
+  const talk = (n) => Array.from({ length: n }, (_, i) => ({ role: i % 2 ? 'maker' : 'writer', text: `m${i}` }));
+  const t60 = talk(60);
+  if (has(run, 'talkShown')) {
+    eq('nothing set: the whole conversation', [run.talkWindow({ settings: {} }), run.talkShown(t60, 0).shown.length, run.talkShown(t60, 0).left], [0, 60, 0]);
+    const w = run.talkShown(t60, 11);
+    eq('a window opens on his words: a reply whose message is left out goes with it', [w.shown[0].role, w.shown.length, w.left], ['writer', 10, 50]);
+    eq('a number he set is his, under its own name; under six is six; the old name is never read', [run.talkWindow({ settings: { talkWindow: 40 } }), run.talkWindow({ settings: { talkWindow: 3 } }), run.talkWindow({ settings: { turnsOnScreen: 40 } })], [40, 6, 0]);
+  } else ok('the conversation window', false, 'no talkShown');
+  const msgs = run.makerMessagesFor({ house: { settings: { talkWindow: 10 } }, p: { you: 'Bruce', maker: 'Eni' }, past: t60, world: { docs: [], recentSections: [] }, message: 'build it' });
+  const ask = msgs.findIndex((m) => m.content.includes('Bruce said:\nbuild it'));
+  ok('the talk opens on his words, and nothing of the house’s is above it', msgs[0].role === 'user' && msgs[0].content === 'm50' && !msgs.slice(0, ask).some((m) => /From the house/.test(m.content)), msgs.slice(0, 2));
+  ok('what was left out is said by the house with his message, after the talk', ask > 0 && /began 50 messages before the earliest one above/.test(msgs[ask].content), msgs[ask] && msgs[ask].content.slice(0, 300));
+  const all = run.makerMessagesFor({ house: { settings: {} }, p: { you: 'Bruce', maker: 'Eni' }, past: t60, world: { docs: [], recentSections: [] }, message: 'build it' });
+  ok('with nothing set, the first message of a long brainstorm is read — and nothing is said to be missing', all[0].content === 'm0' && !all.some((m) => /began \d+ messages/.test(m.content)), all[0]);
+
+  /* — two windows' copies of one world, put together — */
+  if (has(merge, 'mergeWorlds')) {
+    const B = { id: 'w', title: 'T', docs: [{ id: 'd1', name: 'PE.md', text: 'a' }], chats: [{ id: 'c1', title: 'C', turns: [{ role: 'writer', text: 'hi', at: 1 }] }], openChat: 'c1', updated: 10 };
+    const copy = () => JSON.parse(JSON.stringify(B));
+    const L = copy(); L.title = 'Mine'; L.chats[0].turns.push({ role: 'writer', text: 'from here', at: 5 });
+    const R = copy(); R.docs[0].text = 'b'; R.docs.push({ id: 'd2', name: 'Notes.md', text: 'n' }); R.chats[0].turns.push({ role: 'writer', text: 'from there', at: 4 }); R.updated = 20;
+    const m = merge.mergeWorlds(B, L, R);
+    eq('two windows’ changes to different things both stand', [m.world.title, m.world.docs.map((d) => d.text), m.conflicts], ['Mine', ['b', 'n'], []]);
+    eq('a conversation talked on in both keeps every message of both', m.world.chats[0].turns.map((t) => t.text), ['hi', 'from there', 'from here']);
+    eq('the stamp is the later one', m.world.updated, 20);
+    const L2 = copy(); L2.docs[0].text = 'mine';
+    const R2 = copy(); R2.docs[0].text = 'theirs';
+    const m2 = merge.mergeWorlds(B, L2, R2);
+    eq('the same thing changed differently: this window’s stands, and the clash is named', [m2.world.docs[0].text, m2.conflicts], ['mine', ['docs[d1].text']]);
+    const L3 = copy(); L3.docs = [];
+    const R3 = copy(); R3.chats[0].title = 'Renamed';
+    eq('a document deleted here and untouched there stays deleted', merge.mergeWorlds(B, L3, R3).world.docs.length, 0);
+    const R4 = copy(); R4.docs[0].text = 'changed there';
+    eq('one changed there meanwhile is kept', merge.mergeWorlds(B, L3, R4).world.docs.map((d) => d.text), ['changed there']);
+    const L5 = copy(); L5.docs.push({ id: 'dx', name: 'Scene.md', text: 'here' });
+    const R5 = copy(); R5.docs.push({ id: 'dy', name: 'Scene.md', text: 'there' });
+    const m5 = merge.mergeWorlds(B, L5, R5);
+    eq('one name is one document: two started under one name keep this window’s, and the clash is named', [m5.world.docs.filter((d) => d.name === 'Scene.md').map((d) => d.text), m5.conflicts.includes('docs[Scene.md]')], [['here'], true]);
+    const L6 = copy(); L6.openChat = 'mine';
+    eq('where a page is (its open conversation) is never a clash', merge.mergeWorlds(B, L6, copy()).conflicts, []);
+    /* a window that lands a reply also marks an older reply's way back too old (capUndo):
+     * the other window's new messages are still kept, every one, in the order said */
+    const T = { id: 'w', docs: [], chats: [{ id: 'c1', title: 'C', turns: [{ role: 'writer', text: 'q1', at: 10 }, { role: 'maker', text: 'a1', at: 11, batches: [{ id: 'u1', items: [] }] }] }] };
+    const tcopy = () => JSON.parse(JSON.stringify(T));
+    const TL = tcopy(); TL.chats[0].turns[1].batches[0].tooOld = true; TL.chats[0].turns.push({ role: 'writer', text: 'q2 here', at: 30 }, { role: 'maker', text: 'a2 here', at: 31 });
+    const TR = tcopy(); TR.chats[0].turns.push({ role: 'writer', text: 'q2 there', at: 20 }, { role: 'maker', text: 'a2 there', at: 21 });
+    const tm = merge.mergeWorlds(T, TL, TR);
+    eq('a conversation talked on in two windows, one of them trimming an old way back: every message of both, in the order said, and no clash',
+      [tm.world.chats[0].turns.map((t) => t.text), tm.world.chats[0].turns[1].batches[0].tooOld, tm.conflicts], [['q1', 'a1', 'q2 there', 'a2 there', 'q2 here', 'a2 here'], true, []]);
+  } else ok('two windows put together', false, 'no merge.js');
+
+  /* — everything in one file: his connections, keys and all; brought back, never doubled — */
+  const fromFile = { settings: { turnsOnScreen: 40 }, connections: [{ id: 'cA', name: 'DeepSeek', url: 'https://api.deepseek.com', model: 'deepseek-chat', key: 'sk-1' }, { id: 'cB', name: 'Kimi', url: 'https://api.moonshot.ai/v1', model: 'kimi', key: 'sk-2' }], agentConnections: { [FRONT]: 'cA', eye: 'cB' } };
+  const back = store.fillHouse({ settings: {}, connections: [{ id: 'cZ', name: 'mine', url: 'https://api.deepseek.com', model: 'deepseek-chat', key: 'sk-1' }], agentConnections: {} }, fromFile);
+  eq('his connections come back beside his own, never doubled', (back.house.connections || []).map((c) => c.id), ['cZ', 'cB']);
+  eq('who rides which comes back, onto the one here when it is the same connection', back.house.agentConnections, { [FRONT]: 'cZ', eye: 'cB' });
+  eq('an older file’s 40 is the old default, never his window', [back.house.settings.talkWindow, back.house.settings.turnsOnScreen], [undefined, undefined]);
+  eq('his own number from an older file is his window', store.fillHouse({ settings: {} }, { settings: { turnsOnScreen: 60 } }).house.settings.talkWindow, 60);
+  const realFetch = globalThis.fetch;
+  let dev = { settings: {}, connections: [{ id: 'c1', name: 'good', url: 'http://x/v1', model: 'm', key: 'sk-secret' }], agentConnections: { [FRONT]: 'c1' }, updated: 5 };
+  globalThis.fetch = async (url, init = {}) => {
+    const u = String(url);
+    const json = (v, status = 200) => new Response(JSON.stringify(v), { status });
+    if (u === '/api/house' && (init.method || 'GET') === 'GET') return json(dev);
+    if (u === '/api/house' && init.method === 'PUT') { dev = { ...JSON.parse(init.body), updated: (dev.updated || 0) + 1 }; return json({ ok: true, updated: dev.updated }); }
+    if (u === '/api/projects') return json({ projects: [] });
+    return json({});
+  };
+  try {
+    await store.loadHouse();
+    const file = await store.exportEverything();
+    eq('the file holds his connections, keys and all, and who rides which', [((file.house || {}).connections || []).map((c) => [c.id, c.key]), (file.house || {}).agentConnections], [[['c1', 'sk-secret']], { [FRONT]: 'c1' }]);
+    dev = { settings: { turnsOnScreen: 40, theme: 'hearth' }, connections: [], agentConnections: {} };
+    await store.loadHouse();
+    eq('the old default 40 is not his: gone on load, and from the device', [store.getHouse().settings.turnsOnScreen, dev.settings.turnsOnScreen, store.getHouse().settings.talkWindow], [undefined, undefined, undefined]);
+    dev = { settings: { turnsOnScreen: 24 }, connections: [], agentConnections: {} };
+    await store.loadHouse();
+    eq('his own number moves to the new name, on the device too', [store.getHouse().settings.talkWindow, dev.settings.talkWindow, 'turnsOnScreen' in dev.settings], [24, 24, false]);
+    dev = { settings: { talkWindow: 40 }, connections: [], agentConnections: {} };
+    await store.loadHouse();
+    eq('a 40 he sets now is his, and stays', [store.getHouse().settings.talkWindow, dev.settings.talkWindow], [40, 40]);
+  } catch (e) { ok('the v2.5 house turns ran', false, String((e && e.stack) || e)); } finally { globalThis.fetch = realFetch; }
 }
 
 /* ================================================================ done */

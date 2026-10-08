@@ -35,7 +35,7 @@ import glob
 import subprocess
 from pathlib import Path
 
-VERSION = "2.4.1"
+VERSION = "2.5.0"
 ROOT = Path(__file__).resolve().parent
 HOME = Path(os.environ.get("COZYMAKER_HOME", Path.home() / ".cozymaker"))
 PROJECTS = HOME / "projects"
@@ -69,7 +69,9 @@ COMMIT = _commit()
 for d in (HOME, PROJECTS, BACKUPS, EXPORTS, SENT):
     d.mkdir(parents=True, exist_ok=True)
 
-_write_lock = threading.Lock()
+# re-entrant: a save that reads the world it is about to replace may heal it from a
+# backup first, and healing takes the same lock
+_write_lock = threading.RLock()
 
 SAFE_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
@@ -171,6 +173,46 @@ def read_healing(path: Path):
         return good
 
 
+COPY_NAME = re.compile(r"^([A-Za-z0-9-][A-Za-z0-9_-]{0,63})\.(\d{8}-\d{6})\.json\.gz$")
+
+
+def earlier_copies():
+    """EVERY EARLIER COPY OF EVERY WORLD THE DEVICE KEEPS (v2.5). Each save keeps the copy
+    before it (the newest eight, the newest of each hour for two days, of each day for a
+    month), and a deleted world keeps its last one — but the only way to them was Termux.
+    Grouped by world, newest first, a deleted world named from its newest copy."""
+    live = {}
+    for p in PROJECTS.glob("*.json"):
+        live[p.stem] = True
+    groups = {}
+    for b in BACKUPS.glob("*.json.gz"):
+        m = COPY_NAME.match(b.name)
+        if not m:
+            continue
+        try:
+            at = int(time.mktime(time.strptime(m.group(2), "%Y%m%d-%H%M%S")) * 1000)
+            size = b.stat().st_size
+        except (ValueError, OSError):
+            continue
+        groups.setdefault(m.group(1), []).append({"file": b.name, "at": at, "size": size})
+    out = []
+    for wid, copies in groups.items():
+        copies.sort(key=lambda c: c["at"], reverse=True)
+        title = ""
+        here = project_path(wid)
+        try:
+            if here.exists():
+                title = (read_json(here, {}) or {}).get("title", "")
+            else:
+                with gzip.open(BACKUPS / copies[0]["file"], "rt", encoding="utf-8") as f:
+                    title = (json.load(f) or {}).get("title", "")
+        except Exception:
+            title = ""
+        out.append({"id": wid, "title": title or wid, "here": wid in live, "copies": copies})
+    out.sort(key=lambda g: g["copies"][0]["at"], reverse=True)
+    return out
+
+
 def read_json(path: Path, fallback):
     try:
         with open(path, encoding="utf-8") as f:
@@ -192,7 +234,6 @@ def default_house():
             "yourName": "",
             "person": "follow",
             "autoApply": True,
-            "turnsOnScreen": 40,
         },
         "personaFrame": "",
         "projects": [],
@@ -214,6 +255,21 @@ def keep_newest_sent(pid):
 
 def project_path(pid):
     return PROJECTS / f"{pid}.json"
+
+
+# Each world's stamp, kept as it is written, so a page coming back into view can ask
+# whether the device has moved on without the device reading the whole world again.
+_stamps = {}
+
+
+def stamp_of(pid):
+    if pid in _stamps:
+        return _stamps[pid]
+    d = read_healing(project_path(pid))
+    if d is None:
+        return None
+    _stamps[pid] = int(d.get("updated") or 0)
+    return _stamps[pid]
 
 
 def project_list():
@@ -380,9 +436,37 @@ def hermes_key_for(url):
     return None
 
 
+# ONLY THIS PHONE'S OWN PAGE (v2.5; Cozy Chat v5.28.4's lesson). Any web page open in his
+# browser can send a request to 127.0.0.1: without these checks one could stop CozyMaker
+# (POST /api/quit), send requests anywhere through it with his phone (POST /api/call),
+# or write over his worlds — and a page that renames itself to this address (DNS
+# rebinding) could read the house, keys and all. A request to the store or the way out
+# must name this address as its host, and a write that says where it came from must have
+# come from here. The launcher's own requests and every test say nothing of where they
+# came from, and pass.
+def here_hosts():
+    return {f"127.0.0.1:{PORT}", f"localhost:{PORT}", f"[::1]:{PORT}"}
+
+
 class Handler(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     server_version = "CozyMaker/" + VERSION
+
+    def from_here(self, write):
+        host = (self.headers.get("Host") or "").strip().lower()
+        why = ""
+        if host and host not in here_hosts():
+            why = "that request was not made to CozyMaker's own address, so it was turned away"
+        elif write:
+            origin = self.headers.get("Origin")
+            if origin is not None and origin.strip().lower() not in {"http://" + h for h in here_hosts()}:
+                why = "that request did not come from CozyMaker's own page, so it was turned away"
+        if not why:
+            return True
+        # its body is never read, so the line is not kept open for another request
+        self.close_connection = True
+        self.send_json({"error": why}, 403)
+        return False
 
     def log_message(self, fmt, *args):
         pass
@@ -429,6 +513,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = self.path.split("?", 1)[0]
+        if path.startswith("/api/") and not self.from_here(False):
+            return
         if path == "/api/version":
             return self.send_json({"version": VERSION, "commit": COMMIT,
                                    "home": str(HOME), "root": str(ROOT)})
@@ -441,6 +527,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self.send_json(house)
         if path == "/api/projects":
             return self.send_json({"projects": project_list()})
+        if path == "/api/copies":
+            return self.send_json({"worlds": earlier_copies()})
+        if path.startswith("/api/copies/"):
+            name = path[len("/api/copies/"):]
+            if not COPY_NAME.match(name):
+                return self.send_json({"error": "bad name"}, 400)
+            try:
+                with gzip.open(BACKUPS / name, "rt", encoding="utf-8") as f:
+                    return self.send_json(json.load(f))
+            except FileNotFoundError:
+                return self.send_json({"error": "not kept"}, 404)
+            except Exception:
+                return self.send_json({"error": "that copy could not be read"}, 500)
         if path.startswith("/api/sent/"):
             bits = path[len("/api/sent/"):].split("/")
             if len(bits) != 2 or not safe_id(bits[0]) or not SENT_KEY.match(bits[1]):
@@ -452,6 +551,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self.send_json(json.loads(p.read_text(encoding="utf-8")))
             except Exception:
                 return self.send_json({"error": "it could not be read"}, 500)
+        if path.startswith("/api/stamp/"):
+            pid = path[len("/api/stamp/"):]
+            if not safe_id(pid):
+                return self.send_json({"error": "bad id"}, 400)
+            with _write_lock:
+                at = stamp_of(pid)
+            if at is None:
+                return self.send_json({"error": "not found"}, 404)
+            return self.send_json({"updated": at})
         if path.startswith("/api/project/"):
             pid = path[len("/api/project/"):]
             if not safe_id(pid):
@@ -486,17 +594,39 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     # ---------- PUT / POST / DELETE ----------
 
+    def base_of(self):
+        """The stamp of the copy a save was made from (X-CozyMaker-Base), or None when the
+        save names none — a new world, a restore, an older page."""
+        raw = (self.headers.get("X-CozyMaker-Base") or "").strip()
+        if not raw:
+            return None
+        try:
+            return int(raw)
+        except ValueError:
+            return None
+
     def do_PUT(self):
         path = self.path.split("?", 1)[0]
+        if not self.from_here(True):
+            return
         body = self.read_body()
         incomplete = {"error": "that save arrived incomplete, so nothing was written"}
         if path == "/api/house":
             if not (isinstance(body, dict) and ("settings" in body or "connections" in body)):
                 return self.send_json(incomplete, 400)
+            base = self.base_of()
             with _write_lock:
+                cur = read_json(HOUSE, None) if HOUSE.exists() else None
+                was = int((cur or {}).get("updated") or 0)
+                # A PAGE THAT FELL BEHIND NEVER WRITES OVER NEWER WORK (v2.5): a save made
+                # from an older copy than the one here is told so, with this one, and the
+                # page puts the two together before it saves again.
+                if base is not None and cur is not None and base != was:
+                    return self.send_json({"error": "newer", "house": cur}, 409)
+                body["updated"] = max(int(time.time() * 1000), was + 1)
                 roll_backup(HOUSE)
                 atomic_write(HOUSE, json.dumps(body, indent=1))
-            return self.send_json({"ok": True})
+            return self.send_json({"ok": True, "updated": body["updated"]})
         if path.startswith("/api/sent/"):
             bits = path[len("/api/sent/"):].split("/")
             if len(bits) != 2 or not safe_id(bits[0]) or not SENT_KEY.match(bits[1]):
@@ -515,17 +645,37 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if not (isinstance(body, dict) and isinstance(body.get("docs"), list)):
                 return self.send_json(incomplete, 400)
             body["id"] = pid
-            body["updated"] = int(time.time() * 1000)
+            base = self.base_of()
             with _write_lock:
                 p = project_path(pid)
+                exists = p.exists()
+                cur = read_healing(p) if exists else None
+                was = int((cur or {}).get("updated") or 0)
+                # A PAGE THAT FELL BEHIND NEVER WRITES OVER NEWER WORK (v2.5). Two browsers,
+                # or a tab left open for days, each held their own copy of a world, and the
+                # last to save wrote its whole copy over the other's newer work without a
+                # word. A save names the copy it was made from; one made from an older copy
+                # is told so, with the copy here, and the page puts the two together; one
+                # for a world deleted meanwhile is told it is gone, and never brings it back.
+                if base is not None:
+                    if not exists:
+                        return self.send_json({"error": "deleted"}, 410)
+                    if cur is not None and base != was:
+                        return self.send_json({"error": "newer", "world": cur}, 409)
+                # every save its own stamp, always forward: two saves in one millisecond are
+                # still two copies
+                body["updated"] = max(int(time.time() * 1000), was + 1)
                 roll_backup(p)
                 atomic_write(p, json.dumps(body, indent=1))
+                _stamps[pid] = body["updated"]
                 mirror_exports(body)
             return self.send_json({"ok": True, "updated": body["updated"]})
         return self.send_json({"error": "unknown"}, 404)
 
     def do_DELETE(self):
         path = self.path.split("?", 1)[0]
+        if not self.from_here(True):
+            return
         if path.startswith("/api/project/"):
             pid = path[len("/api/project/"):]
             if not safe_id(pid):
@@ -534,6 +684,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 p = project_path(pid)
                 roll_backup(p)
                 p.unlink(missing_ok=True)
+                _stamps.pop(pid, None)
                 shutil.rmtree(EXPORTS / pid, ignore_errors=True)
                 shutil.rmtree(SENT / pid, ignore_errors=True)
             return self.send_json({"ok": True})
@@ -541,6 +692,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = self.path.split("?", 1)[0]
+        if not self.from_here(True):
+            return
         if path == "/api/call":
             return self.proxy_call()
         if path == "/api/hermes/key":

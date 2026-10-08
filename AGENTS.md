@@ -5,28 +5,37 @@ record of what has already been got wrong once.
 
 ---
 
-## Where it stands (hand-off, 8 Oct 2026, v2.4.1)
+## Where it stands (hand-off, 8 Oct 2026, v2.5.0)
 
 **How a turn works.** The one he talks to reads his instructions, his whole
 engine (`engine/generalist.md`, word for word), "how this room works"
-(`frontBody`), every document whole, the talk, and his note at the end — built in
-one place (`makerSystemFor`, `makerMessagesFor`) for the turn and for the context
-line alike. It changes documents itself in its reply (`<edits>` / `<file>`). The
-house applies them, runs the checks on only what this turn brought in
-(`checkChanged`), and asks for another step only when something needs it: a quote
-that missed, a finding, a helper's report, a search, parts it asked to read
-(`MAX_STEPS` 6). Before a turn that changed a plot essential or a continuation file
-ends, the eye reads back exactly those changes (`readBack`, a `<verdict>`, changing
-nothing itself); what it raises goes back to the one he talks to. Helpers — the
-eye, the worldbook keeper, the memory auditor, the instructions writer — are
-called by name with `<helper>` and report back to it. He reads only its words; the
-changes are cards with put it back; "What was sent" and the context line show the
-cost.
+(`frontBody`), every document whole, the whole talk (unless he set a window), and
+his note at the end — built in one place (`makerSystemFor`, `makerMessagesFor`)
+for the turn and for the context line alike. It changes documents itself in its
+reply (`<edits>` / `<file>`). The house applies them, runs the checks on only what
+this turn brought in (`checkChanged`), and asks for another step only when
+something needs it: a quote that missed, a finding, a helper's report, a search,
+parts it asked to read (`MAX_STEPS` 6). Before a turn that changed a plot essential
+or a continuation file ends, the eye reads back exactly those changes (`readBack`,
+a `<verdict>`, changing nothing itself); what it raises goes back to the one he
+talks to. Helpers — the eye, the worldbook keeper, the memory auditor, the
+instructions writer — are called by name with `<helper>` and report back to it.
+He reads only its words (a thought it writes as a block, anywhere, goes to the
+Thinking box); the changes are cards with put it back; "What was sent" and the
+context line show the cost.
 
-**The gate.** `bash tests/all.sh` — eleven runs, all green before any push. On
-8 Oct 2026, on a two-core machine: units 594, harness 172, thinking 13, saves 20,
-server 62, browser 103, walk 227, live stream 12 + 12, stream flows 29, launcher
-21. The browser runs need Playwright's Chromium.
+**Two windows, one device (v2.5).** Every save names the copy it was made from
+(`X-CozyMaker-Base`); the device refuses one made from an older copy (409, with
+its own) or for a world deleted meanwhile (410), and the page puts the two together
+(`js/merge.js`). A page coming back into view takes the device's newer copy; a
+newer commit on the device is taken by the page itself when nothing is in progress.
+Only this phone's own page reaches `/api/` (Host and Origin checked).
+
+**The gate.** `bash tests/all.sh` — thirteen runs, all green before any push. On
+8 Oct 2026, on a two-core machine: units 643, harness 185, thinking 13, saves 20,
+two pages 22, server 82, browser 103, walk 228, the house walk 34, live stream
+12 + 12, stream flows 29, launcher 21 — 1,404 checks. The browser runs need
+Playwright's Chromium.
 
 **What no test here can show.** Every model in the suites is a stand-in on the
 wire. How his real models follow the room's forms (`<edits>`, `<file>`,
@@ -205,10 +214,44 @@ provider takes ("minimal") is repaired to Low when the house loads.
 ### Storage
 
 The device holds everything, under `~/.cozymaker`. The browser holds only the
-world that is open, and only so the page can draw. **There is no syncing
-between browsers**, deliberately, and there never will be. Saves are atomic,
-the previous version is kept, and every document is also written as plain
-markdown under `~/.cozymaker/exports/` so it is reachable from the shell.
+world that is open, and only so the page can draw. **Nothing lives in a browser
+and nothing is synced between browsers**, deliberately: the device is the one
+copy. Saves are atomic, earlier copies are kept (the newest eight, the newest of
+each hour for two days, of each day for a month, a deleted world's last — all
+listed under the floor and brought back from there), and every document is also
+written as plain markdown under `~/.cozymaker/exports/` so it is reachable from
+the shell.
+
+**Two pages never write over each other (v2.5).** Each page remembers, per world
+and for the house, the stamp of the copy it last read or wrote (`bases`). Every
+save sends it as `X-CozyMaker-Base`; the device refuses a save made from an older
+copy (409, handing back its own) or one for a world deleted meanwhile (410: the
+page lets it go and never writes it back — `goneIds`). Refused, the page puts its
+newest copy and the device's together from the copy both began with (`merge3`):
+what one side changed is taken; lists with ids (documents, conversations,
+connections, hand edits) are put together thing by thing; a conversation's
+messages are known by role and moment (`at`), so two windows talking in one
+conversation keep every message of both, in order; where a page is (open
+conversation, newest sections) is its own; the stamp is the later. A true clash
+keeps this page's version and the device's whole copy beside it as a world of its
+own ("… (from another window, <time>)"), and the page says so. One name is one
+document. The house is put together the same way, from the house as it is when the
+refusal comes back (a change made while the refused save was on its way is kept).
+A save that names no copy (a page from before 2.5) still lands.
+
+**A page that fell behind catches up.** Coming back into view (focus, visibility,
+pageshow) a page with nothing of its own unsaved asks the device (`/api/stamp/<id>`,
+no world read) whether the open world moved on, and takes it if so — the house
+too, unless he has the house open in front of him. A world deleted elsewhere is
+said, and the page moves to one that is there. The page also asks which commit the
+device runs (every 30s and on coming back); a newer one is taken by reloading,
+only when nothing is in progress (no reply being made, nothing unsaved, no draft,
+no sheet or drawer open, no message being edited).
+
+**Only this phone's own page.** Every `/api/` request must name this address as
+its Host (DNS rebinding), and every write that says where it came from must come
+from `http://127.0.0.1:<port>` or `http://localhost:<port>`. The launcher and the
+suites send no Origin and pass.
 
 **A world holds its documents and its conversations.** Every conversation in a
 world reads and changes the same documents. A world saved before conversations
@@ -254,7 +297,8 @@ Its laws hold here too:
   make no card, the last one per name wins, one left open is carried on and never written half-way.
   `create_file` / `replace_all` in the block are still read, but no worker is taught them any more.
 - **Documents go whole, last.** A worker reads every document in full when the world fits in
-  `WHOLE_LIMIT` characters, placed after the talk and just before the job.
+  `WHOLE_LIMIT` characters (400,000 since v2.5, the same as the one he talks to), placed after the talk
+  and just before the job.
 - **Native widgets failed on his phone.** No `<details>` anywhere: every fold is `kit.fold`, a button.
 - **What code can check, code checks.** Transplant markers (its `lintTransplant`, held to 16 recorded
   answers), worldbook JSON (repaired on leaving), spacing in an instructions document (reported with
@@ -1475,27 +1519,128 @@ line changed since 1.8.0 was read again. Found and fixed:
 
 Each fix has a test that fails with it reverted (checked by reverting each in a scratch copy).
 
+### Two windows, one device, and the last audit (v2.5.0)
+
+He asked for everything to be perfect before his subscription ended: every version's problems checked
+again, and whatever would make him angry found and fixed. The gate was run first on an untouched 2.4.1
+(green but one frame-time check, 267ms against 250, which passed on three reruns). Then every file was
+read again and each suspicion proven with a probe on the real code before anything changed. Found and
+fixed, each at its cause:
+
+- **\*delete could never land.** The loss guard counted people, events, bonds and entries on every change,
+  so a change that quotes exactly what it takes out — `*delete Aldric`, a `#prune` he approved, two events
+  merged into a range, a bond that ended — was refused as a loss. Only a document rebuilt whole (`<file>`
+  over one that exists, `replace_all`) is counted now (`applyRun` returns `whole`; `lostSomething(…, {
+  whole })`); every change is still held to the craft's required parts and a transplant's markers.
+- **A story line that opened with "Unresolved" was deleted**, and its heading with it as empty: the chore
+  markers were read in any case. Now only the craft's own: `UNRESOLVED`/`TBD` in capitals, "Unresolved:"
+  or "TBD:" as a label, "needs verification".
+- **A long brainstorm reached "build it" without its start.** The one he talks to read only the newest
+  40 messages, without a word: the server wrote `"turnsOnScreen": 40` into every house and the box showed
+  40 as if he had set it. Nothing set is now the whole talk; a number he sets is kept under a new name
+  (`talkWindow`; the old name is read once — its 40 goes, his own number moves); a window opens on his
+  message (`talkShown`); what is left out is said by the house in the note with his message — after the
+  talk, never as a message in his place above it (his SillyTavern rule).
+- **A thought written partway through a reply, or written `<thinking>`/`<reasoning>`,** reached the
+  screen, was kept as the reply, went back to the model as its own words — and a helper call inside it
+  was made (on 2.4.1 the probe went maker→eye six times). One rule (`withoutThoughts`: an opener at the
+  start of a line, outside a code fence) for the stream, the kept words, the words read again, and where
+  helper calls, searches and the new-world word are read.
+- **A reply that ran on into his next turn** — "Bruce said:", the house's own note, or his message typed
+  again — was kept whole and read back as its own words. It ends there now (`endAtRunaway`): never
+  inside a document or a block, and never emptied.
+- **An empty reply said only "no words came back"**, though the provider says why it stopped. The
+  reason is kept from the stream and said in his words (`emptyReplyWhy`): out of room after thinking
+  (and a larger Longest reply gives it room), blocked (its reason), ended with nothing (its reason), or
+  closed with none.
+- **A reply that changed the documents and wrote no words was kept as a failure**: no Another answer,
+  and left out of what the one he talks to reads next, so it never learned those changes stood. It is a
+  reply now, with empty words of its own and the house's line beside it (`note`), never in its mouth.
+- **The eye read a world past 120,000 characters as an outline**, so a contradiction with a document it
+  was not shown was invisible to it. `WHOLE_LIMIT` is 400,000, as for the one he talks to.
+- **After Go on, a helper read Go on as his words** ("Bruce: Your last reply was cut off…").
+- **An Anthropic-shaped address paid a refused first call for the note at the end** (a system message
+  among the messages, refused, learned, sent again); it is folded into his message at once there.
+- **The document open in the sheet went stale while a turn changed it, and his next key wrote the old
+  words back over the turn's change**, without a word (proven on 2.4.1 in the browser). The sheet follows
+  the world: the open box at once, a list a moment after; "Put back my edits" starts again from a change
+  that came in. Only the view on screen listens (one listener, stopped by the next view).
+- **Two windows wrote over each other's whole world**, and a window that fell behind showed old work
+  until reloaded — see Storage. The connection form saves onto the connection as the house holds it at
+  that moment (found by its id), so a house put together meanwhile never swallows a Save.
+- **Updates needed a manual reload** (his standing order for Cozy Tavern: they land by themselves).
+- **Any web page open in his browser could stop CozyMaker, send requests through it, or write and
+  delete worlds; a page renamed to this address could read the house, keys and all** (on 2.4.1 the
+  suite's own "evil" page stopped the server). See Storage: only this phone's own page.
+- **The backup file left out his connections** ("keys are never put in a backup"), so a backup brought
+  back on a new phone could not answer a word until every key was typed in again — not his "like Mac
+  Time Machine". The file carries them now, keys and all, with who rides which; bringing back never
+  doubles one (same id, or same address, model and key) and points who-rides-which at the one already
+  here. **Earlier copies** were promised by every delete question and reachable only from Termux; they
+  are listed under the floor (`/api/copies`) and any one comes back as a world of its own.
+- **The house was one long page** (his own word in Cozy Tavern, M468: "so many opened subsections make
+  my head hurt"). Every section folds to its name; what he opens is remembered in this browser; "Set up a
+  connection first" opens Connections for that visit, and what he typed stays in the box.
+- **His message, deleted, left the reply that answered it** — answering nothing, read on as a second
+  reply run into the one before. His own word in Cozy Tavern (M635): "when I delete my message, its
+  output should be gone too". It takes every reply after it, up to his next message, with what they
+  changed put back first (or nothing is deleted); a reply's own Delete still takes only that reply.
+- **The context line kept the old number** when a reply landed while he read further up; it follows
+  every redraw now. "1m 60s" is 2m 0s. Sending walked his whole engine and documents through JSON once
+  more to record the request (`snapshotBody` copies the lists and shares the strings).
+- **The frame-time law is noisy on a two-core machine, on 2.4.1 as on 2.5.** At 6x CPU the worst frame of
+  a turn measured 200–267ms on 2.4.1 and 167–300ms on 2.5 across runs on 8 Oct (budget 250); a CPU
+  profile puts both worst frames — the first 0.3s after the press and the landing — in layout and
+  paint, not script (the longest script stretch is 65ms, building the request). Nothing in this release
+  runs per frame while a reply streams. A run over budget is rerun, never loosened; the landing redraw
+  of a long thinking box is where to look if it is ever to be made lighter.
+
+- **The unit check "a miss on a 158k-character document is quick" measured one round** of twenty
+  searches, so another process's burst on this shared two-core machine counted against the code: 32ms
+  and 52ms were seen on 8 Oct with `locate` byte-for-byte unchanged, against 18–21ms a round otherwise.
+  It takes the best of five rounds now; the 30ms bound is unchanged, and a search that grows with the
+  square of the document is slow in every round.
+
+Tests: units (+49), harness (+13), server (+20), a new suite with two copies of the real store against
+the real server (`two_pages.mjs`, 22), and a new walk in the browser (`walk_house.py`, 34). Every new
+check was run against untouched 2.4.1: units 32 red, harness 12 red, server 15 red, the house walk 20
+red (a part that cannot run there is reported as a failure, never thrown), and the two-page suite stops
+at its first check (2.4.1's store has no way to catch up). The fixes to this release's own new code (the house merge reading the house as
+it is, the open world taking a merge before the copy beside is written, a reply landing in a world
+deleted elsewhere, the house left alone while it is open) were each taken out in a scratch copy and
+their check went red.
+
 ## Testing
 
 ```
 bash tests/all.sh           every suite, exit code intact
 ```
 
-    node tests/units.mjs         594 checks — the real modules on a real document
-    node tests/harness.mjs       172 checks — the whole turn (v2.0): what the one he talks to reads, the
+    node tests/units.mjs         643 checks — the real modules on a real document
+    node tests/harness.mjs       185 checks — the whole turn (v2.0): what the one he talks to reads, the
                                               changes it makes, the steps, its helpers, the checks on
                                               what a turn brought in, put it back after a repair, Go on,
-                                              Stop, a new world, search, the note at the end, too long
+                                              Stop, a new world, search, the note at the end, too long,
+                                              the whole talk, a thought anywhere, a reply that ran on
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
-    python3 tests/server.py       62 checks — the real serve.py, real files on disk, streams timed
+    node tests/two_pages.mjs      22 checks — two copies of the real store against the real serve.py: two
+                                              windows put together, a clash kept beside, a world deleted
+                                              in one, a window coming back, the house from two windows
+    python3 tests/server.py       82 checks — the real serve.py, real files on disk, streams timed, only
+                                              its own page, stale saves refused, earlier copies
     python3 tests/browser.py     103 checks — real Chromium at 390x844, end to end: what it was sent, read off
                                               the wire, and the change on the device
-    python3 tests/walk_worlds.py 227 checks — the drawer, conversations, swipes and versions, edit and
+    python3 tests/walk_worlds.py 228 checks — the drawer, conversations, swipes and versions, edit and
                                               send again, delete, branch, go on, re-quoting, crafts,
                                               the thinking box live, backup and restore, a model too
                                               small for the world, a real server killed mid-edit,
                                               a worldbook chosen, asked for, made and exported
+    python3 tests/walk_house.py   34 checks — the house folds, cold; a reply that only changed things; an
+                                              empty reply's reason; the open document following a turn;
+                                              two windows; a newer version taken by itself; the context
+                                              line read further up; earlier copies; his message deleted
+                                              with its answer
     python3 tests/perf_stream.py  12 checks — the live stream at a phone's speed (CPU 6x): the first thought
                                               on screen within a second of the model sending it, the box
                                               open with no tap, frames, even arrival, everything kept
@@ -1508,7 +1653,7 @@ bash tests/all.sh           every suite, exit code intact
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-1,265 checks. Every suite must be green before a push. `tests/fixtures/` holds answers recorded from the
+1,404 checks. Every suite must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

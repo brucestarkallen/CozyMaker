@@ -65,6 +65,10 @@ async function putBackHandEdit(id) {
  * it — mid-keystroke they would take away the empty heading he is about to
  * fill. What they repair is said once, plainly. */
 export function tidyOnLeaving(id) {
+  /* leaving it: the box no longer follows the document — what the checks write now is
+   * the house's tidying of his edit, never a change from outside that would start his
+   * edits afresh */
+  if (following) { following(); following = null; }
   const p = store.getProject();
   const doc = (p.docs || []).find((d) => d.id === id);
   if (!doc) { forgetOpening(); return; }
@@ -91,6 +95,37 @@ export function tidyOnLeaving(id) {
 
 export function currentDocId() { return openDocIdValue; }
 
+/* WHAT THE SHEET SHOWS FOLLOWS THE WORLD (v2.5). A document open in the sheet was drawn
+ * once, when he opened it: a turn that changed it while he watched it land left the old
+ * words on screen, and the first key he then pressed wrote the old words back over the
+ * turn's change, without a word (the store took the stale box whole). The list kept old
+ * counts the same way. Each view now redraws itself when the world changes under it —
+ * a turn landing, a change put back, another answer walked to — once the change is in,
+ * never in the middle of one. Only the view on screen listens. */
+let view = 0;
+/* the one listener, for the view on screen: a new view stops the one before it */
+let following = null;
+function newView(name) {
+  view++;
+  if (following) { following(); following = null; }
+  $('docsBody').dataset.view = name;
+  return view;
+}
+/* A view redraws a moment after the change, once however many changes came together;
+ * the open document's box follows AT ONCE (now), so no key he presses can fall between
+ * the change and the box and write the old words back over it. */
+function followWorld(mine, redrawView, { now = false } = {}) {
+  let timer = 0;
+  const stop = store.watch(() => {
+    const here = () => view === mine && $('docsSheet').classList.contains('open');
+    if (!here()) { clearTimeout(timer); stop(); return; }
+    if (now) { redrawView(); return; }
+    clearTimeout(timer);
+    timer = setTimeout(() => { if (here()) redrawView(); else stop(); }, 0);
+  });
+  following = stop;
+}
+
 export function openDocs() {
   if (openDocIdValue) tidyOnLeaving(openDocIdValue);
   openDocIdValue = null;
@@ -107,12 +142,15 @@ export function openDoc(id) {
   openOne(id);
 }
 
-function drawList() {
+function drawList({ inPlace = false } = {}) {
   const body = $('docsBody');
   const p = store.getProject();
+  /* redrawn in place (the world changed under it), it keeps his place */
+  const keepAt = inPlace ? body.scrollTop : 0;
   body.innerHTML = '';
   body.style.padding = '';
   const docs = p.docs || [];
+  followWorld(newView('list'), () => { if (openDocIdValue === null) drawList({ inPlace: true }); });
 
   if (!hasPlotEssential(docs)) {
     const book = hasWorldbook(docs);
@@ -186,6 +224,7 @@ function drawList() {
 
   body.append(group('A copy on the device',
     'Every document is also written as plain markdown in ~/.cozymaker/exports, so you can reach it from the shell without opening this.'));
+  if (inPlace) body.scrollTop = keepAt;
 }
 
 function kindLabel(kind) {
@@ -352,6 +391,7 @@ export function storyCardIn() {
   action.textContent = 'All documents';
   action.onclick = () => openDocs();
   const body = $('docsBody');
+  newView('card');
   body.innerHTML = '';
   body.style.padding = '';
   const g = group('Paste the story card',
@@ -386,6 +426,7 @@ export function bringIn() {
   action.onclick = () => openDocs();
 
   const body = $('docsBody');
+  newView('import');
   body.innerHTML = '';
   body.style.padding = '';
   const g = group('Paste it, or pick the file', 'A plot essential, a continuation file, or a worldbook. It arrives whole.');
@@ -454,6 +495,7 @@ function openOne(id) {
   action.onclick = () => openDocs();
 
   const body = $('docsBody');
+  const mine = newView('doc');
   body.innerHTML = '';
   body.style.padding = '0';
 
@@ -524,8 +566,39 @@ function openOne(id) {
   };
   refreshMeta();
 
+  /* the words in the box are the words in the store, or he typed them a moment ago */
+  let synced = area.value;
+  followWorld(mine, () => {
+    if (openDocIdValue !== id || !area.isConnected) return;
+    const live = ((store.getProject() || {}).docs || []).find((d) => d.id === id);
+    if (!live) {
+      /* deleted under him (a delete he asked for in the conversation): say so, and go back */
+      openDocIdValue = null;
+      forgetOpening();
+      toast(`${doc.name} was deleted \u2014 put it back from its card in the conversation, if you want it.`);
+      openDocs();
+      return;
+    }
+    const now = live.text || '';
+    if (now === synced || area.value !== synced) return;
+    const scrolledTo = area.scrollTop;
+    const caret = [area.selectionStart, area.selectionEnd];
+    area.value = now;
+    synced = now;
+    /* WHAT "PUT BACK MY EDITS" PUTS BACK starts again from here: the change that came in
+     * is not his, and putting back to the copy from before it would take that change out
+     * too. His typing before it stays in the document; it is no longer put back alone,
+     * because putting it back now would take out what came after it. */
+    openedText = now;
+    typed = false;
+    try { area.setSelectionRange(Math.min(caret[0], now.length), Math.min(caret[1], now.length)); } catch (_) { /* not focused */ }
+    area.scrollTop = scrolledTo;
+    refreshMeta();
+  }, { now: true });
+
   area.addEventListener('input', () => {
     typed = true;
+    synced = area.value;
     refreshMeta();
     /* Straight into the store, every keystroke. The store holds the only
      * debounce, so the save on the way out always has the latest words.
@@ -582,7 +655,7 @@ function openOne(id) {
   });
   const del = el('button', 'btn danger', 'Delete');
   del.addEventListener('click', async () => {
-    if (!confirm(`Delete ${doc.name}? A copy stays in the backups folder on the device.`)) return;
+    if (!confirm(`Delete ${doc.name}? The world's earlier copies on the device still hold it (The house \u2192 Under the floor \u2192 Earlier copies).`)) return;
     openDocIdValue = null;
     await store.removeDoc(id);
     openDocs();
@@ -632,6 +705,7 @@ function openCompare(chosen = null) {
   const docs = ((store.getProject() || {}).docs || []);
   const pick = (chosen || docs.slice(0, 2).map((x) => x.id)).filter((id) => docs.some((x) => x.id === id));
   const body = $('docsBody');
+  newView('compare');
   body.innerHTML = '';
   /* back to the list the same way as from anywhere in here: All documents, at
    * the top (it used to be a second button with a second name, down here) */

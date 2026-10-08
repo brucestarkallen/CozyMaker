@@ -208,6 +208,9 @@ def main():
             browser = pw.chromium.launch()
             ctx = browser.new_context(viewport={"width": 390, "height": 844},
                                       device_scale_factor=3, is_mobile=True, has_touch=True)
+            # the house's sections fold to their names (v2.5); these walks reach into every one of
+            # them, so they start open here — the folding itself is walked on its own, cold
+            ctx.add_init_script("try { if (!localStorage.getItem('cozymaker:houseOpen')) localStorage.setItem('cozymaker:houseOpen', JSON.stringify(['who','connections','crew','search','shortcuts','look','floor'])); } catch (e) {}")
             page = ctx.new_page()
             errors = []
             page.on("pageerror", lambda e: errors.append(str(e)))
