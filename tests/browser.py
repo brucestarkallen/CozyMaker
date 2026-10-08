@@ -266,10 +266,12 @@ def main():
             engine = (ROOT / "engine" / "generalist.md").read_text()
             ok("it was given his own instructions first", front["system"].startswith("You are Eni. You are warm"), front["system"][:80])
             ok("it was greeted like a person", "Hey Eni, this is Bruce." in front["system"])
-            # v2.6: word for word, but where his engine says "the user" it reads his name
-            plain = [ln for ln in engine.split("\n") if "user" not in ln.lower() and ln.strip()]
+            # v2.6: word for word, but where his engine says "the user" (or, v2.6.1, speaks to him
+            # as "you") it reads his name
+            plain = [ln for ln in engine.split("\n") if "user" not in ln.lower() and not re.search(r"\byour?\b", ln, re.I) and ln.strip()]
             ok("it read his whole engine, word for word but with his name for \u201cthe user\u201d",
                all(ln in front["system"] for ln in plain) and "When Bruce gives a command, EXECUTE IT." in front["system"]
+               and "so Bruce can approve just the safe cuts" in front["system"]
                and not re.search(r"\buser\b", front["system"], re.I), f"{len(front['system'])} chars")
             ok("it was told how to change a document itself", "<edits>" in front["system"] and "How this room works" in front["system"])
             ok("it read the plot essential whole, word for word", PE_SEED.strip() in front["user"])
@@ -408,6 +410,11 @@ def main():
             page.wait_for_timeout(1500)
             ok("a persona pasted in is on the device without leaving the box", house_now().get("personaFrame") == pasted,
                (house_now().get("personaFrame") or "")[:60])
+            # v2.6.1: the house says which voice it read, and what that means for his engine
+            voice_note = page.locator("#houseBody p.voice-said")
+            said_first = voice_note.inner_text() if voice_note.count() else ""
+            ok("it says it read his instructions as \u201cI\u201d, and that his engine is in the first person for it",
+               "written as \u201cI\u201d" in said_first and "I am also Generalist" in said_first and "they read \u201cBruce\u201d" in said_first, said_first[:200])
             maker_box = page.locator("label.field", has_text="What they are called").locator("input")
             maker_box.fill("Eni the Archivist")
             page.wait_for_timeout(1500)
@@ -417,6 +424,18 @@ def main():
             frame_box.fill(was_frame)
             page.wait_for_timeout(1500)
             ok("and put back the same way", house_now()["settings"].get("makerName") == "Eni" and house_now().get("personaFrame") == was_frame)
+            said_you = voice_note.inner_text() if voice_note.count() else ""
+            ok("put back as \u201cyou\u201d, it says so the moment it is saved", "written as \u201cyou\u201d" in said_you and "You are also Generalist" in said_you, said_you[:200])
+            person_box = page.locator("#houseBody label.field", has_text="How this place speaks to them").locator("select")
+            person_box.select_option("first")
+            page.wait_for_timeout(600)
+            said_set = voice_note.inner_text() if voice_note.count() else ""
+            ok("set to \u201cI\u201d by hand, it says it was set here, and the house keeps it",
+               said_set.startswith("Set here: \u201cI\u201d") and house_now()["settings"].get("person") == "first", [said_set[:80], house_now()["settings"].get("person")])
+            person_box.select_option("follow")
+            page.wait_for_timeout(600)
+            said_back = voice_note.inner_text() if voice_note.count() else ""
+            ok("and back to following his instructions", house_now()["settings"].get("person") == "follow" and "written as \u201cyou\u201d" in said_back, said_back[:80])
 
             # -- smooth streaming, under its own name (SillyTavern's) -------------
             smooth = page.locator("label.field", has_text="Smooth streaming").locator("select")

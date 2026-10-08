@@ -231,8 +231,8 @@ never more than a moment behind it. Off, each piece shows the moment it arrives.
 
 The one you talk to reads, every time you speak: your instructions for them,
 your whole engine (`engine/generalist.md`, word for word — except that where it
-says "the user" they read your name), how this room works, and every document in
-the world, whole. They answer you, and when you ask for a
+says "the user", or speaks to you as "you", they read your name), how this room
+works, and every document in the world, whole. They answer you, and when you ask for a
 change they make it themselves, inside their reply — part of a document by
 quoting it exactly, or a whole document written out plainly. You see their
 words; the changes appear as cards underneath, each with **put it back**.
@@ -244,7 +244,19 @@ user": your engine and the keepers' crafts read your name (the files themselves
 are never changed), or "the author" if you have not set one. The app is "the room",
 and what it tells them between steps is a note from the room, to them by name,
 never words put in your mouth. Nothing CozyMaker itself says calls them an
-assistant, a persona or a worker. And the room asks them to think things over as themselves,
+assistant, a persona or a worker.
+
+Everything they read as their own is in one voice — the voice your instructions
+are written in. Written as "I" ("I am the Hulk…"), the greeting, your engine and
+how this room works all read as their own notes, in the first person: "I am also
+Generalist… I scan, I fix, I deliver." Written as "you", as a card that describes
+them ("Batman is…"), or with nothing in the box, everything speaks to them as
+"you" — and "you" only ever means them. What you and the room say to them is
+"you", the way anyone talks to a friend. Under **How this place speaks to them**
+the house says which voice it read and what follows; set it to "I" or "you" there
+to overrule it.
+
+And the room asks them to think things over as themselves,
 in their own voice, never in rule names — they still run every check your engine
 asks for.
 

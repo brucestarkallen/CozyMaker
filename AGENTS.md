@@ -5,12 +5,13 @@ record of what has already been got wrong once.
 
 ---
 
-## Where it stands (hand-off, 9 Oct 2026, v2.6.0)
+## Where it stands (hand-off, 9 Oct 2026, v2.6.1)
 
 **How a turn works.** The one he talks to reads his instructions, his whole
-engine (`engine/generalist.md`, word for word but for "the user", which reads as
-his name), "how this room works" (`frontBody`), every document whole, the whole
-talk (unless he set a window), and
+engine (`engine/generalist.md`, word for word but for his name where it says
+"the user" or speaks to him as "you", and in the first person when his frame is),
+"how this room works" (`frontBody`), every document whole, the whole talk (unless
+he set a window), and
 his note at the end — built in one place (`makerSystemFor`, `makerMessagesFor`)
 for the turn and for the context line alike. It changes documents itself in its
 reply (`<edits>` / `<file>`). The house applies them, runs the checks on only what
@@ -36,6 +37,15 @@ voice. The room's last paragraph is how it thinks: as itself, in its own voice,
 never in rule names (Cozy Tavern M335). `tests/harness.mjs` §28 reads every
 request of real turns in four voices.
 
+**One voice, his frame's (v2.6.1).** Everything the one he talks to reads as its own
+— the greeting, his engine, the room — is in the voice his instructions are written
+in: a frame written as "I" makes it all "I" (`engineAsRead` → `inFirstPerson` for the
+engine; the room is written in both voices by hand); "you", a third-person card or an
+empty box make it all "you". "You" means one person only: where his engine speaks to
+HIM as "you", it reads his name in every voice. What is said TO it — his words, the
+room's notes — is "you", as anyone talks to a friend. The house says what it read, under
+"How this place speaks to them" (`voiceSaid`). Helpers have no frame and read "you".
+
 **Two windows, one device (v2.5).** Every save names the copy it was made from
 (`X-CozyMaker-Base`); the device refuses one made from an older copy (409, with
 its own) or for a world deleted meanwhile (410), and the page puts the two together
@@ -44,9 +54,9 @@ newer commit on the device is taken by the page itself when nothing is in progre
 Only this phone's own page reaches `/api/` (Host and Origin checked).
 
 **The gate.** `bash tests/all.sh` — thirteen runs, all green before any push. On
-9 Oct 2026, on a two-core machine: units 648, harness 221, thinking 13, saves 20,
-two pages 22, server 82, browser 103, walk 229, the house walk 37, live stream
-12 + 12, stream flows 29, launcher 21 — 1,449 checks. The browser runs need
+9 Oct 2026, on a two-core machine: units 648, harness 232, thinking 13, saves 20,
+two pages 22, server 82, browser 107, walk 229, the house walk 37, live stream
+12 + 12, stream flows 29, launcher 21 — 1,464 checks. The browser runs need
 Playwright's Chromium.
 
 **What no test here can show.** Every model in the suites is a stand-in on the
@@ -83,10 +93,21 @@ from it is ever restated in code.** A law written twice is a law that will
 disagree with itself. The one he talks to reads it whole, every turn, under his
 own instructions — which is how the engine is written to be used ("You are also
 Generalist … whatever persona is defined above these instructions stays in
-force"). It is sent word for word but for one word: where it says "the user" it
-reads his name, or "the author" with none set (v2.6, `persona.js inNames`, at send
-time — the file on disk is never changed, and a form the pass does not know is left
-as written, never guessed at). The crafts the helpers read go through the same pass. `js/engine/slices.js` still cuts it at its own headings, for the one
+force"). It is sent word for word but for two things, both at send time and the file
+on disk never changed: where it says "the user", or speaks to him as "you", it reads
+his name, or "the author" with none set (v2.6 / v2.6.1, `persona.js inNames` — a form
+the pass does not know is left as written, never guessed at); and when his frame is
+written as "I", it reads in the first person, as the one he talks to's own notes (v2.6.1,
+`inFirstPerson`, quotations, fenced examples and code untouched). The crafts the helpers
+read go through the name pass only: a helper has no frame.
+
+**When his engine changes**, print every line the two passes change (the snippet below)
+and read each one; `tests/harness.mjs` §28 holds the count of lines where his engine says
+"you" (19 in v10.4.3, all to the one he talks to). A new one is a decision the code cannot
+make: if it speaks to him, its phrase goes into `namesIn`; if to the one he talks to, the
+count goes up. Never guessed.
+
+    node -e "import('./js/agents/persona.js').then(({inNames,engineAsRead})=>{const E=require('fs').readFileSync('engine/generalist.md','utf8'),a=inNames(E,{you:'Bruce'}).split('\n'),b=engineAsRead(E,{you:'Bruce',person:'first'}).split('\n'),o=E.split('\n');o.forEach((l,i)=>{if(l!==a[i]||a[i]!==b[i])console.log(i+1,'\n- '+l+'\n+ '+b[i])})})" `js/engine/slices.js` still cuts it at its own headings, for the one
 helper that works on it (the eye, which reads only what its read-back needs).
 
 To change the craft, edit `engine/generalist.md`. Nothing else.
@@ -1716,6 +1737,62 @@ the browser's "whole engine" check holds every line without "user" and his name 
 *card check holds the words that say what *card means, and its "never 'the writer'" check cuts his engine
 out where it begins (+1: that it was found), since what is sent is no longer the file's exact text.
 
+### One voice, his frame's — the engine included (v2.6.1)
+
+He asked whether the front end adjusts first and third person — "especially the engine" — and for nothing to
+talk confusingly or in circles. Read from the real request: it did not. The room followed his frame (v1.1.4),
+but with a frame written as "I am the Hulk…" the one he talks to read, in this order: "I am the Hulk" (his
+frame), "I'm Hulk, and Bruce is here with me" (the greeting), "You are also Generalist… You scan, you fix, you
+deliver" (his engine, 1,526 lines), "Bruce and I are building…" (the room). Two voices in one head — its own,
+and somebody instructing it (Cozy Tavern M334). And in every voice his engine used "you" for two people: the
+one he talks to ("You are also Generalist") and, in five lines, him ("so you can approve just the safe cuts",
+"You can approve EVERYTHING", "never rewrites your story", "it never invents what you haven't decided", "(your
+answers folded in)", "only when you explicitly want a shorter file").
+
+- **One "you" for one person, in every voice.** Those six phrases read his name (`namesIn`): "so Bruce can
+  approve just the safe cuts", "it never invents what Bruce hasn't decided". The cleanup manifest's own
+  template ("· Only you can answer:") is written TO him and stays as it is, and so does the label that names it.
+- **His engine follows a first-person frame** (`inFirstPerson`, through `engineAsRead`, only for the one he
+  talks to): "I am also Generalist", "I scan, I fix, I deliver", "if I can't apply the test, I haven't run the
+  check", "Bruce is paying to PLAY, not to manage me. My job is…", "Does any sentence make me stop". Verb
+  agreement (you are → I am, you were → I was, you aren't → I'm not), an object "you" (after its verb or
+  preposition on the same line, before "to <verb>", or ending its clause) → me. Never touched: a fenced block
+  (templates, examples), a quotation in double, curly or single quotes (story lines, a bad reply quoted, a
+  label), `code`, a line that is a list of phrases, a pronoun named ("you/I/he/she"). Imperatives stay. No
+  lookbehind (an older browser cannot parse one, and the whole page stops). All 19 changed lines of his engine
+  were printed both ways and read; every one reads right. This is not the v1.1.3 swapper coming back: that one
+  rewrote the house's own words and gave "talks to I", and the room is still written in both voices by hand;
+  this one turns his engine, which cannot be hand-written twice, and only after every "you" in it that means
+  him has become his name, so a "you" left can only be the one he talks to. Its object rules are Cozy Tavern's
+  (M334), with "manage", "pay" and "thank" added for his engine ("not to manage me").
+- **Third person and no instructions** are spoken to as "you", the way SillyTavern speaks to a character
+  written as "Batman is…" (`frameVoice` tells the four apart; `framePerson` answers as it always did).
+- **What the house read is said** under "How this place speaks to them" (`voiceSaid`, the same answer the turn
+  acts on): "Read from your instructions: they are written as “I”. So the greeting, your engine and how this
+  room works are their own notes, in the first person — “I am also Generalist… I scan, I fix, I deliver.” What
+  you and the room say to them stays “you”, the way anyone talks to a friend. Wherever your engine says “the
+  user”, or speaks to you as “you”, they read “Bruce”." It changes the moment his instructions, a name or the
+  setting does; "Set here: “I”" when he overrules it. Under the floor says the same of the engine.
+- What is said TO the one he talks to — his words, the room's notes between steps — stays "you" in every voice,
+  as anyone speaks to a friend however that friend thinks of himself (Cozy Tavern M334). Helpers have no frame
+  and read their crafts as "you".
+- "What was sent" names the engine's part for what it is: "…word for word but for Bruce where it says “the
+  user”, in the first person as your instructions are".
+
+Tests: harness §28 (+11): in each of the four voices, everything after the frame is checked for its voice —
+first person: not one "you" speaking to it outside quotations, fences and code, and "I am also Generalist",
+"I scan, I fix, I deliver" in its engine; the others: "You are also Generalist", and him by name in "so Bruce
+can approve just the safe cuts", never "so you can approve". On his real engine: the six by name and the
+manifest's words to him untouched; the first-person pass keeps every line and moves only lines that spoke to
+it; six sentences read as notes in grammar; nothing quoted, fenced, coded, labelled, listed or named moves; a
+"you" frame gets the engine exactly as the name pass gives it; and every line where his engine still says
+"you" is known — 19, each turned (a change to his engine that adds one fails here, for the decision above).
+Browser (+4): the hint read in the real house as he types an "I" frame, puts back a "you" one, and sets the
+dropdown by hand and back. Against untouched 2.6.0: 9 of the harness checks fail and 5 of the browser's (a hint
+it cannot find is a failure reported, never thrown — the first run of the browser checks threw, and was
+mended). Two older checks follow the six lines that now read his name: the whole-engine checks in the harness
+and the browser hold every line with neither "user" nor a "you" word as sent, and "so Bruce can approve".
+
 ## Testing
 
 ```
@@ -1723,12 +1800,13 @@ bash tests/all.sh           every suite, exit code intact
 ```
 
     node tests/units.mjs         648 checks — the real modules on a real document
-    node tests/harness.mjs       221 checks — the whole turn (v2.0): what the one he talks to reads, the
+    node tests/harness.mjs       232 checks — the whole turn (v2.0): what the one he talks to reads, the
                                               changes it makes, the steps, its helpers, the checks on
                                               what a turn brought in, put it back after a repair, Go on,
                                               Stop, a new world, search, the note at the end, too long,
                                               the whole talk, a thought anywhere, a reply that ran on,
-                                              and every word on the wire in four voices (v2.6)
+                                              and every word on the wire in four voices, each in its
+                                              own person, his engine included (v2.6, v2.6.1)
     node tests/thinking.mjs       13 checks — every thinking level against 198 answers from Cozy Tavern's own code
     node tests/saves.mjs          20 checks — the real store against a server that goes down
     node tests/two_pages.mjs      22 checks — two copies of the real store against the real serve.py: two
@@ -1736,7 +1814,7 @@ bash tests/all.sh           every suite, exit code intact
                                               in one, a window coming back, the house from two windows
     python3 tests/server.py       82 checks — the real serve.py, real files on disk, streams timed, only
                                               its own page, stale saves refused, earlier copies
-    python3 tests/browser.py     103 checks — real Chromium at 390x844, end to end: what it was sent, read off
+    python3 tests/browser.py     107 checks — real Chromium at 390x844, end to end: what it was sent, read off
                                               the wire, and the change on the device
     python3 tests/walk_worlds.py 229 checks — the drawer, conversations, swipes and versions, edit and
                                               send again, delete, branch, go on, re-quoting, crafts,
@@ -1761,7 +1839,7 @@ bash tests/all.sh           every suite, exit code intact
     bash tests/launcher.sh        21 checks — real clone, install, updates pulled live,
                                               and a Cozy Tavern stand-in that must survive
 
-1,449 checks. Every suite must be green before a push. `tests/fixtures/` holds answers recorded from the
+1,464 checks. Every suite must be green before a push. `tests/fixtures/` holds answers recorded from the
 real code of Cozy Tavern and the Plot Essential Maker; a copy here that disagrees with them is wrong. Never pipe a gate through
 `tail` or `head` — they mask the exit code, and a gate whose failure cannot be
 seen is not a gate. Measure check counts from real output; never predict them.

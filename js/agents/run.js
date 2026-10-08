@@ -14,7 +14,7 @@
 
 import { loadEngine, loadEngineText, sliceFor } from '../engine/slices.js';
 import { craftFor } from '../engine/crafts.js';
-import { openingFor, personaOf, noteAtTheEnd, inNames, writerWord, possessive } from './persona.js';
+import { openingFor, personaOf, noteAtTheEnd, inNames, engineAsRead, writerWord, possessive } from './persona.js';
 import { pickConnection, FRONT } from './roster.js';
 import { callModel, streamModel, enqueue } from './call.js';
 import { parseDoc, brief, readNeed, stripNeed, resolveNeed, LEAD_SHORT, nameWorld, hasPlotEssential, DEFAULT_WORLD_TITLE } from '../doc/index.js';
@@ -891,8 +891,10 @@ function restamp(batches, fixed) {
 export function makerSystemFor(house, engine) {
   const p = personaOf(house);
   const searcher = searchOn(house) ? searcherFor(house) : null;
-  /* his engine, word for word but for "the user", which reads as his name (persona.js inNames) */
-  return openingFor(p, [inNames(engine, p), frontBody(p, { search: Boolean(searcher) })].filter(Boolean).join('\n\n---\n\n'));
+  /* his engine, word for word but for his name where it says "the user" or speaks to him as
+   * "you", and — when his instructions are written as "I" — in the first person
+   * (persona.js engineAsRead) */
+  return openingFor(p, [engineAsRead(engine, p), frontBody(p, { search: Boolean(searcher) })].filter(Boolean).join('\n\n---\n\n'));
 }
 
 /* HOW A CHANGE IS SAID TO A MODEL (v2.6). A card's "how" for a change to part of a
@@ -1080,12 +1082,12 @@ export async function runTurn({
    * reading's three parts lie in what was sent */
   const sent = [];
   const recorder = (who, parts = null) => (rec) => { const r = { who, ...rec }; if (parts) r.parts = parts; sent.push(r); return r; };
-  const engineSent = engine ? inNames(engine, p) : '';
+  const engineSent = engine ? engineAsRead(engine, p) : '';
   const engineAt = engineSent ? makerSystem.indexOf(engineSent) : -1;
   const roomAt = makerSystem.lastIndexOf(ROOM_MARK);
   const makerParts = [
     { name: 'Your instructions for them, and the greeting', where: 'system', start: 0, end: engineAt > 0 ? engineAt : Math.max(0, roomAt) },
-    { name: `Your engine \u2014 engine/generalist.md, word for word, with \u201cthe user\u201d read as ${p.you || '\u201cthe author\u201d'}`, where: 'system', start: engineAt, end: engineAt + engineSent.length },
+    { name: `Your engine \u2014 engine/generalist.md, word for word but for ${p.you || '\u201cthe author\u201d'} where it says \u201cthe user\u201d or speaks to you as \u201cyou\u201d${p.person === 'first' ? ', and in the first person, as your instructions are' : ''}`, where: 'system', start: engineAt, end: engineAt + engineSent.length },
     { name: 'How this room works', where: 'system', start: roomAt, end: makerSystem.length },
   ].filter((x) => x.start >= 0 && x.end > x.start);
   /* WHAT WAS ALREADY CHANGED, AND STILL STANDS — the house's own record, so

@@ -5,7 +5,7 @@
 import * as store from '../store.js';
 import { $, el, openSheet, closeSheet, toast, applyTheme, redraw, field, input, select, group, fold, downloadText, copyText } from './kit.js';
 import { WORKERS, FRONT } from '../agents/roster.js';
-import { personaOf, unfilledMacros } from '../agents/persona.js';
+import { personaOf, unfilledMacros, voiceSaid } from '../agents/persona.js';
 import { testConnection, listModels } from '../agents/call.js';
 import { spokenAs, learnedFacts, alwaysThinks, cannotStopThinking, hermesLike } from '../providers.js';
 import { SEARCHER, searcherFor } from '../agents/search.js';
@@ -142,7 +142,12 @@ function whoSection(house) {
   frame.value = house.personaFrame || '';
   frame.placeholder = 'Paste your own instructions here — who they are, how they talk, all of it.';
   const macroNote = el('p', 'hint');
+  /* WHAT VOICE IT READ (v2.6.1): said under "How this place speaks to them", and said again
+   * whenever what decides it changes — the instructions, the names, the setting */
+  const voiceNote = el('p', 'hint voice-said');
+  const showVoice = () => { voiceNote.textContent = voiceSaid(store.getHouse()); };
   const showMacros = () => {
+    showVoice();
     const missing = unfilledMacros(personaOf(store.getHouse()));
     macroNote.textContent = missing.length
       ? `Your instructions say ${missing.join(' and ')} — fill in the ${missing.length > 1 ? 'two names' : 'name'} below and ${missing.length > 1 ? 'they are' : 'it is'} read as ${missing.length > 1 ? 'those names' : 'that name'}, the way SillyTavern does.`
@@ -228,8 +233,10 @@ function whoSection(house) {
     ['you', 'As "you" — "Hey Eni, this is Bruce."'],
     ['first', 'As "I" — "I\'m Eni."'],
   ], shown);
-  person.addEventListener('change', () => save('person', person.value));
+  person.addEventListener('change', () => save('person', person.value).then(showVoice));
   g.append(field('How this place speaks to them', person));
+  g.append(voiceNote);
+  showVoice();
 
   return g;
 }
@@ -660,7 +667,7 @@ function lookSection(house) {
 
 function underTheFloorSection() {
   const g = group('Under the floor',
-    'Your engine lives in one file, engine/generalist.md, and the one you talk to reads all of it, every time you speak \u2014 word for word, except that where it says \u201cthe user\u201d it reads your name (the file itself is never changed). The eye reads the parts its read-back needs; the three keepers read their own crafts, with your name the same way.');
+    'Your engine lives in one file, engine/generalist.md, and the one you talk to reads all of it, every time you speak \u2014 word for word, except that where it says \u201cthe user\u201d or speaks to you as \u201cyou\u201d it reads your name, and when their instructions are written as \u201cI\u201d it reads as their own notes, in the first person (the file itself is never changed). The eye reads the parts its read-back needs; the three keepers read their own crafts, with your name the same way.');
   const detailsInner = el('div', '');
   const details = fold('what each of them reads', detailsInner, { className: 'fold thinking' });
   details.style.maxHeight = 'none';

@@ -21,7 +21,7 @@ import { undoBatch } from '../js/doc/edits.js';
 import { SEARCH_MARK } from '../js/agents/search.js';
 import { countOf } from '../js/agents/call.js';
 import { EXAMPLE_FRAME, EXAMPLE_NOTE, shouldGiveExamples } from '../js/agents/examples.js';
-import { personaOf, openingFor, noteAtTheEnd, inNames, voiceMacros } from '../js/agents/persona.js';
+import { personaOf, openingFor, noteAtTheEnd, inNames, voiceMacros, engineAsRead, inFirstPerson } from '../js/agents/persona.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
@@ -135,7 +135,7 @@ const edits = (list) => `<edits>\n${JSON.stringify(list)}\n</edits>`;
   const voiced = inNames(ENGINE, personaOf(HOUSE()));
   ok('it reads his WHOLE engine, word for word but for \u201cthe user\u201d, which reads as his name', sys.includes(voiced)
     && voiced.split('\n').length === ENGINE.split('\n').length
-    && ENGINE.split('\n').filter((l) => !/user/i.test(l)).every((l) => sys.includes(l))
+    && ENGINE.split('\n').filter((l) => !/user|\byour?\b/i.test(l)).every((l) => sys.includes(l))
     && !/\buser\b/i.test(voiced) && voiced.includes('When Bruce gives a command, EXECUTE IT.'), `${sys.length} chars, engine ${ENGINE.length}`);
   ok('his engine comes after his instructions, the room after the engine', sys.indexOf('You are Eni') < sys.indexOf(ENGINE.slice(0, 200)) && sys.indexOf(ENGINE.slice(0, 200)) < sys.indexOf(ROOM_MARK));
   const ask = calls[0].last;
@@ -884,7 +884,7 @@ const edits = (list) => `<edits>\n${JSON.stringify(list)}\n</edits>`;
         if (mm) macro.push(`${c.who}: ${mm[0]}`);
       }
       /* what the room itself said: everything but his engine and the crafts, which are his */
-      const own = texts.map((t) => t.split(inNames(ENGINE, p)).join(' ').split(inNames(EYE_SLICE, p)).join(' ').split(inNames(WB_CRAFT, p)).join(' ')).join('\n\n');
+      const own = texts.map((t) => t.split(engineAsRead(ENGINE, p)).join(' ').split(inNames(EYE_SLICE, p)).join(' ').split(inNames(WB_CRAFT, p)).join(' ')).join('\n\n');
       const hw = /.{0,40}\b(?:assistant|language model|LLM|chatbot|system prompt|the system|workers?|the crew|persona|the house|this house|this model|an AI|the AI)\b.{0,40}/i.exec(own);
       if (hw) houseWord.push(`${c.who}: ${hw[0]}`);
       if (c.who === 'maker' && /\bthe craft\b/i.test(own)) houseWord.push(`${c.who}: the craft — ${/.{0,40}\bthe craft\b.{0,40}/i.exec(own)[0]}`);
@@ -902,12 +902,92 @@ const edits = (list) => `<edits>\n${JSON.stringify(list)}\n</edits>`;
     ok(`the wire (${v.name}): every note between steps is the room’s, to the one he talks to by name`, notes.length >= 3 && notes.every((t) => t.startsWith(open)), notes.map((t) => t.slice(0, 70)));
     const helperSys = all.filter((c) => c.who === 'helper').map((c) => c.sys);
     ok(`the wire (${v.name}): a helper is told whose fiction it is working on, by name`, helperSys.length >= 2 && helperSys.every((t) => t.startsWith(CRAFT_MARK) && (!p.you || t.startsWith(`${CRAFT_MARK} Bruce is building`))), helperSys.map((t) => t.slice(0, 90)));
+    /* ONE VOICE IN WHAT IT READS AS ITS OWN (v2.6.1). Everything in the one he talks to's
+     * instructions after his frame — the greeting, his engine, the room — is in the voice his
+     * frame is written in: "I" all through for a first-person frame, with "you" left only inside
+     * quotations, examples in fences and code; "you" for the others, where "you" is only ever the
+     * one he talks to, never him. */
+    const sysAfterFrame = all.filter((c) => c.who === 'maker').map((c) => c.sys.slice(voiceMacros(v.frame, p).length));
+    const youSpoken = (t) => {
+      let fence = false;
+      const hits = [];
+      for (const line of t.split('\n')) {
+        if (/^\s*```/.test(line)) { fence = !fence; continue; }
+        if (fence) continue;
+        const bare = line.replace(/"[^"\n]*"|“[^”\n]*”|`[^`\n]*`|(^|[\s(])'[^'\n]{1,120}'/g, ' ');
+        if (/\byou(?:r|rs|rself)?\b/i.test(bare)) hits.push(line.slice(0, 90));
+      }
+      return hits;
+    };
+    if (p.person === 'first') {
+      eq2(`the wire (${v.name}): everything after the frame is in the first person — not one “you” speaking to it`, [...new Set(sysAfterFrame.flatMap(youSpoken))], []);
+      ok(`the wire (${v.name}): its engine is its own notes — “I am also Generalist”, “I scan, I fix, I deliver”`, sysAfterFrame.length > 0 && sysAfterFrame.every((t) => t.includes('I am also Generalist') && t.includes('I scan, I fix, I deliver') && !t.includes('You are also Generalist')));
+    } else {
+      ok(`the wire (${v.name}): its engine speaks to it as “you”, and to him only by name`, sysAfterFrame.length > 0 && sysAfterFrame.every((t) => t.includes('You are also Generalist') && t.includes(`so ${p.you || 'the author'} can approve just the safe cuts`) && !t.includes('so you can approve')));
+    }
   }
   /* the name pass itself: only "user" moves; every other word of his engine is sent as written */
   const named = inNames(ENGINE, { you: 'Bruce' });
   const lines = [ENGINE.split('\n'), named.split('\n')];
   const moved = lines[0].map((l, i) => [l, lines[1][i]]).filter(([a, b]) => a !== b);
-  ok('the name pass changes only lines that said “user”, and keeps every line', lines[0].length === lines[1].length && moved.length > 40 && moved.every(([a]) => /user/i.test(a)), moved.length);
+  ok('the name pass changes only lines that said “user” or spoke to him as “you”, and keeps every line', lines[0].length === lines[1].length && moved.length > 40 && moved.every(([a]) => /user|\byour?\b/i.test(a)), moved.length);
+  /* the six places his engine says "you" to HIM, by name in every voice; the manifest written to him stays */
+  eq2('where his engine speaks to him as “you”, it reads his name — the six, and the manifest’s own words to him untouched', [
+    /only when Bruce explicitly wants a shorter file/.test(named), /so Bruce can approve just the safe cuts/.test(named), /never rewrites Bruce's story/.test(named),
+    /Bruce can approve EVERYTHING/.test(named), /it never invents what Bruce hasn't decided/.test(named), /\(Bruce's answers folded in\)/.test(named), /· Only you can answer:/.test(named),
+  ], [true, true, true, true, true, true, true]);
+  /* the first-person pass, line by line on his real engine */
+  const firstEng = engineAsRead(ENGINE, { you: 'Bruce', person: 'first' });
+  const turned = named.split('\n').map((l, i) => [l, firstEng.split('\n')[i]]).filter(([a, b]) => a !== b);
+  ok('in the first person his engine keeps every line, and only lines that spoke to it move', firstEng.split('\n').length === named.split('\n').length && turned.length >= 15 && turned.every(([a]) => /\byou(?:r|rs|rself)?\b/i.test(a)), turned.length);
+  eq2('each sentence reads as its own note, in grammar', [
+    inFirstPerson('You are a senior architect who CANNOT unsee problems.'),
+    inFirstPerson('2. What you found while you were in there (the scan)'),
+    inFirstPerson('Bruce is paying to PLAY, not to manage you. Your job is to update the PE.'),
+    inFirstPerson('Does any sentence make you stop and think "wait, what is this note doing here?"'),
+    inFirstPerson("if you can't apply the test, you haven't run the check."),
+    inFirstPerson('It requires you to hold both. Take it yourself; it is yours.'),
+  ], [
+    'I am a senior architect who CANNOT unsee problems.',
+    '2. What I found while I was in there (the scan)',
+    'Bruce is paying to PLAY, not to manage me. My job is to update the PE.',
+    'Does any sentence make me stop and think "wait, what is this note doing here?"',
+    "if I can't apply the test, I haven't run the check.",
+    'It requires me to hold both. Take it myself; it is mine.',
+  ]);
+  eq2('never touched: a quotation, a fenced example, code, a label in single quotes, a list of phrases, a pronoun named', [
+    inFirstPerson('Do not say "would you like me to…" or “you wanted this”.'),
+    inFirstPerson("```\n> \"You don't get to decide when I'm brave.\" —Claire\n  · Only you can answer: [gaps]\n```"),
+    inFirstPerson("If the read surfaces 'only you can answer' gaps, ask."),
+    inFirstPerson('Run `you --help` first.'),
+    inFirstPerson('Banned = ' + Array.from({ length: 14 }, (_, k) => (k === 3 ? "don't you dare" : `phrase ${k}`)).join(', ')),
+    inFirstPerson('the pronouns you/I/he/she'),
+  ], [
+    'Do not say "would you like me to…" or “you wanted this”.',
+    "```\n> \"You don't get to decide when I'm brave.\" —Claire\n  · Only you can answer: [gaps]\n```",
+    "If the read surfaces 'only you can answer' gaps, ask.",
+    'Run `you --help` first.',
+    'Banned = ' + Array.from({ length: 14 }, (_, k) => (k === 3 ? "don't you dare" : `phrase ${k}`)).join(', '),
+    'the pronouns you/I/he/she',
+  ]);
+  ok('a frame written as “you” gets his engine exactly as the name pass gives it — no pronoun moved', engineAsRead(ENGINE, { you: 'Bruce', person: 'second' }) === named);
+  /* EVERY "YOU" IN HIS ENGINE IS SOMEBODY'S. Once his name is read in, the lines where his engine
+   * still says "you" outside a quotation, a fenced example or code all speak to the one he talks
+   * to — nineteen in v10.4.3 — and each is turned in the first person. A change to his engine that
+   * adds one is a decision this cannot make for him: him (a phrase in namesIn) or the one he talks
+   * to. It is held here so it is made, never guessed (AGENTS.md, v2.6.1). */
+  const spokenYou = [];
+  {
+    let fence = false;
+    for (const line of named.split('\n')) {
+      if (/^\s*```/.test(line)) { fence = !fence; continue; }
+      if (fence) continue;
+      const bare = line.replace(/"[^"\n]*"|“[^”\n]*”|`[^`\n]*`|(^|[\s(])'[^'\n]{1,120}'/g, ' ');
+      if (/\byou(?:r|rs|rself)?\b/i.test(bare)) spokenYou.push(line);
+    }
+  }
+  const turnedLines = new Set(turned.map(([a]) => a));
+  ok('every line where his engine says “you” is known — the 19 that speak to the one he talks to, each turned in the first person', spokenYou.length === 19 && spokenYou.every((l) => turnedLines.has(l)), spokenYou.length);
   ok('and leaves none of it behind, in his engine or either craft', !/\buser\b/i.test(named) && !/\buser\b/i.test(inNames(WB_CRAFT, { you: 'Bruce' })) && !/\buser\b/i.test(inNames(readFileSync(join(ROOT, 'engine/sc-auditor.md'), 'utf8'), { you: 'Bruce' })));
   eq2('each form reads the way a person would say it', [
     inNames('When the user gives a command, EXECUTE IT. The user is paying to PLAY.', { you: 'Bruce' }),
